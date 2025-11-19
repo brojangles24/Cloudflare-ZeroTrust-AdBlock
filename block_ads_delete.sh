@@ -13,8 +13,8 @@ function error() {
 
 # Delete files
 echo "Deleting files..."
-rm -f HaGeZi_Ultimate_domains.txt
-rm -f HaGeZi_Ultimate_domains.txt.*
+rm -f Aggregated_List.txt
+rm -f Aggregated_List.txt.*
 
 # Get current lists from Cloudflare
 current_lists=$(curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X GET "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/lists" \
