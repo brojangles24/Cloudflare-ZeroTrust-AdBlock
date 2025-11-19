@@ -28,7 +28,7 @@ jobs:
         env:
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}  # your personal access token
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           chmod +x block_ads.sh
           ./block_ads.sh
