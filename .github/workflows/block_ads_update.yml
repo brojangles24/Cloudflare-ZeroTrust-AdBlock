@@ -1,4 +1,4 @@
-name: Aggregate Blocklists
+name: Block Ads Update
 
 # Triggers the workflow on manual runs AND on a schedule
 on:
