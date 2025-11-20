@@ -11,6 +11,12 @@ on:
 jobs:
   block_ads_update:
     runs-on: ubuntu-latest
+    
+    # --- THIS IS THE FIX ---
+    # This block gives the workflow permission to write to your repo
+    permissions:
+      contents: write
+    # -----------------------
 
     steps:
       - name: Checkout code
@@ -25,7 +31,7 @@ jobs:
         env:
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # You can safely remove GITHUB_TOKEN, it's not needed by the script
         run: |
           chmod +x block_ads.sh
           ./block_ads.sh
