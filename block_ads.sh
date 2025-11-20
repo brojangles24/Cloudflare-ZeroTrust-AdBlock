@@ -21,9 +21,9 @@ TARGET_BRANCH="${GITHUB_REF_NAME:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
 
 # --- Aggregator Configuration ---
 LIST_URLS=(
-   "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt" # Hagezi Pro
-   "https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/domains.wildcards" # 1Hosts Lite
-   "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_small.txt" #OISD Small
+    "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt" # Hagezi Pro
+    "https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/domains.wildcards" # 1Hosts Lite
+    "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_small.txt" #OISD Small
 )
 
 # Output file.
@@ -275,18 +275,20 @@ function sync_cloudflare() {
     {
         # Create the policy
         echo "Creating policy..."
+        # DEBUG: Removed > /dev/null to show error message
         curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X POST "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/rules" \
             -H "Authorization: Bearer ${API_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data "@${policy_file}" > /dev/null || { rm -f "${payload_file}"; error "Failed to create policy"; }
+            --data "@${policy_file}" || { rm -f "${policy_file}"; error "Failed to create policy"; }
     } ||
     {
         # Update the policy
         echo "Updating policy ${policy_id}..."
+        # DEBUG: Removed > /dev/null to show error message
         curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X PUT "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/rules/${policy_id}" \
             -H "Authorization: Bearer ${API_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data "@${policy_file}" > /dev/null || { rm -f "${policy_file}"; error "Failed to update policy"; }
+            --data "@${policy_file}" || { rm -f "${policy_file}"; error "Failed to update policy"; }
     }
 
     rm -f "${policy_file}"
@@ -294,9 +296,10 @@ function sync_cloudflare() {
     # Delete excess lists in $excess_list_ids
     for list_id in "${excess_list_ids[@]}"; do
         echo "Deleting list ${list_id}..."
+        # DEBUG: Removed > /dev/null to show error message
         curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X DELETE "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/lists/${list_id}" \
             -H "Authorization: Bearer ${API_TOKEN}" \
-            -H "Content-Type: application/json" > /dev/null || error "Failed to delete list ${list_id}"
+            -H "Content-Type: application/json" || error "Failed to delete list ${list_id}"
     done
 
     echo "Cloudflare sync complete."
