@@ -4,8 +4,8 @@ name: Aggregate Blocklists
 on:
   workflow_dispatch:
   schedule:
-    # Runs "at minute 0 past hour 3 every day" (3:00 AM UTC)
-    - cron: '* * * *'
+    # Runs "at minute 0 every hour" (e.g., 1:00, 2:00, 3:00)
+    - cron: '0 * * * *'
 
 jobs:
   build-list:
