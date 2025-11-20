@@ -287,7 +287,7 @@ function sync_cloudflare() {
         curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X PUT "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/rules/${policy_id}" \
             -H "Authorization: Bearer ${API_TOKEN}" \
             -H "Content-Type: application/json" \
-            --data "@${policy_file}" > /dev/null || { rm -f "${payload_file}"; error "Failed to update policy"; }
+            --data "@${policy_file}" > /dev/null || { rm -f "${policy_file}"; error "Failed to update policy"; }
     }
 
     rm -f "${policy_file}"
