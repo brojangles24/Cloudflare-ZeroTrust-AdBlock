@@ -12,7 +12,7 @@ echo "Starting Cloudflare blocklist update..."
 # --- Configuration ---
 API_TOKEN="${API_TOKEN:-}"
 ACCOUNT_ID="${ACCOUNT_ID:-}"
-PREFIX="Block ads"
+PREFIX="Hagezi Pro, OISD Small, 1Hosts Lite"
 MAX_LIST_SIZE=1000
 MAX_LISTS=300 # This gives you a 300,000 domain limit (1000 * 300)
 MAX_RETRIES=10
