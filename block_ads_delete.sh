@@ -13,8 +13,8 @@ function error() {
 
 # Delete files
 echo "Deleting files..."
-rm Aggregated_List.txt
-rm Aggregated_List.txt.*
+rm -f Aggregated_List.txt
+rm -f Aggregated_List.txt.*
 
 # Get current lists from Cloudflare
 current_lists=$(curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X GET "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/lists" \
@@ -40,4 +40,3 @@ for list_id in $(echo "${current_lists}" | jq -r --arg PREFIX "${PREFIX}" '.resu
     curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X DELETE "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/lists/${list_id}" \
         -H "Authorization: Bearer ${API_TOKEN}" \
         -H "Content-Type: application/json" > /dev/null || error "Failed to delete list ${list_id}"
-done
