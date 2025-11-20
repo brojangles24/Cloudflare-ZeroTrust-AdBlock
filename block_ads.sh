@@ -13,7 +13,6 @@ echo "Starting Cloudflare blocklist update..."
 API_TOKEN="${API_TOKEN:-}"
 ACCOUNT_ID="${ACCOUNT_ID:-}"
 PREFIX="Block ads"
-HUMANLABEL="HaGeZi Pro, OISD Small, 1Hosts Lite"
 MAX_LIST_SIZE=1000
 MAX_LISTS=300 # This gives you a 300,000 domain limit (1000 * 300)
 MAX_RETRIES=10
@@ -255,7 +254,7 @@ function sync_cloudflare() {
 
     # Create the JSON data dynamically in a temporary file
     policy_file=$(mktemp) || error "Failed to create temporary file for policy payload"
-    jq -n --arg name "${HUMANLABEL}" --argjson expression "$expression_json" '{
+    jq -n --arg name "${PREFIX}" --argjson expression "$expression_json" '{
         "name": $name,
         "conditions": [
             {
