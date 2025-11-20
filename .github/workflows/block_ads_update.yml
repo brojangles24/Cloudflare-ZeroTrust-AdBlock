@@ -1,36 +1,31 @@
-name: Block Ads Update
+name: Block ads update
 
-# Triggers the workflow on manual runs AND on a schedule
 on:
   workflow_dispatch:
   schedule:
-    # Runs "at minute 0 every hour" (e.g., 1:00, 2:00, 3:00)
     - cron: '0 * * * *'
+  push:
+    branches:
+      - '**'
 
 jobs:
-  build-list:
-    # This gives the job permission to write to your repo
-    permissions:
-      contents: write
-
-    # Use the latest Ubuntu runner
+  block_ads_update:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Check out your repository's code
-      - name: Check out repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Make the shell script executable
-      - name: Make script executable
-        run: chmod +x block_ads.sh
+      - name: Install jq, curl and other utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl coreutils
 
-      # 3. Run the aggregator script
-      # This step will now fail if the domain count is over 300k
-      - name: Run domain aggregator
-        run: ./block_ads.sh
-        # This is the new, important part!
-        # It passes your GitHub Secrets into the script as environment variables.
+      - name: Run the script
         env:
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x block_ads.sh
+          ./block_ads.sh
