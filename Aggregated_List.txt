@@ -15325,7 +15325,6 @@ ad.meb3.vic.optusnet.com.au
 ad.meb4.vic.optusnet.com.au
 ad.med.miami.edu
 ad.medctr.ucla.edu
-ad.mediabong.com
 ad.mediamixer.co.kr
 ad.mediaprimaplus.com.my
 ad.mediastorm.hu
