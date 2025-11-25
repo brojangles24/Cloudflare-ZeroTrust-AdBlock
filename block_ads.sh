@@ -26,7 +26,7 @@ LIST_URLS=(
     #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt" # Hagezi Pro
     #"https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/domains.wildcards" # 1Hosts Lite
     #"https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_small.txt" #OISD Small
-    "https://raw.githubusercontent.com/brojangles24/blocklistaggregatortest/refs/heads/main/priority_300k_hosts.txt" #Custom Aggregation
+    "https://raw.githubusercontent.com/brojangles24/blocklistaggregatortest/refs/heads/main/priority/priority_300k_hosts.txt" #Custom Aggregation
 )
 
 # Output file.
