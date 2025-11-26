@@ -13,12 +13,12 @@ from collections import Counter
 # ---------------- CONFIG ----------------
 
 SOURCES = {
-    #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt" #Hagezi Ultimate
-    #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt" #Hagezi Pro++
-    #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt" # Hagezi Pro
-    #"https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/domains.wildcards" # 1Hosts Lite
-    #"https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_small.txt" #OISD Small
-    "https://raw.githubusercontent.com/brojangles24/shiny-telegram/refs/heads/main/Aggregated_list/priority_300k.txt" #Custom Aggregation
+    #"Hagezi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt", 
+    #"Hagezi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+    #"Hagezi Pro": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt", 
+    #"1Hosts Lite": "https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/domains.wildcards",
+    #"OISD Small": "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_small.txt",
+    "Custom Aggregation": "https://raw.githubusercontent.com/brojangles24/shiny-telegram/refs/heads/main/Aggregated_list/priority_300k.txt"
 }
 
 CACHE_DIR = "cache"
