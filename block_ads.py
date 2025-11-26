@@ -122,6 +122,14 @@ def smoosh_booties(raw_lists):
     return merged
     
 
+def chunk_domains(domains, size=1000, limit=300):
+    chunks = []
+    domains = list(domains)
+    for i in range(0, min(len(domains), size*limit), size):
+        chunks.append(domains[i:i+size])
+    return chunks
+
+
 def main():
     start = time.time()
     raw_lists = {}
@@ -135,20 +143,19 @@ def main():
             except:
                 raw_lists[name] = []
 
-    merged =  smoosh_booties(raw_lists)
+    merged = smoosh_booties(raw_lists)
     cleaned = merged.difference(EXTRA_ALLOW)
-
     cleaned = sorted(cleaned)
+
+    chunks = chunk_domains(cleaned)  # split into 300 lists of 1000
 
     with open(OUTPUT, "w") as f:
         f.write("# Cloudflare-ZeroTrust-Adblock\n")
         f.write("# Generated: " + datetime.utcnow().isoformat() + "Z\n")
-        f.write("# Total: " + str(len(cleaned)) + "\n\n")
-        f.write("\n".join(cleaned))
+        f.write("# Total domains: " + str(len(cleaned)) + "\n")
+        f.write("# Total lists: " + str(len(chunks)) + "\n\n")
+        for c in chunks:
+            f.write("\n".join(c) + "\n\n")
 
     duration = round(time.time() - start, 2)
-    print("Done in", duration, "sec. Domains:", len(cleaned))
-
-
-if __name__ == "__main__":
-    main()
+    print("Done in", duration, "sec. Domains:", len(cleaned), "Chunks:", len(chunks))
