@@ -1,1 +1,2 @@
-
+# My Custom List
+https://raw.githubusercontent.com/brojangles24/shiny-telegram/refs/heads/main/Aggregated_list/priority_300k.txt
