@@ -1,389 +1,381 @@
-#!/bin/bash
+import os
+import sys
+import tempfile
+import shutil
+import re
+import concurrent.futures
+from pathlib import Path
+from subprocess import run, CalledProcessError
 
-# Exit immediately if a command exits with a non-zero status.
-set -e
-# Treat unset variables as an error.
-set -u
-# The return value of a pipeline is the status of the last command to exit with a non-zero status.
-set -o pipefail
-
-echo "Starting Cloudflare blocklist update..."
+import requests
 
 # --- Configuration ---
-API_TOKEN="${API_TOKEN:-}"
-ACCOUNT_ID="${ACCOUNT_ID:-}"
-PREFIX="Block ads"
-MAX_LIST_SIZE=1000
-MAX_LISTS=300 # This gives you a 300,000 domain limit (1000 * 300)
-MAX_RETRIES=10
-TARGET_BRANCH="${GITHUB_REF_NAME:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null)}"
-[[ -n "${TARGET_BRANCH}" ]] || TARGET_BRANCH="main"
+API_TOKEN = os.environ.get("API_TOKEN", "")
+ACCOUNT_ID = os.environ.get("ACCOUNT_ID", "")
+PREFIX = "Block ads"
+MAX_LIST_SIZE = 1000
+MAX_LISTS = 300
+MAX_RETRIES = 10
+OUTPUT_FILE_NAME = "Aggregated_List.txt"
+OUTPUT_PATH = Path(OUTPUT_FILE_NAME)
 
-# --- Aggregator Configuration ---
-LIST_URLS=(
-    #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt" #Hagezi Ultimate
-    #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt" #Hagezi Pro++
-    #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt" # Hagezi Pro
-    #"https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/domains.wildcards" # 1Hosts Lite
-    #"https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_small.txt" #OISD Small
-    "https://raw.githubusercontent.com/brojangles24/shiny-telegram/refs/heads/main/Aggregated_list/priority_300k.txt" #Custom Aggregation
-)
+# Git Configuration
+TARGET_BRANCH = os.environ.get("GITHUB_REF_NAME") or os.environ.get("TARGET_BRANCH") or "main"
+GITHUB_ACTOR = os.environ.get("GITHUB_ACTOR", "github-actions[bot]")
+GITHUB_ACTOR_ID = os.environ.get("GITHUB_ACTOR_ID", "41898282")
 
-# Output file.
-OUTPUT_FILE="Aggregated_List.txt"
-TEMP_DIR=$(mktemp -d)
+# Aggregator Configuration
+LIST_URLS = [
+    "https://raw.githubusercontent.com/brojangles24/shiny-telegram/refs/heads/main/Aggregated_list/priority_300k.txt",
+    # Add more lists here
+]
 
+# --- Domain Processing Helpers ---
+INVALID_CHARS_PATTERN = re.compile(r'[<>&;\"\'/=\s]')
+DOMAIN_EXTRACT_PATTERN = re.compile(r'^(?:[0-9]{1,3}(?:\.[0-9]{1,3}){3}\s+)?(.+)$')
+COMMON_JUNK_DOMAINS = {'localhost', '127.0.0.1', '0.0.0.0', '::1'}
+
+def domains_to_cf_items(domains):
+    """Converts a list of domain strings to the Cloudflare API item format."""
+    return [{"value": domain} for domain in domains if domain]
+
+# --- Custom Exception ---
+class ScriptExit(Exception):
+    """Custom exception to stop the script gracefully."""
+    def __init__(self, message, silent=False):
+        super().__init__(message)
+        self.silent = silent
 
 # --- Helper Functions ---
-function error() {
-    echo "Error: $1"
-    rm -rf "$TEMP_DIR"
-    rm -f ${OUTPUT_FILE}.*
-    exit 1
-}
+def run_command(command):
+    """Run a shell command and raise an error on non-zero exit code."""
+    try:
+        run(command, check=True, capture_output=True, text=True, encoding='utf-8')
+    except CalledProcessError as e:
+        raise RuntimeError(f"Command failed: {' '.join(command)}\nStdout: {e.stdout}\nStderr: {e.stderr}")
+    except FileNotFoundError:
+        raise RuntimeError(f"Command not found: {command[0]}")
 
-function silent_error() {
-    echo "Silent error: $1"
-    rm -rf "$TEMP_DIR"
-    rm -f ${OUTPUT_FILE}.*
-    exit 0
-}
+def download_list(url, file_path):
+    """Downloads a single list to the specified path."""
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    file_path.write_bytes(response.content)
+
+# --- Cloudflare API Client (Context Manager) ---
+class CloudflareAPI:
+    def __init__(self, account_id, api_token, max_retries):
+        self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/gateway"
+        self.headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+        }
+        self.max_retries = max_retries
+        self.session = None
+
+    def __enter__(self):
+        self.session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(max_retries=self.max_retries)
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.session:
+            self.session.close()
+
+    def _request(self, method, endpoint, **kwargs):
+        url = f"{self.base_url}/{endpoint}"
+        try:
+            response = self.session.request(method, url, headers=self.headers, **kwargs)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"Cloudflare API failed for {method} {url}: {e}")
+
+    # API methods remain the same, using self._request...
+    def get_lists(self): return self._request("GET", "lists")
+    def get_list_items(self, list_id, limit): return self._request("GET", f"lists/{list_id}/items?limit={limit}")
+    def update_list(self, list_id, append_items, remove_items):
+        data = {"append": append_items, "remove": remove_items}
+        return self._request("PATCH", f"lists/{list_id}", json=data)
+    def create_list(self, name, items):
+        data = {"name": name, "type": "DOMAIN", "items": items}
+        return self._request("POST", "lists", json=data)
+    def delete_list(self, list_id): return self._request("DELETE", f"lists/{list_id}")
+    def get_rules(self): return self._request("GET", "rules")
+    def create_rule(self, payload): return self._request("POST", "rules", json=payload)
+    def update_rule(self, rule_id, payload): return self._request("PUT", f"rules/{rule_id}", json=payload)
+
 
 # --- 1. Aggregation Function ---
-function run_aggregation() {
-    echo "--- 1. Aggregating Lists ---"
-    echo "Using temporary directory: $TEMP_DIR"
-    echo "Downloading ${#LIST_URLS[@]} lists in parallel..."
-    for i in "${!LIST_URLS[@]}"; do
-        curl -L -sS -o "$TEMP_DIR/list_$i.txt" "${LIST_URLS[$i]}" &
-    done
-    wait
-    echo "All lists downloaded."
+def run_aggregation():
+    """Download lists, process, normalize, and deduplicate domains."""
+    print("--- 1. Aggregating Lists ---")
 
-    echo "Processing, normalizing, and deduplicating domains..."
-    cat "$TEMP_DIR"/list_*.txt | \
-        # 1. Remove comments (starting with #) and empty/whitespace-only lines
-        grep -vE '^\s*#|^\s*$' | \
-        # 2. Handle both hosts files (IP domain) and domain-only files
-        awk '{if (NF >= 2) print $2; else print $1}' | \
-        # 3. Filter out common junk/invalid entries
-        grep -vE '^(localhost|127.0.0.1|0.0.0.0|::1)$' | \
-        # 4. Stricter filtering for HTML junk
-        grep -E '\.' | \
-        grep -vE '<|>|&|;|\"|'\''|\/|=' | \
-        # 5. Convert all domains to lowercase
-        tr '[:upper:]' '[:lower:]' | \
-        # 6. Remove any trailing carriage returns
-        sed 's/\r$//' | \
-        # 7. Sort and find unique entries
-        sort -u \
-        > "$OUTPUT_FILE"
+    temp_dir = Path(tempfile.mkdtemp())
+    print(f"Using temporary directory: {temp_dir}")
 
-    echo "Processing complete. Aggregated list saved to $OUTPUT_FILE."
-    rm -rf "$TEMP_DIR"
-    echo "Temporary download directory cleaned up."
-}
+    # 1. Download Lists in Parallel
+    print(f"Downloading {len(LIST_URLS)} lists in parallel...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        future_to_url = {
+            executor.submit(download_list, url, temp_dir / f"list_{i}.txt"): url
+            for i, url in enumerate(LIST_URLS)
+        }
+        for future in concurrent.futures.as_completed(future_to_url):
+            url = future_to_url[future]
+            try:
+                future.result()
+            except requests.exceptions.RequestException as e:
+                print(f"Warning: Failed to download {url}. Skipping. Error: {e}", file=sys.stderr)
+    print("All lists downloaded.")
+
+    # 2. Process, Normalize, and Deduplicate
+    print("Processing, normalizing, and deduplicating domains...")
+    unique_domains = set()
+
+    for file_path in temp_dir.glob("list_*.txt"):
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+
+                    # Extract domain and convert to lowercase
+                    match = DOMAIN_EXTRACT_PATTERN.match(line)
+                    if not match:
+                        continue
+
+                    # Take the first word after optional IP and convert to lowercase
+                    domain = match.group(1).split()[0].lower()
+                    
+                    # Filter out junk and invalid entries
+                    if not domain or domain in COMMON_JUNK_DOMAINS:
+                        continue
+                    
+                    # Stricter filtering for HTML junk and basic domain validation
+                    if '.' not in domain or INVALID_CHARS_PATTERN.search(domain):
+                        continue
+                        
+                    unique_domains.add(domain)
+        except Exception as e:
+            print(f"Warning: Error processing file {file_path}: {e}", file=sys.stderr)
+
+    # 3. Save unique entries
+    OUTPUT_PATH.write_text('\n'.join(sorted(unique_domains)) + '\n', encoding='utf-8')
+    print(f"Processing complete. Aggregated list saved to {OUTPUT_PATH}.")
+    shutil.rmtree(temp_dir)
+    print("Temporary download directory cleaned up.")
+    return len(unique_domains)
 
 # --- 2. Cloudflare Sync Function ---
-function sync_cloudflare() {
-    echo "--- 2. Syncing to Cloudflare ---"
+def sync_cloudflare(total_lines):
+    """Sync the aggregated domains to Cloudflare Gateway Lists and Rules."""
+    print("--- 2. Syncing to Cloudflare ---")
     
     # Check if the file has changed
-    git diff --exit-code "$OUTPUT_FILE" > /dev/null && silent_error "The aggregated domains list has not changed"
+    try:
+        run_command(["git", "diff", "--exit-code", OUTPUT_FILE_NAME])
+        raise ScriptExit("The aggregated domains list has not changed", silent=True)
+    except RuntimeError:
+        pass # File has changed, continue
 
-    # Ensure the file is not empty
-    [[ -s "$OUTPUT_FILE" ]] || error "The aggregated domains list is empty"
+    if total_lines == 0:
+        raise ScriptExit("The aggregated domains list is empty")
 
-    # Calculate the number of lines in the file
-    total_lines=$(wc -l < "$OUTPUT_FILE")
-    echo "Total unique domains aggregated: $total_lines"
+    max_total_lines = MAX_LIST_SIZE * MAX_LISTS
+    if total_lines > max_total_lines:
+        raise ScriptExit(f"The domains list has more than {max_total_lines} lines")
 
-    # Ensure the file is not over the maximum allowed lines (300k limit)
-    (( total_lines <= MAX_LIST_SIZE * MAX_LISTS )) || error "The domains list has more than $((MAX_LIST_SIZE * MAX_LISTS)) lines"
+    print(f"Total unique domains aggregated: {total_lines}")
+    total_lists = (total_lines + MAX_LIST_SIZE - 1) // MAX_LIST_SIZE
+    print(f"This will require {total_lists} Cloudflare lists.")
 
-    # Calculate the number of lists required
-    total_lists=$((total_lines / MAX_LIST_SIZE))
-    [[ $((total_lines % MAX_LIST_SIZE)) -ne 0 ]] && total_lists=$((total_lists + 1))
-    echo "This will require $total_lists Cloudflare lists."
-
-    # Get current lists from Cloudflare
-    current_lists=$(curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X GET "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/lists" \
-        -H "Authorization: Bearer ${API_TOKEN}" \
-        -H "Content-Type: application/json") || error "Failed to get current lists from Cloudflare"
+    with CloudflareAPI(ACCOUNT_ID, API_TOKEN, MAX_RETRIES) as cf:
         
-    # Get current policies from Cloudflare
-    current_policies=$(curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X GET "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/rules" \
-        -H "Authorization: Bearer ${API_TOKEN}" \
-        -H "Content-Type: application/json") || error "Failed to get current policies from Cloudflare"
+        # Get current lists and policies
+        all_current_lists = cf.get_lists().get('result', [])
+        current_policies = cf.get_rules().get('result', [])
 
-    # Count number of lists that have $PREFIX in name
-    current_lists_count=$(echo "${current_lists}" | jq -r --arg PREFIX "${PREFIX}" 'if (.result | length > 0) then .result | map(select(.name | contains($PREFIX))) | length else 0 end') || error "Failed to count current lists"
+        current_lists_with_prefix = [l for l in all_current_lists if PREFIX in l.get('name', '')]
+        current_lists_without_prefix = [l for l in all_current_lists if PREFIX not in l.get('name', '')]
+        
+        current_lists_count_without_prefix = len(current_lists_without_prefix)
+        if total_lists > MAX_LISTS - current_lists_count_without_prefix:
+            raise ScriptExit(f"The number of lists required ({total_lists}) is greater than the maximum allowed ({MAX_LISTS - current_lists_count_without_prefix})")
 
-    # Count number of lists without $PREFIX in name
-    current_lists_count_without_prefix=$(echo "${current_lists}" | jq -r --arg PREFIX "${PREFIX}" 'if (.result | length > 0) then .result | map(select(.name | contains($PREFIX) | not)) | length else 0 end') || error "Failed to count current lists without prefix"
+        # Split list into chunks
+        domains = OUTPUT_PATH.read_text(encoding='utf-8').splitlines()
+        chunked_domains = [domains[i:i + MAX_LIST_SIZE] for i in range(0, len(domains), MAX_LIST_SIZE)]
 
-    # Ensure total_lists name is less than or equal to $MAX_LISTS - current_lists_count_without_prefix
-    [[ ${total_lists} -le $((MAX_LISTS - current_lists_count_without_prefix)) ]] || error "The number of lists required (${total_lists}) is greater than the maximum allowed (${MAX_LISTS - current_lists_count_without_prefix})"
+        used_list_ids = []
+        excess_list_ids = [l['id'] for l in current_lists_with_prefix]
 
-    # Split lists into chunks of $MAX_LIST_SIZE
-    split -l ${MAX_LIST_SIZE} "$OUTPUT_FILE" "${OUTPUT_FILE}." || error "Failed to split the domains list"
+        # --- Update/Create Lists ---
+        for i, domains_chunk in enumerate(chunked_domains):
+            list_counter = i + 1
+            formatted_counter = f"{list_counter:03d}"
+            list_name = f"{PREFIX} - {formatted_counter}"
+            
+            items_json = domains_to_cf_items(domains_chunk)
+            
+            if excess_list_ids:
+                # Update existing list
+                list_id = excess_list_ids.pop(0)
+                print(f"Updating list {list_id}...")
+                
+                # Get old items for removal
+                old_items_result = cf.get_list_items(list_id, MAX_LIST_SIZE).get('result', [])
+                remove_items = [item['value'] for item in old_items_result if item.get('value')]
+                
+                cf.update_list(list_id, append_items=items_json, remove_items=remove_items)
+                used_list_ids.append(list_id)
 
-    # Create array of chunked lists
-    chunked_lists=()
-    for file in ${OUTPUT_FILE}.*; do
-        chunked_lists+=("${file}")
-    done
+            else:
+                # Create new list
+                print(f"Creating list: {list_name}...")
+                result = cf.create_list(list_name, items_json)
+                used_list_ids.append(result['result']['id'])
+        
+        # --- Delete Excess Lists ---
+        for list_id in excess_list_ids:
+            print(f"Deleting excess list {list_id}...")
+            cf.delete_list(list_id)
 
-    # Create array of used list IDs
-    used_list_ids=()
+        # --- Update/Create Gateway Policy ---
+        policy_id = next((p['id'] for p in current_policies if p.get('name') == PREFIX), None)
 
-    # Create array of excess list IDs
-    excess_list_ids=()
-
-    # Create list counter
-    list_counter=1
-
-    # Update existing lists
-    if [[ ${current_lists_count} -gt 0 ]]; then
-        # For each list ID
-        for list_id in $(echo "${current_lists}" | jq -r --arg PREFIX "${PREFIX}" '.result | map(select(.name | contains($PREFIX))) | .[].id'); do
-            # If there are no more chunked lists, mark the list ID for deletion
-            [[ ${#chunked_lists[@]} -eq 0 ]] && {
-                echo "Marking list ${list_id} for deletion..."
-                excess_list_ids+=("${list_id}")
-                continue
-            }
-
-            echo "Updating list ${list_id}..."
-
-            # Get list contents
-            list_items=$(curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X GET "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/lists/${list_id}/items?limit=${MAX_LIST_SIZE}" \
-            -H "Authorization: Bearer ${API_TOKEN}" \
-            -H "Content-Type: application/json") || error "Failed to get list ${list_id} contents"
-
-            # Create list item values for removal
-            list_items_values=$(echo "${list_items}" | jq '.result | map(.value) | map(select(. != null))')
-
-            # Create list item array for appending from first chunked list
-            list_items_array=$(jq -R -s 'split("\n") | map(select(length > 0) | { "value": . })' "${chunked_lists[0]}")
-
-            # Create payload file
-            payload_file=$(mktemp) || error "Failed to create temporary file for list payload"
-            jq -n --argjson append_items "$list_items_array" --argjson remove_items "$list_items_values" '{
-                "append": $append_items,
-                "remove": $remove_items
-            }' > "${payload_file}"
-
-            # Patch list with payload file to avoid oversized command invocations
-            curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X PATCH "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/lists/${list_id}" \
-            -H "Authorization: Bearer ${API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data "@${payload_file}" > /dev/null || { rm -f "${payload_file}"; error "Failed to patch list ${list_id}"; }
-
-            rm -f "${payload_file}"
-
-            # Store the list ID
-            used_list_ids+=("${list_id}")
-
-            # Delete the first chunked file and in the list
-            rm -f "${chunked_lists[0]}"
-            chunked_lists=("${chunked_lists[@]:1}")
-
-            # Increment list counter
-            list_counter=$((list_counter + 1))
-        done
-    fi
-
-    # Create extra lists if required
-    for file in "${chunked_lists[@]}"; do
-        echo "Creating list..."
-
-        # Format list counter
-        formatted_counter=$(printf "%03d" "$list_counter")
-
-        # Create payload file
-        items_json=$(jq -R -s 'split("\n") | map(select(length > 0) | { "value": . })' "${file}")
-        payload_file=$(mktemp) || error "Failed to create temporary file for list payload"
-        jq -n --arg PREFIX "${PREFIX} - ${formatted_counter}" --argjson items "$items_json" '{
-            "name": $PREFIX,
-            "type": "DOMAIN",
-            "items": $items
-        }' > "${payload_file}"
-
-    # Create list
-        list=$(curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X POST "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/lists" \
-            -H "Authorization: Bearer ${API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data "@${payload_file}") || { rm -f "${payload_file}"; error "Failed to create list"; }
-
-        rm -f "${payload_file}"
-
-        # Store the list ID
-        used_list_ids+=("$(echo "${list}" | jq -r '.result.id')")
-
-        # Delete the file
-        rm -f "${file}"
-
-        # Increment list counter
-        list_counter=$((list_counter + 1))
-    done
-
-    # Ensure policy called exactly $PREFIX exists, else create it
-    policy_id=$(echo "${current_policies}" | jq -r --arg PREFIX "${PREFIX}" '.result | map(select(.name == $PREFIX)) | .[0].id') || error "Failed to get policy ID"
-
-    # Loop through the used_list_ids and build the policy expression dynamically
-    if [[ ${#used_list_ids[@]} -eq 1 ]]; then
-        expression_json=$(jq -n --arg id "${used_list_ids[0]}" '{
-            "any": {
-                "in": {
-                    "lhs": { "splat": "dns.domains" },
-                    "rhs": ("$" + $id)
-                }
-            }
-        }')
-    else
-        ids_json=$(printf '%s\n' "${used_list_ids[@]}" | jq -R -s 'split("\n") | map(select(length > 0))')
-        expression_json=$(jq -n --argjson ids "$ids_json" '{
-            "or": ($ids | map({
+        # Build the policy expression (handles 0, 1, or multiple lists)
+        or_clauses = [
+            {
                 "any": {
                     "in": {
-                        "lhs": { "splat": "dns.domains" },
-                        "rhs": ("$" + .)
+                        "lhs": {"splat": "dns.domains"},
+                        "rhs": f"${list_id}"
                     }
                 }
-            }))
-        }')
-    fi
-
-    # Create the JSON data dynamically in a temporary file
-    policy_file=$(mktemp) || error "Failed to create temporary file for policy payload"
-    jq -n --arg name "${PREFIX}" --argjson expression "$expression_json" '{
-        "name": $name,
-        "conditions": [
-            {
-                "type": "traffic",
-                "expression": $expression
             }
-        ],
-        "action": "block",
-        "enabled": true,
-        "description": "Aggregated blocklist from singularitysink",
-        "rule_settings": {
-            "block_page_enabled": false
-        },
-        "filters": ["dns"]
-    }' > "${policy_file}"
+            for list_id in used_list_ids
+        ]
 
-    [[ -z "${policy_id}" || "${policy_id}" == "null" ]] &&
-    {
-        # Create the policy
-        echo "Creating policy..."
-        # DEBUG: Removed > /dev/null to show error message
-        curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X POST "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/rules" \
-            -H "Authorization: Bearer ${API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data "@${policy_file}" || { rm -f "${policy_file}"; error "Failed to create policy"; }
-    } ||
-    {
-        # Update the policy
-        echo "Updating policy ${policy_id}..."
-        # DEBUG: Removed > /dev/null to show error message
-        curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X PUT "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/rules/${policy_id}" \
-            -H "Authorization: Bearer ${API_TOKEN}" \
-            -H "Content-Type: application/json" \
-            --data "@${policy_file}" || { rm -f "${policy_file}"; error "Failed to update policy"; }
-    }
+        if not or_clauses:
+             # Failsafe: if no lists, use an expression that is always false
+             expression_json = {"not": {"eq": {"lhs": "dns.domains", "rhs": "null"}}}
+        elif len(or_clauses) == 1:
+            expression_json = or_clauses[0]
+        else:
+            expression_json = {"or": or_clauses}
 
-    rm -f "${policy_file}"
-
-    # Delete excess lists in $excess_list_ids
-    for list_id in "${excess_list_ids[@]}"; do
-        echo "Deleting list ${list_id}..."
-        # DEBUG: Removed > /dev/null to show error message
-        curl -sSfL --retry "$MAX_RETRIES" --retry-all-errors -X DELETE "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/gateway/lists/${list_id}" \
-            -H "Authorization: Bearer ${API_TOKEN}" \
-            -H "Content-Type: application/json" || error "Failed to delete list ${list_id}"
-    done
-
-    echo "Cloudflare sync complete."
-    # Return 0 (success) to indicate changes were made
-    return 0
-}
+        policy_payload = {
+            "name": PREFIX,
+            "conditions": [{"type": "traffic", "expression": expression_json}],
+            "action": "block",
+            "enabled": True,
+            "description": "Aggregated blocklist from singularitysink",
+            "rule_settings": {"block_page_enabled": False},
+            "filters": ["dns"]
+        }
+        
+        if policy_id:
+            print(f"Updating policy {policy_id}...")
+            cf.update_rule(policy_id, policy_payload)
+        else:
+            print("Creating policy...")
+            cf.create_rule(policy_payload)
+            
+        print("Cloudflare sync complete.")
+        return True
 
 # --- 3. Git Commit Function ---
-function commit_to_git() {
-    echo "--- 3. Committing to Git ---"
-    local total_lines=$1
+def commit_to_git(total_lines):
+    """Commit the updated list to the repository."""
+    print("--- 3. Committing to Git ---")
     
-    echo "Configuring Git user..."
-    # SIMPLIFIED: No longer needs 'gh api'
-    local git_user_name="${GITHUB_ACTOR}[bot]"
+    git_user_name = f"{GITHUB_ACTOR}[bot]"
+    git_user_email = f"{GITHUB_ACTOR_ID}+{GITHUB_ACTOR}@users.noreply.github.com"
     
-    git config --global user.email "${GITHUB_ACTOR_ID}+${GITHUB_ACTOR}@users.noreply.github.com"
-    git config --global user.name "${git_user_name}"
+    print("Configuring Git user...")
+    run_command(["git", "config", "--global", "user.email", git_user_email])
+    run_command(["git", "config", "--global", "user.name", git_user_name])
 
-    echo "Committing and pushing updated list..."
-    git add "$OUTPUT_FILE" || error "Failed to add the domains list to repo"
-    # SIMPLIFIED: Commit will use the config we just set.
-    git commit -m "Update domains list ($total_lines domains)" || error "Failed to commit the domains list to repo"
+    print("Committing and pushing updated list...")
     
-    if git remote get-url origin >/dev/null 2>&1 && git ls-remote --exit-code --heads origin "${TARGET_BRANCH}" >/dev/null 2>&1; then
-        git pull --rebase origin "${TARGET_BRANCH}" || error "Failed to rebase onto the latest ${TARGET_BRANCH}"
-    fi
-    git push origin "${TARGET_BRANCH}" || error "Failed to push the domains list to repo"
+    run_command(["git", "add", OUTPUT_FILE_NAME])
     
-    echo "Git commit and push complete."
-}
-
+    try:
+        run_command(["git", "commit", "-m", f"Update domains list ({total_lines} domains)"])
+    except RuntimeError as e:
+        if "nothing to commit" in str(e):
+            print("No changes to commit. Skipping push.")
+            return
+        raise
+    
+    # Git pull/push logic (optimized for CI environment)
+    if run(["git", "remote", "get-url", "origin"], check=False, capture_output=True).returncode == 0:
+        print(f"Attempting to push to branch: {TARGET_BRANCH}")
+        run_command(["git", "pull", "--rebase", "origin", TARGET_BRANCH])
+        run_command(["git", "push", "origin", TARGET_BRANCH])
+    else:
+        print("Warning: Origin remote not found. Skipping Git push.")
+        
+    print("Git commit and push complete.")
 
 # --- Main Execution ---
-function main() {
-    # --- 0. Validate Secrets and Sync Git ---
-    echo "--- 0. Initializing ---"
-    
-    # Security check for secrets
-    if [ -z "${API_TOKEN}" ]; then
-        error "API_TOKEN secret is not set. Please set it in GitHub repository settings."
-    fi
-    if [ -z "${ACCOUNT_ID}" ]; then
-        error "ACCOUNT_ID secret is not set. Please set it in GitHub repository settings."
-    fi
+def main():
+    """Main execution function for the Cloudflare blocklist update workflow."""
+    try:
+        # --- 0. Initializing ---
+        print("--- 0. Initializing ---")
+        
+        if not API_TOKEN:
+            raise ScriptExit("API_TOKEN environment variable is not set.")
+        if not ACCOUNT_ID:
+            raise ScriptExit("ACCOUNT_ID environment variable is not set.")
 
-    # Ensure the local checkout is up to date
-    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        if git remote get-url origin >/dev/null 2>&1; then
-            if git ls-remote --exit-code --heads origin "${TARGET_BRANCH}" >/dev/null 2>&1; then
-                git fetch origin "${TARGET_BRANCH}" || error "Failed to fetch ${TARGET_BRANCH} from origin"
-                git checkout -B "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}" || error "Failed to sync local ${TARGET_BRANCH} with origin"
-            else
-                git checkout -B "${TARGET_BRANCH}" || error "Failed to ensure local ${TARGET_BRANCH} exists"
-            fi
-        fi
-    fi
+        is_git_repo = Path(".git").exists()
+        if is_git_repo:
+            # Sync local branch with remote
+            print(f"Target Git Branch: {TARGET_BRANCH}")
+            try:
+                run_command(["git", "fetch", "origin", TARGET_BRANCH])
+                run_command(["git", "checkout", TARGET_BRANCH])
+                run_command(["git", "reset", "--hard", f"origin/{TARGET_BRANCH}"])
+            except CalledProcessError as e:
+                print(f"Warning: Git initialization failed. Continuing with potential outdated branch. Error: {e.stderr}", file=sys.stderr)
+        else:
+            print("Warning: Not running in a Git repository. Git operations will be skipped at the end.")
 
-    # --- 1. Run the Aggregation ---
-    run_aggregation
 
-    # --- 2. Run the Cloudflare Sync ---
-    # We use 'if' to capture the return value from sync_cloudflare
-    # '|| true' ensures the script doesn't exit if sync_cloudflare returns 1 (no changes)
-    if ! sync_cloudflare; then
-        # This block runs if sync_cloudflare returned 1 (silent_error)
-        echo "No changes detected. Halting workflow."
-        exit 0
-    fi
-    
-    # --- 3. Run the Git Commit ---
-    # This block only runs if sync_cloudflare returned 0 (success)
-    local total_lines
-    total_lines=$(wc -l < "$OUTPUT_FILE")
-    commit_to_git "$total_lines"
+        # --- 1. Run the Aggregation ---
+        total_lines = run_aggregation()
 
-    echo "================================================"
-    echo "Aggregation and Cloudflare upload finished!"
-    echo "Total unique domains: $total_lines"
-    echo "================================================"
-}
+        # --- 2. Run the Cloudflare Sync ---
+        sync_cloudflare(total_lines)
+        
+        # --- 3. Run the Git Commit ---
+        if is_git_repo:
+            commit_to_git(total_lines)
 
-# Run the main function
-main "$@"
+        print("================================================")
+        print("Aggregation and Cloudflare upload finished!")
+        print(f"Total unique domains: {total_lines}")
+        print("================================================")
+
+    except ScriptExit as e:
+        if e.silent:
+            print(f"Silent exit: {e}")
+            sys.exit(0)
+        else:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+    except RuntimeError as e:
+        print(f"Critical Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
