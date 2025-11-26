@@ -39,7 +39,8 @@ class Config:
 
     # Aggregator Configuration
     LIST_URLS = [
-        "https://raw.githubusercontent.com/brojangles24/shiny-telegram/refs/heads/main/Aggregated_list/priority_300k.txt",
+        "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_small.txt",
+        #"https://raw.githubusercontent.com/brojangles24/shiny-telegram/refs/heads/main/Aggregated_list/priority_300k.txt",
     ]
 
     @classmethod
