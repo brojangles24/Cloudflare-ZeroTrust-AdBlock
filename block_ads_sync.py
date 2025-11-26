@@ -4,7 +4,7 @@ import tempfile
 import shutil
 import re
 import concurrent.futures
-import json # Required for policy idempotence check
+import json
 import logging
 from pathlib import Path
 from subprocess import run, CalledProcessError
@@ -39,8 +39,7 @@ class Config:
 
     # Aggregator Configuration
     LIST_URLS = [
-        #"https://raw.githubusercontent.com/brojangles24/shiny-telegram/refs/heads/main/Aggregated_list/priority_300k.txt",
-        "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_small.txt" #OISD Small
+        "https://raw.githubusercontent.com/brojangles24/shiny-telegram/refs/heads/main/Aggregated_list/priority_300k.txt",
     ]
 
     @classmethod
@@ -206,7 +205,9 @@ def sync_cloudflare(total_lines):
         run_command(["git", "diff", "--exit-code", CFG.OUTPUT_FILE_NAME])
         raise ScriptExit("The aggregated domains list has not changed", silent=True)
     except RuntimeError:
-        pass # File has changed, continue
+        # This is where the error 'Command failed: git diff --exit-code Aggregated_List.txt' appeared.
+        # This is expected when changes exist, so we catch the failure and continue.
+        pass
 
     if total_lines == 0:
         raise ScriptExit("The aggregated domains list is empty", critical=True)
@@ -263,12 +264,8 @@ def sync_cloudflare(total_lines):
                 result = cf.create_list(list_name, items_json)
                 used_list_ids.append(result['result']['id'])
         
-        # --- Delete Excess Lists ---
-        for list_id in excess_list_ids:
-            logger.info(f"Deleting excess list {list_id}...")
-            cf.delete_list(list_id)
-
-        # --- Update/Create Gateway Policy ---
+        # --- Update/Create Gateway Policy (MOVE THIS STEP UP) ---
+        # We must update the policy FIRST to remove references to the lists we are about to delete.
         policy_id = next((p['id'] for p in current_policies if p.get('name') == CFG.PREFIX), None)
 
         # Build the policy expression (handles 0, 1, or multiple lists)
@@ -299,7 +296,7 @@ def sync_cloudflare(total_lines):
             existing_policy = next((p for p in current_policies if p.get('id') == policy_id), {})
             existing_conditions = existing_policy.get('conditions', [])
             
-            # Simple check: Compare the expression of the first condition
+            # Check if the expression has logically changed
             if existing_conditions and existing_conditions[0].get('expression') == expression_json:
                 logger.info("Policy expression is unchanged. Skipping PUT request.")
             else:
@@ -309,6 +306,20 @@ def sync_cloudflare(total_lines):
             logger.info("Creating policy...")
             cf.create_rule(policy_payload)
             
+        # --- Delete Excess Lists (MOVE THIS STEP DOWN) ---
+        # Now that the Policy is updated and no longer references the excess list IDs, we can delete them.
+        for list_id in excess_list_ids:
+            logger.info(f"Deleting excess list {list_id}...")
+            # We wrap this in a try/except because the list might have been partially deleted
+            # or the connection might be unstable, but we don't want the whole workflow to fail
+            # if the policy update was already successful.
+            try:
+                cf.delete_list(list_id)
+                logger.info(f"Successfully deleted list {list_id}.")
+            except Exception as e:
+                logger.warning(f"Failed to delete excess list {list_id} (might be already gone): {e}")
+
+
         logger.info("Cloudflare sync complete.")
         return True
 
