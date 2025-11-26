@@ -1,3 +1,4 @@
+
 name: Block ads update
 
 on:
@@ -12,28 +13,26 @@ jobs:
   block_ads_update:
     runs-on: ubuntu-latest
     
+    # --- THIS IS THE FIX ---
+    # This block gives the workflow permission to write to your repo
     permissions:
-      contents: write # Correct: This is needed to push the commit
+      contents: write
+    # -----------------------
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      # --- THIS IS THE FIX FOR YOUR SYNTAX ERROR ---
-      - name: Fix line endings
-        run: sed -i 's/\r$//' block_ads.sh
-      # -----------------------------------------------
 
       - name: Install jq, curl and other utilities
         run: |
           sudo apt-get update
           sudo apt-get install -y jq curl coreutils
 
-      - name: Make script executable
-        run: chmod +x block_ads.sh
-      
       - name: Run the script
         env:
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
-        run: ./block_ads.sh
+          # You can safely remove GITHUB_TOKEN, it's not needed by the script
+        run: |
+          chmod +x block_ads.sh
+          ./block_ads.sh
