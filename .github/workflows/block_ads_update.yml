@@ -1,9 +1,12 @@
-name: Block ads update
+name: Cloudflare Blocklist Sync
 
 on:
+  # Allows manual triggering from the GitHub Actions tab
   workflow_dispatch:
+  # Runs every hour
   schedule:
     - cron: '0 * * * *'
+  # Runs on pushes to any branch (you might want to restrict this)
   push:
     branches:
       - '**'
@@ -13,20 +16,31 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
+      # Required for the script to commit changes to Aggregated_List.txt
       contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Ensure a full history is fetched for git operations in the script
+          fetch-depth: 0
 
-      - name: Install Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3 python3-pip
+          python3 -m pip install --upgrade pip
+          pip install requests
 
-      - name: Run block_ads.py
+      - name: Run block_ads_sync.py
         env:
+          # Inject secrets as environment variables for the Python script
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
-        run: |
-          python3 block_ads.py
+        # NOTE: I am referencing the *recommended* new name for the sync script.
+        # Please rename your local file from block_ads.py to block_ads_sync.py.
+        run: python3 block_ads_sync.py
