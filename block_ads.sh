@@ -399,8 +399,10 @@ function commit_to_git() {
     echo "Committing and pushing updated list..."
     git add "$OUTPUT_FILE" || error "Failed to add the domains list to repo"
     
+    # --- FIX FOR INFINITE LOOPS ---
+    # Add [skip ci] to the commit message
     git commit \
-        -m "Update domains list ($total_lines domains)" \
+        -m "Update domains list ($total_lines domains) [skip ci]" \
         --author="${git_user_name} <${git_user_email}>" \
         || error "Failed to commit the domains list to repo"
     
