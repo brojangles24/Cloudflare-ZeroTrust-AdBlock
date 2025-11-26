@@ -115,17 +115,12 @@ def process_source(name, url):
     return safe_parse(text)
 
 
-def strongest_aggregation(raw_lists):
-    counter = Counter()
-    for src, domains in raw_lists.items():
-        for d in domains:
-            counter[d] += 1
-    final = set()
-    for d, score in counter.items():
-        if score > 1:  # threshold adjustable
-            final.add(d)
-    return final
-
+def smoosh_booties(raw_lists):
+    merged = set()
+    for domains in raw_lists.values():
+        merged.update(domains)
+    return merged
+    
 
 def main():
     start = time.time()
@@ -140,7 +135,7 @@ def main():
             except:
                 raw_lists[name] = []
 
-    merged = strongest_aggregation(raw_lists)
+    merged =  smoosh_booties(raw_lists)
     cleaned = merged.difference(EXTRA_ALLOW)
 
     cleaned = sorted(cleaned)
