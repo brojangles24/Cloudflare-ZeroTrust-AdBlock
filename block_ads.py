@@ -13,13 +13,16 @@ from collections import Counter
 # ---------------- CONFIG ----------------
 
 SOURCES = {
-    "OISD_WILD": "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_big.txt",
-    "HAGEZI_ULTIMATE": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard.txt",
-    "STEVENBLACK": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+    #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt" #Hagezi Ultimate
+    #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt" #Hagezi Pro++
+    #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt" # Hagezi Pro
+    #"https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/domains.wildcards" # 1Hosts Lite
+    #"https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_small.txt" #OISD Small
+    "https://raw.githubusercontent.com/brojangles24/shiny-telegram/refs/heads/main/Aggregated_list/priority_300k.txt" #Custom Aggregation
 }
 
 CACHE_DIR = "cache"
-OUTPUT = "singularity_final.txt"
+OUTPUT = "Aggregated_List.txt"
 EXTRA_ALLOW = {"localhost"}
 
 THREADS = 12
@@ -143,7 +146,7 @@ def main():
     cleaned = sorted(cleaned)
 
     with open(OUTPUT, "w") as f:
-        f.write("# Singularity DNS Aggregator Output\n")
+        f.write("# Cloudflare-ZeroTrust-Adblock\n")
         f.write("# Generated: " + datetime.utcnow().isoformat() + "Z\n")
         f.write("# Total: " + str(len(cleaned)) + "\n\n")
         f.write("\n".join(cleaned))
