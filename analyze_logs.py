@@ -15,7 +15,7 @@ REPORT_THRESHOLD = 7  # Domains rated 7+ are potential false positives
 API_MODEL = "gpt-4o"
 CLOUDFLARE_API_ENDPOINT = "https://api.cloudflare.com/client/v4/graphql"
 
-# New: Define report filenames
+# Define report filenames
 ALLOW_LIST_FILE = Path("allow_list.md")
 REVIEW_LIST_FILE = Path("review_list.md")
 
@@ -220,27 +220,29 @@ def main():
     logging.info("Fetching latest blocked domains from Cloudflare API...")
     domains_to_analyze = fetch_blocked_domains_from_api(account_id, api_token)
     
-    if not domains_to_analyze:
-        logging.info("No blocked domains found or error fetching from API. Exiting.")
-        sys.exit(0)
-
+    # Initialize an empty results dictionary
     all_results: Dict[str, Dict[str, Any]] = {}
-    total_batches = (len(domains_to_analyze) + CHUNK_SIZE - 1) // CHUNK_SIZE
 
-    for i in range(0, len(domains_to_analyze), CHUNK_SIZE):
-        chunk = domains_to_analyze[i:i + CHUNK_SIZE]
-        logging.info(f"Analyzing batch {i//CHUNK_SIZE + 1} of {total_batches} ({len(chunk)} domains)...")
-        chunk_results = analyze_domains(chunk, client, model=API_MODEL)
-        if chunk_results:
-            all_results.update(chunk_results)
-        else:
-            logging.warning(f"Batch {i//CHUNK_SIZE + 1} failed or returned no results.")
+    if domains_to_analyze:
+        # If we found domains, analyze them
+        total_batches = (len(domains_to_analyze) + CHUNK_SIZE - 1) // CHUNK_SIZE
 
-    if not all_results:
-        logging.error("Analysis complete, but no results were gathered. Exiting.")
-        sys.exit(1)
+        for i in range(0, len(domains_to_analyze), CHUNK_SIZE):
+            chunk = domains_to_analyze[i:i + CHUNK_SIZE]
+            logging.info(f"Analyzing batch {i//CHUNK_SIZE + 1} of {total_batches} ({len(chunk)} domains)...")
+            
+            chunk_results = analyze_domains(chunk, client, model=API_MODEL)
+            if chunk_results:
+                all_results.update(chunk_results)
+            else:
+                logging.warning(f"Batch {i//CHUNK_SIZE + 1} failed or returned no results.")
+    else:
+        # If no domains were found, just log it. We will still generate a report.
+        logging.info("No new blocked domains found. Proceeding to generate empty report.")
 
+    # --- This step now runs every single time ---
     logging.info("Analysis complete. Generating report files...")
+    # If all_results is empty, this will correctly create empty reports
     generate_report(all_results, REPORT_THRESHOLD)
 
 
