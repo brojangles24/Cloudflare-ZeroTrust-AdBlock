@@ -1,0 +1,42 @@
+name: Analyze Gateway DNS Logs
+
+on:
+  schedule:
+    # Runs at 15 minutes past every hour (e.g., 1:15, 2:15)
+    # This gives logs time to populate before querying.
+    - cron: "15 * * * *"
+  workflow_dispatch: # Allows you to run it manually from the "Actions" tab
+
+jobs:
+  analyze-dns-logs:
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Check out your repository code so we can find the Python script
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Step 2: Get DNS logs from the Cloudflare Logpull API
+      - name: Get DNS logs for the past hour
+        run: |
+          # Logs can be delayed. We look back from 10 mins ago to 70 mins ago
+          # to safely get a full one-hour block.
+          START_TIME=$(date -u -d '70 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          END_TIME=$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+
+          echo "Fetching logs from $START_TIME to $END_TIME"
+
+          # Use the Logpull API (/logs/received)
+          # We specify 'dataset=gateway_dns'
+          # We select fields to keep the log size small
+          curl -s -X GET \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CF_ACCOUNT }}/logs/received?start=${START_TIME}&end=${END_TIME}&dataset=gateway_dns&fields=QueryName,Action,DeviceName,Email,PolicyName" \
+            -H "Authorization: Bearer ${{ secrets.CF_TOKEN }}" \
+            -H "Content-Type: application/json" \
+          > logs.json
+
+          echo "Log download complete. File size: $(ls -lh logs.json | awk '{print $5}')"
+
+      # Step 3: Run your new Python analyzer script on the downloaded logs
+      - name: Analyze logs for false positives
+        run: |
+          python3 gateway_report.py
