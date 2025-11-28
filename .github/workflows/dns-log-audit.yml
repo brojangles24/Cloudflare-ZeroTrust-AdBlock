@@ -1,56 +1,46 @@
 name: Analyze Gateway DNS Logs
 
 on:
-  schedule:
-    # Runs at 15 minutes past every hour (e.g., 1:15, 2:15)
-    # This gives logs time to populate before querying.
-    - cron: "15 * * * *"
-  workflow_dispatch: # Allows you to run it manually from the "Actions" tab
+schedule:
+- cron: "15 * * * *" # Runs at 15 minutes past every hour
+workflow_dispatch: # Manual trigger
 
 jobs:
-  analyze-dns-logs:
-    runs-on: ubuntu-latest
-    steps:
-      # Step 1: Check out your repository code to find the Python script
-      - name: Check out repository
-        uses: actions/checkout@v4
+analyze-dns-logs:
+runs-on: ubuntu-latest
+steps:
+- name: Check out repository
+uses: actions/checkout@v4
 
-      # Step 2: Set up Python
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+```
+  - name: Set up Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: '3.10'
 
-      # Step 3: Install the Google Gemini library
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install google-generativeai
+  - name: Install Python dependencies
+    run: |
+      python -m pip install --upgrade pip
+      pip install openai
 
-      # Step 4: Get DNS logs from the Cloudflare Logpull API
-      - name: Get DNS logs for the past hour
-        run: |
-          # Logs can be delayed. We look back from 10 mins ago to 70 mins ago
-          # to safely get a full one-hour block.
-          START_TIME=$(date -u -d '70 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
-          END_TIME=$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+  - name: Get DNS logs for the past hour
+    run: |
+      START_TIME=$(date -u -d '70 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+      END_TIME=$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
 
-          echo "Fetching logs from $START_TIME to $END_TIME"
+      echo "Fetching logs from $START_TIME to $END_TIME"
 
-          # Use the Logpull API (/logs/received) and your existing secrets
-          # Make sure secrets.ACCOUNT_ID and secrets.API_TOKEN are set in your repo
-          curl -s -X GET \
-            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.ACCOUNT_ID }}/logs/received?start=${START_TIME}&end=${END_TIME}&dataset=gateway_dns&fields=QueryName,Action,Email,DeviceName,PolicyName" \
-            -H "Authorization: Bearer ${{ secrets.API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-          > logs.json
+      curl -s -X GET \
+        "https://api.cloudflare.com/client/v4/accounts/${{ secrets.ACCOUNT_ID }}/logs/received?start=${START_TIME}&end=${END_TIME}&dataset=gateway_dns&fields=QueryName,Action,Email,DeviceName,PolicyName" \
+        -H "Authorization: Bearer ${{ secrets.API_TOKEN }}" \
+        -H "Content-Type: application/json" \
+      > logs.json
 
-          echo "Log download complete. File size: $(ls -lh logs.json | awk '{print $5}')"
+      echo "Log download complete. File size: $(ls -lh logs.json | awk '{print $5}')"
 
-      # Step 5: Run the analyzer script, passing the Gemini API key securely
-      # Make sure secrets.GEMINI_API_KEY is set in your repo
-      - name: Analyze logs with Gemini
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          python3 gateway_report.py
+  - name: Analyze logs with ChatGPT
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    run: |
+      python3 gateway_report.py
+```
