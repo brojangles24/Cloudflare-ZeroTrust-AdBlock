@@ -23,7 +23,6 @@ ALLOW_LIST_FILE = Path("allow_list.md")
 REVIEW_LIST_FILE = Path("review_list.md")
 ANALYSIS_CACHE_FILE = Path("analysis_cache.json") 
 
-# --- NEW: Define debug log filenames ---
 FETCHED_DOMAINS_LOG = Path("_daily_fetched_domains.log")
 OPENAI_AUDIT_LOG = Path("_openai_audit.log")
 
@@ -52,12 +51,29 @@ logging.basicConfig(
     ]
 )
 
-# --- Cache Functions (Unchanged) ---
+# --- Cache Functions (UPDATED) ---
+
+def save_cache(cache_file: Path, cache_data: Dict[str, Dict[str, Any]]):
+    """Saves the analysis cache to a file."""
+    try:
+        with cache_file.open("w") as f:
+            json.dump(cache_data, f, indent=2)
+    except IOError as e:
+        logging.error(f"Could not write to cache file: {e}")
 
 def load_cache(cache_file: Path) -> Dict[str, Dict[str, Any]]:
+    """Loads the analysis cache file. If it doesn't exist, create it."""
     if not cache_file.exists():
-        logging.info("No cache file found. Starting fresh.")
+        logging.info(f"No cache file found at {cache_file}. Creating an empty one.")
+        try:
+            # --- THIS IS THE FIX ---
+            # Create an empty file so git add doesn't fail
+            save_cache(cache_file, {})
+            # --- END OF FIX ---
+        except Exception as e:
+            logging.warning(f"Could not create empty cache file: {e}")
         return {}
+        
     try:
         with cache_file.open("r") as f:
             return json.load(f)
@@ -65,14 +81,7 @@ def load_cache(cache_file: Path) -> Dict[str, Dict[str, Any]]:
         logging.warning(f"Could not read cache file ({e}). Starting fresh.")
         return {}
 
-def save_cache(cache_file: Path, cache_data: Dict[str, Dict[str, Any]]):
-    try:
-        with cache_file.open("w") as f:
-            json.dump(cache_data, f, indent=2)
-    except IOError as e:
-        logging.error(f"Could not write to cache file: {e}")
-
-# --- API Fetch Function (Unchanged) ---
+# --- API Fetch Function (REVERTED TO CORRECT QUERY) ---
 
 def fetch_blocked_domains_from_api(
     account_id: str, api_token: str
@@ -88,17 +97,21 @@ def fetch_blocked_domains_from_api(
         "Authorization": f"Bearer {api_token}",
         "Content-Type": "application/json"
     }
+    
+    # --- THIS QUERY IS REVERTED TO THE CORRECT VERSION ---
     query = """
-    query GetBlockedDns($accountTag: string, $filter: GatewayDnsFilter_InputObject, $limit: int) {
+    query GetBlockedDns($accountTag: string, $filter: GatewayDnsAnalyticsFilter_InputObject, $limit: int) {
       viewer {
         accounts(filter: {accountTag: $accountTag}) {
-          gatewayDns(
+          gatewayDnsAnalytics(
             limit: $limit
             orderBy: [datetime_DESC]
             filter: $filter
           ) {
-            queryName
-            datetime  
+            dimensions {
+              queryName
+              datetime
+            }
           }
         }
       }
@@ -107,6 +120,8 @@ def fetch_blocked_domains_from_api(
     
     while True:
         end_time_str = end_time.isoformat()
+        
+        # Note: The filter type is also reverted
         variables = {
             "accountTag": account_id,
             "limit": API_FETCH_LIMIT,
@@ -117,6 +132,8 @@ def fetch_blocked_domains_from_api(
                 "datetime_leq": end_time_str
             }
         }
+        # --- END OF QUERY REVERT ---
+        
         try:
             response = requests.post(
                 CLOUDFLARE_API_ENDPOINT,
@@ -129,17 +146,21 @@ def fetch_blocked_domains_from_api(
             if "errors" in data:
                 logging.error(f"Cloudflare API Error: {data['errors']}")
                 break
+                
             results = data.get("data", {}).get("viewer", {}).get("accounts", [])
             if not results:
                 logging.error("No 'accounts' data returned from Cloudflare API.")
                 break
-            analytics = results[0].get("gatewayDns", [])
+            
+            # Note: Parsing logic is also reverted
+            analytics = results[0].get("gatewayDnsAnalytics", [])
+            
             if not analytics:
                 logging.info("Pagination complete (no more results in this time range).")
                 break
             
             for item in analytics:
-                domain = item.get("queryName")
+                domain = item.get("dimensions", {}).get("queryName")
                 if domain:
                     blocked_domains.add(domain)
             
@@ -149,11 +170,13 @@ def fetch_blocked_domains_from_api(
                 logging.info(f"Pagination complete (last batch was < {API_FETCH_LIMIT}).")
                 break 
 
-            last_timestamp_str = analytics[-1]["datetime"]
+            last_timestamp_str = analytics[-1]["dimensions"]["datetime"]
+            
             if last_timestamp_str.endswith('Z'):
                 last_timestamp_str = last_timestamp_str[:-1] + '+00:00'
             last_datetime = datetime.fromisoformat(last_timestamp_str)
             end_time = last_datetime - timedelta(microseconds=1)
+
         except requests.exceptions.RequestException as e:
             logging.error(f"Error calling Cloudflare API: {e}")
             break
@@ -164,7 +187,7 @@ def fetch_blocked_domains_from_api(
     )
     return list(blocked_domains)
 
-# --- Analysis Function (UPDATED WITH LOGGING) ---
+# --- Analysis Function (Unchanged) ---
 
 def analyze_domains(
     domain_list: List[str], client: OpenAI, model: str
@@ -172,10 +195,7 @@ def analyze_domains(
     """Analyzes a list of domains using the OpenAI API and logs the interaction."""
     if not domain_list:
         return {}
-        
     user_prompt = json.dumps(domain_list)
-    
-    # --- NEW: Log the request ---
     try:
         with OPENAI_AUDIT_LOG.open("a", encoding="utf-8") as f:
             f.write(f"--- {datetime.now(timezone.utc).isoformat()} ---\n")
@@ -183,8 +203,6 @@ def analyze_domains(
             f.write(f"{user_prompt}\n\n")
     except Exception as e:
         logging.warning(f"Could not write to audit log: {e}")
-    # --- END NEW ---
-
     try:
         response = client.chat.completions.create(
             model=model,
@@ -199,27 +217,20 @@ def analyze_domains(
         if not text:
             logging.error("Received empty response from API.")
             return {}
-
-        # --- NEW: Log the response ---
         try:
             with OPENAI_AUDIT_LOG.open("a", encoding="utf-8") as f:
                 f.write("[RESPONSE]\n")
                 f.write(f"{text}\n\n")
         except Exception as e:
             logging.warning(f"Could not write to audit log: {e}")
-        # --- END NEW ---
-            
         return json.loads(text)
-        
     except (APIError, json.JSONDecodeError, Exception) as e:
         logging.error(f"Error during OpenAI analysis: {e}")
-        # --- NEW: Log the error ---
         try:
             with OPENAI_AUDIT_LOG.open("a", encoding="utf-8") as f:
                 f.write(f"[ERROR]\n{e}\n\n")
         except Exception as log_e:
             logging.warning(f"Could not write to audit log: {log_e}")
-        # --- END NEW ---
         return {}
 
 
@@ -266,12 +277,11 @@ def generate_report(all_results: Dict[str, Dict[str, Any]], threshold: int):
                 f.write(f"| {rating}/10 | `{domain}` |\n")
     logging.info(f"Wrote {len(review_list)} domains to {REVIEW_LIST_FILE}")
 
-# --- Main Function (UPDATED) ---
+# --- Main Function (Unchanged) ---
 
 def main():
     print("--- Cloudflare Gateway Log Analysis (with OpenAI API) ---")
     
-    # --- NEW: Clear old log files for this run ---
     for log_file in [FETCHED_DOMAINS_LOG, OPENAI_AUDIT_LOG]:
         try:
             if log_file.exists():
@@ -279,7 +289,6 @@ def main():
             logging.info(f"Initialized log file: {log_file}")
         except Exception as e:
             logging.warning(f"Could not clear log file {log_file}: {e}")
-    # --- END NEW ---
 
     openai_api_key = os.environ.get("OPENAI_API_KEY")
     if not openai_api_key:
@@ -299,13 +308,12 @@ def main():
         logging.error("Error: ACCOUNT_ID or API_TOKEN env variables not set.")
         sys.exit(1)
 
-    # Load the persistent cache
+    # This will now create 'analysis_cache.json' if it's missing
     analysis_cache = load_cache(ANALYSIS_CACHE_FILE)
 
     logging.info("Fetching latest blocked domains from Cloudflare API...")
     domains_from_api = fetch_blocked_domains_from_api(account_id, api_token)
     
-    # --- NEW: Write the fetched domains log ---
     try:
         with FETCHED_DOMAINS_LOG.open("w", encoding="utf-8") as f:
             f.write(f"# Fetched {len(domains_from_api)} unique domains on {datetime.now(timezone.utc).isoformat()}\n")
@@ -314,7 +322,6 @@ def main():
         logging.info(f"Wrote {len(domains_from_api)} domains to {FETCHED_DOMAINS_LOG}")
     except Exception as e:
         logging.error(f"Could not write fetched domains log: {e}")
-    # --- END NEW ---
     
     domains_to_analyze = [
         domain for domain in domains_from_api if domain not in analysis_cache
@@ -340,7 +347,7 @@ def main():
                 logging.warning(f"Batch {i//CHUNK_SIZE + 1} failed or returned no results.")
         
         analysis_cache.update(new_results)
-        save_cache(ANALYSIS_CACHE_FILE, analysis_cache)
+        save_cache(ANALYSIS_CACHE_FILE, analysis_cache) # Save the updated cache
         logging.info(f"Updated cache with {len(new_results)} new entries.")
     
     else:
