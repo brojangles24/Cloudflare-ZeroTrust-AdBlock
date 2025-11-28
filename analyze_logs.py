@@ -2,7 +2,8 @@ import os
 import json
 import sys
 import logging
-import requests  # We need the 'requests' library now
+import requests
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from openai import OpenAI, APIError
 from typing import Set, List, Dict, Any, Tuple, Optional
@@ -13,6 +14,10 @@ CHUNK_SIZE = 200
 REPORT_THRESHOLD = 7  # Domains rated 7+ are potential false positives
 API_MODEL = "gpt-4o"
 CLOUDFLARE_API_ENDPOINT = "https://api.cloudflare.com/client/v4/graphql"
+
+# New: Define report filenames
+ALLOW_LIST_FILE = Path("allow_list.md")
+REVIEW_LIST_FILE = Path("review_list.md")
 
 SYSTEM_PROMPT = """
 You are a DNS analysis expert. You specialize in identifying false positives in
@@ -43,19 +48,21 @@ def fetch_blocked_domains_from_api(
     account_id: str, api_token: str
 ) -> List[str]:
     """
-    Fetches the last 1000 unique blocked domains directly from 
-    the Cloudflare GraphQL API.
+    Fetches unique blocked domains from the last 24 hours
+    from the Cloudflare GraphQL API.
     """
     blocked_domains: Set[str] = set()
 
-    # This GraphQL query asks for the 1000 most recent DNS events
-    # that were blocked, and only returns the domain name.
+    # Calculate 24 hours ago in RFC3339 format
+    start_time = (datetime.now(timezone.utc) - timedelta(hours=24))
+    start_time_str = start_time.isoformat()
+
     query = """
     query GetBlockedDns($accountTag: string, $filter: GatewayDnsAnalyticsFilter_InputObject) {
       viewer {
         accounts(filter: {accountTag: $accountTag}) {
           gatewayDnsAnalytics(
-            limit: 1000
+            limit: 10000
             orderBy: [datetime_DESC]
             filter: $filter
           ) {
@@ -71,7 +78,8 @@ def fetch_blocked_domains_from_api(
     variables = {
         "accountTag": account_id,
         "filter": {
-            "action": "block"
+            "action": "block",
+            "datetime_geq": start_time_str  # "datetime greater than or equal to"
         }
     }
 
@@ -86,8 +94,7 @@ def fetch_blocked_domains_from_api(
             headers=headers,
             json={"query": query, "variables": variables}
         )
-        response.raise_for_status()  # Raise an error for bad responses (4xx, 5xx)
-        
+        response.raise_for_status()
         data = response.json()
         
         if "errors" in data:
@@ -108,11 +115,8 @@ def fetch_blocked_domains_from_api(
     except requests.exceptions.RequestException as e:
         logging.error(f"Error calling Cloudflare API: {e}")
         return []
-    except Exception as e:
-        logging.error(f"An unexpected error occurred during API fetch: {e}")
-        return []
 
-    logging.info(f"Found {len(blocked_domains)} unique blocked domains from API.")
+    logging.info(f"Found {len(blocked_domains)} unique blocked domains from the last 24 hours.")
     return list(blocked_domains)
 
 
@@ -132,16 +136,13 @@ def analyze_domains(
                 {"role": "user", "content": user_prompt}
             ],
             temperature=0,
-            response_format={"type": "json_object"}  # Enable JSON mode
+            response_format={"type": "json_object"}
         )
-        
         text = response.choices[0].message.content
         if not text:
             logging.error("Received empty response from API.")
             return {}
-            
         return json.loads(text)
-
     except APIError as e:
         logging.error(f"Error calling OpenAI API: {e}")
         return {}
@@ -154,7 +155,7 @@ def analyze_domains(
 
 
 def generate_report(all_results: Dict[str, Dict[str, Any]], threshold: int):
-    """Sorts results and prints a formatted report to the console."""
+    """Sorts results and writes them to markdown files."""
     allow_list: List[Tuple[str, Dict]] = []
     review_list: List[Tuple[str, Dict]] = []
 
@@ -165,30 +166,39 @@ def generate_report(all_results: Dict[str, Dict[str, Any]], threshold: int):
         else:
             review_list.append((domain, data))
 
-    if allow_list:
-        allow_list.sort(key=lambda x: x[1].get("rating", 1), reverse=True)
-        print(f"\n--- 🟢 Potential Allow List ({len(allow_list)} Domains) ---")
-        for domain, data in allow_list:
-            print(f"Domain: {domain}\n"
-                  f"Rating: {data.get('rating', 'N/A')}/10\n"
-                  f"Reason: {data.get('reason', 'No reason provided.')}\n")
-    else:
-        print("\n--- 🟢 No potential false positives found. ---")
+    # --- Generate Allow List ---
+    allow_list.sort(key=lambda x: x[1].get("rating", 1), reverse=True)
+    with ALLOW_LIST_FILE.open("w") as f:
+        f.write(f"# 🟢 Potential Allow List ({len(allow_list)} Domains)\n\n")
+        f.write(f"_Updated: {datetime.now(timezone.utc).isoformat()}_\n\n")
+        if not allow_list:
+            f.write("No potential false positives found.\n")
+        else:
+            for domain, data in allow_list:
+                f.write(f"### {domain}\n")
+                f.write(f"* **Rating:** {data.get('rating', 'N/A')}/10\n")
+                f.write(f"* **Reason:** {data.get('reason', 'No reason provided.')}\n\n")
+    logging.info(f"Wrote {len(allow_list)} domains to {ALLOW_LIST_FILE}")
 
-    if review_list:
-        review_list.sort(key=lambda x: x[1].get("rating", 1))
-        print(f"\n--- 🔴 Review / Blocked List ({len(review_list)} Domains) ---")
-        for domain, data in review_list:
-            rating = data.get('rating', 1)
-            print(f"Rating: {rating:<2}/10 | Domain: {domain}")
-    else:
-        print("\n--- 🔴 No domains rated low enough to review. ---")
+    # --- Generate Review List ---
+    review_list.sort(key=lambda x: x[1].get("rating", 1))
+    with REVIEW_LIST_FILE.open("w") as f:
+        f.write(f"# 🔴 Review / Blocked List ({len(review_list)} Domains)\n\n")
+        f.write(f"_Updated: {datetime.now(timezone.utc).isoformat()}_\n\n")
+        if not review_list:
+            f.write("No domains to review.\n")
+        else:
+            f.write("| Rating | Domain |\n")
+            f.write("|:---|:---|\n")
+            for domain, data in review_list:
+                rating = data.get('rating', 1)
+                f.write(f"| {rating}/10 | `{domain}` |\n")
+    logging.info(f"Wrote {len(review_list)} domains to {REVIEW_LIST_FILE}")
 
 
 def main():
     print("--- Cloudflare Gateway Log Analysis (with OpenAI API) ---")
 
-    # Get OpenAI API Key
     openai_api_key = os.environ.get("OPENAI_API_KEY")
     if not openai_api_key:
         logging.error("Error: OPENAI_API_KEY environment variable not set.")
@@ -200,16 +210,15 @@ def main():
         logging.error(f"Failed to initialize OpenAI client: {e}")
         sys.exit(1)
 
-    # Get Cloudflare API Credentials
-    cf_account_id = os.environ.get("CF_ACCOUNT_ID")
-    cf_api_token = os.environ.get("CF_API_TOKEN")
+    account_id = os.environ.get("ACCOUNT_ID")
+    api_token = os.environ.get("API_TOKEN")
 
-    if not cf_account_id or not cf_api_token:
-        logging.error("Error: CF_ACCOUNT_ID or CF_API_TOKEN env variables not set.")
+    if not account_id or not api_token:
+        logging.error("Error: ACCOUNT_ID or API_TOKEN env variables not set.")
         sys.exit(1)
 
     logging.info("Fetching latest blocked domains from Cloudflare API...")
-    domains_to_analyze = fetch_blocked_domains_from_api(cf_account_id, cf_api_token)
+    domains_to_analyze = fetch_blocked_domains_from_api(account_id, api_token)
     
     if not domains_to_analyze:
         logging.info("No blocked domains found or error fetching from API. Exiting.")
@@ -221,7 +230,6 @@ def main():
     for i in range(0, len(domains_to_analyze), CHUNK_SIZE):
         chunk = domains_to_analyze[i:i + CHUNK_SIZE]
         logging.info(f"Analyzing batch {i//CHUNK_SIZE + 1} of {total_batches} ({len(chunk)} domains)...")
-        
         chunk_results = analyze_domains(chunk, client, model=API_MODEL)
         if chunk_results:
             all_results.update(chunk_results)
@@ -232,7 +240,7 @@ def main():
         logging.error("Analysis complete, but no results were gathered. Exiting.")
         sys.exit(1)
 
-    logging.info("Analysis complete. Generating report...")
+    logging.info("Analysis complete. Generating report files...")
     generate_report(all_results, REPORT_THRESHOLD)
 
 
