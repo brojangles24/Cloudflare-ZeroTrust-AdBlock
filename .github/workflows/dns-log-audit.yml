@@ -1,44 +1,44 @@
 name: Analyze Gateway DNS Logs
 
 on:
-schedule:
-- cron: "15 * * * *" # Runs at 15 minutes past every hour
-workflow_dispatch: # Manual trigger
+  schedule:
+    - cron: "15 * * * *" # Runs at 15 minutes past every hour
+  workflow_dispatch: # Manual trigger
 
 jobs:
-analyze-dns-logs:
-runs-on: ubuntu-latest
-steps:
-- name: Check out repository
-uses: actions/checkout@v4
+  analyze-dns-logs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-  - name: Set up Python
-    uses: actions/setup-python@v5
-    with:
-      python-version: '3.10'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-  - name: Install Python dependencies
-    run: |
-      python -m pip install --upgrade pip
-      pip install openai
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install openai
 
-  - name: Get DNS logs for the past hour
-    run: |
-      START_TIME=$(date -u -d '70 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
-      END_TIME=$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+      - name: Get DNS logs for the past hour
+        run: |
+          START_TIME=$(date -u -d '70 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          END_TIME=$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
 
-      echo "Fetching logs from $START_TIME to $END_TIME"
+          echo "Fetching logs from $START_TIME to $END_TIME"
 
-      curl -s -X GET \
-        "https://api.cloudflare.com/client/v4/accounts/${{ secrets.ACCOUNT_ID }}/logs/received?start=${START_TIME}&end=${END_TIME}&dataset=gateway_dns&fields=QueryName,Action,Email,DeviceName,PolicyName" \
-        -H "Authorization: Bearer ${{ secrets.API_TOKEN }}" \
-        -H "Content-Type: application/json" \
-      > logs.json
+          curl -s -X GET \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.ACCOUNT_ID }}/logs/received?start=${START_TIME}&end=${END_TIME}&dataset=gateway_dns&fields=QueryName,Action,Email,DeviceName,PolicyName" \
+            -H "Authorization: Bearer ${{ secrets.API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+          > logs.json
 
-      echo "Log download complete. File size: $(ls -lh logs.json | awk '{print $5}')"
+          echo "Log download complete. File size: $(ls -lh logs.json | awk '{print $5}')"
 
-  - name: Analyze logs with ChatGPT
-    env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-    run: |
-      python3 gateway_report.py
+      - name: Analyze logs with ChatGPT
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python3
