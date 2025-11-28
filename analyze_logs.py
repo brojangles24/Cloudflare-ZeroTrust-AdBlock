@@ -15,9 +15,17 @@ REPORT_THRESHOLD = 7  # Domains rated 7+ are potential false positives
 API_MODEL = "gpt-4o"
 CLOUDFLARE_API_ENDPOINT = "https://api.cloudflare.com/client/v4/graphql"
 
+CLOUDFLARE_POLICY_NAME = "Block ads"
+API_FETCH_LIMIT = 10000
+
 # Define report filenames
 ALLOW_LIST_FILE = Path("allow_list.md")
 REVIEW_LIST_FILE = Path("review_list.md")
+ANALYSIS_CACHE_FILE = Path("analysis_cache.json") 
+
+# --- NEW: Define debug log filenames ---
+FETCHED_DOMAINS_LOG = Path("_daily_fetched_domains.log")
+OPENAI_AUDIT_LOG = Path("_openai_audit.log")
 
 SYSTEM_PROMPT = """
 You are a DNS analysis expert. You specialize in identifying false positives in
@@ -44,90 +52,139 @@ logging.basicConfig(
     ]
 )
 
+# --- Cache Functions (Unchanged) ---
+
+def load_cache(cache_file: Path) -> Dict[str, Dict[str, Any]]:
+    if not cache_file.exists():
+        logging.info("No cache file found. Starting fresh.")
+        return {}
+    try:
+        with cache_file.open("r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        logging.warning(f"Could not read cache file ({e}). Starting fresh.")
+        return {}
+
+def save_cache(cache_file: Path, cache_data: Dict[str, Dict[str, Any]]):
+    try:
+        with cache_file.open("w") as f:
+            json.dump(cache_data, f, indent=2)
+    except IOError as e:
+        logging.error(f"Could not write to cache file: {e}")
+
+# --- API Fetch Function (Unchanged) ---
+
 def fetch_blocked_domains_from_api(
     account_id: str, api_token: str
 ) -> List[str]:
     """
-    Fetches unique blocked domains from the last 24 hours
-    from the Cloudflare GraphQL API.
+    Fetches ALL unique blocked domains from the last 24 hours
+    that match a specific policy name, using pagination.
     """
     blocked_domains: Set[str] = set()
-
-    # Calculate 24 hours ago in RFC3339 format
-    start_time = (datetime.now(timezone.utc) - timedelta(hours=24))
-    start_time_str = start_time.isoformat()
-
+    start_time_str = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    end_time = datetime.now(timezone.utc)
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json"
+    }
     query = """
-    query GetBlockedDns($accountTag: string, $filter: GatewayDnsAnalyticsFilter_InputObject) {
+    query GetBlockedDns($accountTag: string, $filter: GatewayDnsFilter_InputObject, $limit: int) {
       viewer {
         accounts(filter: {accountTag: $accountTag}) {
-          gatewayDnsAnalytics(
-            limit: 10000
+          gatewayDns(
+            limit: $limit
             orderBy: [datetime_DESC]
             filter: $filter
           ) {
-            dimensions {
-              queryName
-            }
+            queryName
+            datetime  
           }
         }
       }
     }
     """
     
-    variables = {
-        "accountTag": account_id,
-        "filter": {
-            "action": "block",
-            "datetime_geq": start_time_str  # "datetime greater than or equal to"
+    while True:
+        end_time_str = end_time.isoformat()
+        variables = {
+            "accountTag": account_id,
+            "limit": API_FETCH_LIMIT,
+            "filter": {
+                "action_in": ["block"],
+                "policyName_in": [CLOUDFLARE_POLICY_NAME],
+                "datetime_geq": start_time_str,
+                "datetime_leq": end_time_str
+            }
         }
-    }
+        try:
+            response = requests.post(
+                CLOUDFLARE_API_ENDPOINT,
+                headers=headers,
+                json={"query": query, "variables": variables}
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            if "errors" in data:
+                logging.error(f"Cloudflare API Error: {data['errors']}")
+                break
+            results = data.get("data", {}).get("viewer", {}).get("accounts", [])
+            if not results:
+                logging.error("No 'accounts' data returned from Cloudflare API.")
+                break
+            analytics = results[0].get("gatewayDns", [])
+            if not analytics:
+                logging.info("Pagination complete (no more results in this time range).")
+                break
+            
+            for item in analytics:
+                domain = item.get("queryName")
+                if domain:
+                    blocked_domains.add(domain)
+            
+            logging.info(f"Fetched a batch of {len(analytics)} records. Total unique domains so far: {len(blocked_domains)}")
 
-    headers = {
-        "Authorization": f"Bearer {api_token}",
-        "Content-Type": "application/json"
-    }
+            if len(analytics) < API_FETCH_LIMIT:
+                logging.info(f"Pagination complete (last batch was < {API_FETCH_LIMIT}).")
+                break 
 
-    try:
-        response = requests.post(
-            CLOUDFLARE_API_ENDPOINT,
-            headers=headers,
-            json={"query": query, "variables": variables}
-        )
-        response.raise_for_status()
-        data = response.json()
-        
-        if "errors" in data:
-            logging.error(f"Cloudflare API Error: {data['errors']}")
-            return []
+            last_timestamp_str = analytics[-1]["datetime"]
+            if last_timestamp_str.endswith('Z'):
+                last_timestamp_str = last_timestamp_str[:-1] + '+00:00'
+            last_datetime = datetime.fromisoformat(last_timestamp_str)
+            end_time = last_datetime - timedelta(microseconds=1)
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error calling Cloudflare API: {e}")
+            break
 
-        results = data.get("data", {}).get("viewer", {}).get("accounts", [])
-        if not results:
-            logging.error("No 'accounts' data returned from Cloudflare API.")
-            return []
-
-        analytics = results[0].get("gatewayDnsAnalytics", [])
-        for item in analytics:
-            domain = item.get("dimensions", {}).get("queryName")
-            if domain:
-                blocked_domains.add(domain)
-
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error calling Cloudflare API: {e}")
-        return []
-
-    logging.info(f"Found {len(blocked_domains)} unique blocked domains from the last 24 hours.")
+    logging.info(
+        f"Full 24-hour log fetch complete. Found {len(blocked_domains)} unique blocked domains "
+        f"from policy '{CLOUDFLARE_POLICY_NAME}'."
+    )
     return list(blocked_domains)
 
+# --- Analysis Function (UPDATED WITH LOGGING) ---
 
 def analyze_domains(
     domain_list: List[str], client: OpenAI, model: str
 ) -> Dict[str, Dict[str, Any]]:
-    """Analyzes a list of domains using the OpenAI API and returns a results dictionary."""
+    """Analyzes a list of domains using the OpenAI API and logs the interaction."""
     if not domain_list:
         return {}
-
+        
     user_prompt = json.dumps(domain_list)
+    
+    # --- NEW: Log the request ---
+    try:
+        with OPENAI_AUDIT_LOG.open("a", encoding="utf-8") as f:
+            f.write(f"--- {datetime.now(timezone.utc).isoformat()} ---\n")
+            f.write("[REQUEST]\n")
+            f.write(f"{user_prompt}\n\n")
+    except Exception as e:
+        logging.warning(f"Could not write to audit log: {e}")
+    # --- END NEW ---
+
     try:
         response = client.chat.completions.create(
             model=model,
@@ -142,17 +199,31 @@ def analyze_domains(
         if not text:
             logging.error("Received empty response from API.")
             return {}
+
+        # --- NEW: Log the response ---
+        try:
+            with OPENAI_AUDIT_LOG.open("a", encoding="utf-8") as f:
+                f.write("[RESPONSE]\n")
+                f.write(f"{text}\n\n")
+        except Exception as e:
+            logging.warning(f"Could not write to audit log: {e}")
+        # --- END NEW ---
+            
         return json.loads(text)
-    except APIError as e:
-        logging.error(f"Error calling OpenAI API: {e}")
-        return {}
-    except json.JSONDecodeError as e:
-        logging.error(f"Error parsing JSON response from API: {e}\nResponse text: {text}")
-        return {}
-    except Exception as e:
-        logging.error(f"An unexpected error occurred during API call: {e}")
+        
+    except (APIError, json.JSONDecodeError, Exception) as e:
+        logging.error(f"Error during OpenAI analysis: {e}")
+        # --- NEW: Log the error ---
+        try:
+            with OPENAI_AUDIT_LOG.open("a", encoding="utf-8") as f:
+                f.write(f"[ERROR]\n{e}\n\n")
+        except Exception as log_e:
+            logging.warning(f"Could not write to audit log: {log_e}")
+        # --- END NEW ---
         return {}
 
+
+# --- Report Function (Unchanged) ---
 
 def generate_report(all_results: Dict[str, Dict[str, Any]], threshold: int):
     """Sorts results and writes them to markdown files."""
@@ -195,9 +266,20 @@ def generate_report(all_results: Dict[str, Dict[str, Any]], threshold: int):
                 f.write(f"| {rating}/10 | `{domain}` |\n")
     logging.info(f"Wrote {len(review_list)} domains to {REVIEW_LIST_FILE}")
 
+# --- Main Function (UPDATED) ---
 
 def main():
     print("--- Cloudflare Gateway Log Analysis (with OpenAI API) ---")
+    
+    # --- NEW: Clear old log files for this run ---
+    for log_file in [FETCHED_DOMAINS_LOG, OPENAI_AUDIT_LOG]:
+        try:
+            if log_file.exists():
+                log_file.unlink()
+            logging.info(f"Initialized log file: {log_file}")
+        except Exception as e:
+            logging.warning(f"Could not clear log file {log_file}: {e}")
+    # --- END NEW ---
 
     openai_api_key = os.environ.get("OPENAI_API_KEY")
     if not openai_api_key:
@@ -217,34 +299,60 @@ def main():
         logging.error("Error: ACCOUNT_ID or API_TOKEN env variables not set.")
         sys.exit(1)
 
+    # Load the persistent cache
+    analysis_cache = load_cache(ANALYSIS_CACHE_FILE)
+
     logging.info("Fetching latest blocked domains from Cloudflare API...")
-    domains_to_analyze = fetch_blocked_domains_from_api(account_id, api_token)
+    domains_from_api = fetch_blocked_domains_from_api(account_id, api_token)
     
-    # Initialize an empty results dictionary
-    all_results: Dict[str, Dict[str, Any]] = {}
+    # --- NEW: Write the fetched domains log ---
+    try:
+        with FETCHED_DOMAINS_LOG.open("w", encoding="utf-8") as f:
+            f.write(f"# Fetched {len(domains_from_api)} unique domains on {datetime.now(timezone.utc).isoformat()}\n")
+            for domain in sorted(domains_from_api):
+                f.write(f"{domain}\n")
+        logging.info(f"Wrote {len(domains_from_api)} domains to {FETCHED_DOMAINS_LOG}")
+    except Exception as e:
+        logging.error(f"Could not write fetched domains log: {e}")
+    # --- END NEW ---
+    
+    domains_to_analyze = [
+        domain for domain in domains_from_api if domain not in analysis_cache
+    ]
+    
+    logging.info(
+        f"Found {len(domains_from_api)} unique domains. "
+        f"{len(domains_to_analyze)} need new analysis."
+    )
 
     if domains_to_analyze:
-        # If we found domains, analyze them
+        new_results: Dict[str, Dict[str, Any]] = {}
         total_batches = (len(domains_to_analyze) + CHUNK_SIZE - 1) // CHUNK_SIZE
 
         for i in range(0, len(domains_to_analyze), CHUNK_SIZE):
             chunk = domains_to_analyze[i:i + CHUNK_SIZE]
-            logging.info(f"Analyzing batch {i//CHUNK_SIZE + 1} of {total_batches} ({len(chunk)} domains)...")
+            logging.info(f"Analyzing batch {i//CHUNK_SIZE + 1} of {total_batches} ({len(chunk)} new domains)...")
             
             chunk_results = analyze_domains(chunk, client, model=API_MODEL)
             if chunk_results:
-                all_results.update(chunk_results)
+                new_results.update(chunk_results)
             else:
                 logging.warning(f"Batch {i//CHUNK_SIZE + 1} failed or returned no results.")
+        
+        analysis_cache.update(new_results)
+        save_cache(ANALYSIS_CACHE_FILE, analysis_cache)
+        logging.info(f"Updated cache with {len(new_results)} new entries.")
+    
     else:
-        # If no domains were found, just log it. We will still generate a report.
-        logging.info("No new blocked domains found. Proceeding to generate empty report.")
+        logging.info("No new domains to analyze. Cache is up-to-date.")
 
-    # --- This step now runs every single time ---
+    report_data = {
+        domain: analysis_cache[domain] 
+        for domain in domains_from_api if domain in analysis_cache
+    }
+
     logging.info("Analysis complete. Generating report files...")
-    # If all_results is empty, this will correctly create empty reports
-    generate_report(all_results, REPORT_THRESHOLD)
-
+    generate_report(report_data, REPORT_THRESHOLD)
 
 if __name__ == "__main__":
     main()
