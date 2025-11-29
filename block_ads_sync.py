@@ -40,7 +40,7 @@ class Config:
     # Aggregator Configuration
     LIST_URLS = [
         "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_small.txt", #OISD Small
-        #"https://raw.githubusercontent.com/brojangles24/shiny-telegram/refs/heads/main/Aggregated_list/priority_300k.txt", # Aggregation of 7 different blocklists, excluding Hagezi's most abused TLDs
+        #"https://raw.githubusercontent.com/brojangles24/shiny-telegram/refs/heads/main/Aggregated_list/filtered-full_priority_list.txt", # Aggregation of 7 different blocklists, excluding Hagezi's most abused TLDs
         #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt", # Hagezi Ultimate
         #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt", # Hagezi Pro++
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt", # Hagezi Pro
