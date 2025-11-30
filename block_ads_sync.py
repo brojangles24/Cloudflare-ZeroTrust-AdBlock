@@ -42,8 +42,8 @@ class Config:
         #"https://raw.githubusercontent.com/brojangles24/shiny-telegram/refs/heads/main/Aggregated_list/filtered-full_priority_list.txt", # Aggregation of 7 different blocklists, excluding domains matching Hagezi's most abused TLDs (use regex to block these) ~ 300k domains
         #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt", # Hagezi Ultimate ~ 260k domains
         #"https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_big.txt", # OISD Big ~ 212k domains
-        #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt", # Hagezi Pro++ ~190k domains 
-        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt", # Hagezi Pro ~ 160k domains
+        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt", # Hagezi Pro++ ~190k domains 
+        #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt", # Hagezi Pro ~ 160k domains
         #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt", # Hagezi Normal ~ 120k domains
         #"https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/domains.wildcards", # 1Hosts Lite ~ 90k domains
         #"https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts", # Steven Black Hosts ~ 84k domains
