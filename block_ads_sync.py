@@ -44,8 +44,8 @@ class Config:
         #"https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_big.txt", # OISD Big ~ 212k domains
         #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt", # Hagezi Pro++ ~190k domains 
         #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt", # Hagezi Pro ~ 160k domains
-        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt", # Hagezi Normal ~ 120k domains
-        "https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/domains.wildcards", # 1Hosts Lite ~ 90k domains
+        #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt", # Hagezi Normal ~ 120k domains
+        #"https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/domains.wildcards", # 1Hosts Lite ~ 90k domains
         #"https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts", # Steven Black Hosts ~ 84k domains
         "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_small.txt", #OISD Small ~ 45k domains
         #"https://raw.githubusercontent.com/anudeepND/blacklist/master/adservers.txt", #Aundeep Servers ~42k domains
