@@ -40,7 +40,7 @@ class Config:
     # Aggregator Configuration
     LIST_URLS = [
         #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt", # Hagezi Ultimate ~ 260k domains
-        #"https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_big.txt", # OISD Big ~ 212k domains
+        "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_big.txt", # OISD Big ~ 212k domains
         #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt", # Hagezi Pro++ ~190k domains 
         #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt", # Hagezi Pro ~ 160k domains
         #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt", # Hagezi Normal ~ 120k domains
