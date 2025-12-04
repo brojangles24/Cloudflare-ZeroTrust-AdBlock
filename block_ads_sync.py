@@ -39,7 +39,7 @@ class Config:
 
     # Aggregator Configuration
     LIST_URLS = [
-        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt", # Hagezi Ultimate ~ 260k domains
+        #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt", # Hagezi Ultimate ~ 260k domains
         #"https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_big.txt", # OISD Big ~ 212k domains
         #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt", # Hagezi Pro++ ~190k domains 
         #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt", # Hagezi Pro ~ 160k domains
@@ -48,8 +48,8 @@ class Config:
         #"https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts", # Steven Black Hosts ~ 84k domains
         "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_small.txt", #OISD Small ~ 45k domains
         #"https://raw.githubusercontent.com/anudeepND/blacklist/master/adservers.txt", #Aundeep Servers ~42k domains
-        #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt", #Hagezi Light ~ 40k domains 
-        "https://adaway.org/hosts.txt", # Adaway Hosts ~6k domains
+        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt", #Hagezi Light ~ 40k domains 
+        #"https://adaway.org/hosts.txt", # Adaway Hosts ~6k domains
     ]
 
     @classmethod
