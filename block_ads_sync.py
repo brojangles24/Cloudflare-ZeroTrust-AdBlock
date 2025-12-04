@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class Config:
     API_TOKEN: str = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID: str = os.environ.get("ACCOUNT_ID", "")
-    PREFIX: str = "Block ads"
+    PREFIX: str = "HaGeZi Light"
     MAX_LIST_SIZE: int = 1000
     MAX_LISTS: int = 300
     MAX_RETRIES: int = 10
