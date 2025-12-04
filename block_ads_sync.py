@@ -47,7 +47,7 @@ class Config:
         "https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/domains.wildcards", # 1Hosts Lite ~ 90k domains
         #"https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts", # Steven Black Hosts ~ 84k domains
         #"https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_small.txt", #OISD Small ~ 45k domains
-        #"https://raw.githubusercontent.com/anudeepND/blacklist/master/adservers.txt", #Aundeep Servers ~42k domains
+        "https://raw.githubusercontent.com/anudeepND/blacklist/master/adservers.txt", #Aundeep Servers ~42k domains
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt", #Hagezi Light ~ 40k domains 
         "https://adaway.org/hosts.txt", # Adaway Hosts ~6k domains
     ]
