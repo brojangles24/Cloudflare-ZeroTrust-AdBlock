@@ -29,7 +29,7 @@ class Config:
     MAX_LIST_SIZE: int = 1000
     MAX_LISTS: int = 300
     MAX_RETRIES: int = 10
-    OUTPUT_FILE_NAME: str = "Aggregated_List.txt"
+    OUTPUT_FILE_NAME: str = "HaGeZi_Light.txt"
     OUTPUT_PATH: Path = Path(OUTPUT_FILE_NAME)
     
     # Git Configuration
