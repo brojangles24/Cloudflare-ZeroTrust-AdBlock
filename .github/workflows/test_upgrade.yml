@@ -1,0 +1,40 @@
+name: Update Cloudflare Blocklist
+
+on:
+  schedule:
+    # Runs at 04:00 UTC every day
+    - cron: '0 4 * * *'
+  workflow_dispatch: # Allows you to click "Run workflow" manually
+
+jobs:
+  update-and-sync:
+    runs-on: ubuntu-latest
+    
+    # GRANT WRITE PERMISSIONS: Crucial for the script to push the updated list back to the repo
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for git diff and rebase to work correctly
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip' # Caches aiohttp so subsequent runs are faster
+
+      - name: 📦 Install Dependencies
+        run: |
+          pip install aiohttp
+
+      - name: 🚀 Run Upgrade Script
+        env:
+          # Secrets must be set in your Repo Settings > Secrets and variables > Actions
+          API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Automatically detects the branch (e.g., main or master)
+          TARGET_BRANCH: ${{ github.ref_name }} 
+        run: python test_upgrade.py
