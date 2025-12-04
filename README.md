@@ -5,11 +5,11 @@ This version includes various other blocklists that can be used. It will automat
 
 If you want a different blocklist, just change the blocklist URL in the script. No other modification is required.
 
-Cloudflare currently enforces 300 lists, each with 1000 entries, meaning there is a 300,000-capacity limit. If your chosen blocklist (or combination of blocklists, as the script auto-deduplicates) exceeds these limits, trim or switch to something with fewer than 300K domains (OISD Big/Small, 1Hosts Lite, HaGeZi Normal/Pro/Pro++, etc.).
+Cloudflare currently enforces 300 lists, each with 1,000 entries, meaning there is a 300,000-entry capacity limit. If your chosen blocklist (or combination of blocklists, as the script auto-duplicates) exceeds these limits, consider trimming or switching to a blocklist with fewer than 300,000 domains (e.g., OISD Big/Small, 1Hosts Lite, HaGeZi Normal/Pro/Pro++, etc.).
 
 How It Works
 
-The script retrieves the HaGeZi Pro++, OISD small, and 1Hosts Lite lists every hour, deduplicates them, checks for changes, and updates the Cloudflare lists only if the source list has been modified. This avoids pointless API calls. (Blocklist URLs can easily be changed in the script) 
+By default, the script runs every hour, retrieves the blocklists, deduplicates them, checks for changes, and updates the Cloudflare lists only if the source list has been modified. This avoids pointless API calls. (Blocklist URLs can easily be changed in the script) 
 
 Setup
 Cloudflare
