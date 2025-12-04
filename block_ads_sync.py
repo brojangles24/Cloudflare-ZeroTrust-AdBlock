@@ -296,7 +296,7 @@ def sync_cloudflare(total_lines):
             "conditions": [{"type": "traffic", "expression": expression_json}],
             "action": "block",
             "enabled": True,
-            "description": "Aggregated blocklist from singularitysink",
+            "description": "This is HaGeZi Light",
             "rule_settings": {"block_page_enabled": False},
             "filters": ["dns"]
         }
