@@ -1,3 +1,5 @@
+*Forked from jacobgelling/cloudflare-gateway-block-ads, rewritten in python.
+
 Cloudflare Gateway ZeroTrust Ad Block
 
 Forked from jacobgelling/cloudflare-gateway-block-ads.
