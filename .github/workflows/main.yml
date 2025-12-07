@@ -3,13 +3,13 @@ name: Update Blocklists
 on:
   # 1. Run automatically every day at 4:00 AM UTC
   schedule:
-    - cron: '0 4 * * *'
+    - cron: '0 * * * *'
   
   # 2. Manual Trigger with Option to Delete
   workflow_dispatch:
     inputs:
       delete_mode:
-        description: '⚠️ Check this to DELETE all lists'
+        description: '⚠️ Check this to DELETE all lists.'
         required: false
         type: boolean
         default: false
