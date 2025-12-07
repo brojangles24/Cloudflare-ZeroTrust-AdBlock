@@ -1,0 +1,49 @@
+name: Update Blocklists
+
+on:
+  # 1. Run automatically every day at 4:00 AM UTC
+  schedule:
+    - cron: '0 4 * * *'
+  
+  # 2. Manual Trigger with Option to Delete
+  workflow_dispatch:
+    inputs:
+      delete_mode:
+        description: '⚠️ Check this to DELETE all lists'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  update-blocklists:
+    runs-on: ubuntu-latest
+    
+    # REQUIRED: Allows the script to commit/push changes back to the repo
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Download full history so git diff works correctly
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: pip install requests
+
+      - name: Run Blocklist Manager
+        env:
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+          ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
+        run: |
+          # Check if the "Delete" box was checked in the manual trigger
+          if [ "${{ github.event.inputs.delete_mode }}" == "true" ]; then
+            echo "⚠️ DELETE MODE ACTIVE: Wiping all lists..."
+            python3 block_ads_sync.py --delete
+          else
+            echo "✅ NORMAL MODE: Updating lists..."
+            python3 block_ads_sync.py
+          fi
