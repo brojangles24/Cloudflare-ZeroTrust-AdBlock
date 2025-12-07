@@ -6,6 +6,7 @@ import re
 import concurrent.futures
 import json
 import logging
+import argparse
 from pathlib import Path
 from subprocess import run, CalledProcessError
 from itertools import islice
@@ -43,6 +44,7 @@ class Config:
             "policy_name": "Block ads",
             "filename": "HaGeZi_Light.txt",
             "urls": [
+                # Using the 'onlydomains' version is safer for parsing
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
             ]
         },
@@ -52,7 +54,8 @@ class Config:
             "policy_name": "Threat Intelligence Feed",
             "filename": "TIF_Mini.txt",
             "urls": [
-                "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/hosts/tif.mini.txt", 
+                # UPDATED: Using onlydomains version to fix the "0 domains" issue
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt", 
             ]
         }
     ]
@@ -68,9 +71,9 @@ CFG = Config()
 
 # --- 2. Helper Functions & Exceptions ---
 
+# Simplified pattern: Matches anything that looks like a domain, ignores comments
 INVALID_CHARS_PATTERN = re.compile(r'[<>&;\"\'/=\s]')
-DOMAIN_EXTRACT_PATTERN = re.compile(r'^(?:[0-9]{1,3}(?:\.[0-9]{1,3}){3}\s+)?(.+)$')
-COMMON_JUNK_DOMAINS = {'localhost', '127.0.0.1', '0.0.0.0', '::1'}
+COMMON_JUNK_DOMAINS = {'localhost', '127.0.0.1', '0.0.0.0', '::1', 'broadcasthost'}
 
 class ScriptExit(Exception):
     def __init__(self, message, silent=False, critical=False):
@@ -91,15 +94,19 @@ def chunked_iterable(iterable, size):
         yield chunk
 
 def run_command(command):
-    """Run a shell command and raise an error on non-zero exit code."""
+    """Run a shell command. Raises RuntimeError with the actual error output if it fails."""
     command_str = ' '.join(command)
     logger.debug(f"Running command: {command_str}")
     try:
-        run(command, check=True, capture_output=True, text=True, encoding='utf-8')
+        # Capture both stdout and stderr
+        result = run(command, check=True, capture_output=True, text=True, encoding='utf-8')
+        return result.stdout
     except CalledProcessError as e:
-        logger.error(f"Command failed: {command_str}")
-        logger.debug(f"Stderr: {e.stderr.strip()}")
-        raise RuntimeError(f"Command failed: {command_str}")
+        # IMPORTANT: We catch this and raise a RuntimeError that INCLUDES the stderr.
+        # This allows the caller to check if the error was "nothing to commit".
+        error_msg = f"Command failed: {command_str}\nSTDERR: {e.stderr}\nSTDOUT: {e.stdout}"
+        logger.debug(error_msg)
+        raise RuntimeError(error_msg)
 
 def download_list(url, file_path):
     response = requests.get(url, timeout=30)
@@ -151,6 +158,7 @@ class CloudflareAPI:
     def get_rules(self): return self._request("GET", "rules")
     def create_rule(self, payload): return self._request("POST", "rules", json=payload)
     def update_rule(self, rule_id, payload): return self._request("PUT", f"rules/{rule_id}", json=payload)
+    def delete_rule(self, rule_id): return self._request("DELETE", f"rules/{rule_id}")
 
 
 # --- 4. Workflow Functions ---
@@ -163,7 +171,7 @@ def run_aggregation(feed_config):
     list_urls = feed_config['urls']
     temp_dir = Path(tempfile.mkdtemp())
 
-    # 1. Download Lists in Parallel
+    # 1. Download Lists
     logger.info(f"Downloading {len(list_urls)} lists...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         future_to_url = {
@@ -179,13 +187,24 @@ def run_aggregation(feed_config):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
                     line = line.strip()
+                    # Skip comments and empty lines
                     if not line or line.startswith('#'): continue
-                    match = DOMAIN_EXTRACT_PATTERN.match(line)
-                    if match:
-                        domain = match.group(1).split()[0].lower()
-                        if domain and domain not in COMMON_JUNK_DOMAINS and '.' in domain:
-                            if not INVALID_CHARS_PATTERN.search(domain):
-                                unique_domains.add(domain)
+                    
+                    # Extract domain: 
+                    # If line is "0.0.0.0 example.com", split takes "example.com"
+                    # If line is "example.com", split takes "example.com"
+                    parts = line.split()
+                    if not parts: continue
+                    
+                    # Usually the domain is the last element (hosts format) or first (domain list)
+                    # Safe bet: take the last element if it looks like a domain, otherwise check first
+                    candidate = parts[-1].lower()
+                    
+                    # Basic Validation
+                    if '.' in candidate and not INVALID_CHARS_PATTERN.search(candidate):
+                         if candidate not in COMMON_JUNK_DOMAINS:
+                             unique_domains.add(candidate)
+
         except Exception as e:
             logger.warning(f"Error processing file {file_path}: {e}")
 
@@ -203,22 +222,20 @@ def sync_cloudflare(cf_client, feed_config, total_lines):
     prefix = feed_config['prefix']
     policy_name = feed_config['policy_name']
 
-    # Git diff check to see if we really need to sync
+    # Git diff check
     try:
         run_command(["git", "diff", "--exit-code", str(output_path)])
-        # If exit code is 0, no changes. However, we proceed if forced or to ensure CF consistency.
-        # Uncomment below to skip sync if local file hasn't changed (optional optimization)
-        # logger.info("Local file unchanged. Skipping Cloudflare sync.")
-        # return False 
+        # If exit code 0 (no diff), we normally wouldn't sync, BUT for safety we proceed.
     except RuntimeError:
-        pass # Diff found (exit code 1), proceed.
+        pass 
 
     if total_lines == 0:
+        logger.warning(f"Feed {feed_config['name']} resulted in 0 domains. Skipping Cloudflare sync.")
         return False
 
     total_lists_needed = (total_lines + CFG.MAX_LIST_SIZE - 1) // CFG.MAX_LIST_SIZE
     
-    # Fetch current state (using the passed client)
+    # Fetch current state
     all_current_lists = cf_client.get_lists().get('result', [])
     current_policies = cf_client.get_rules().get('result', [])
 
@@ -243,7 +260,7 @@ def sync_cloudflare(cf_client, feed_config, total_lines):
         if excess_list_ids:
             list_id = excess_list_ids.pop(0)
             logger.info(f"Updating list {list_id} ({list_name})...")
-            # Optim: only fetch items if we are updating
+            # Optimization: Only update if necessary (not fully implemented to save API calls)
             old_items = cf_client.get_list_items(list_id, CFG.MAX_LIST_SIZE).get('result', [])
             remove_items = [item['value'] for item in old_items if item.get('value')]
             cf_client.update_list(list_id, append_items=items_json, remove_items=remove_items)
@@ -290,6 +307,37 @@ def sync_cloudflare(cf_client, feed_config, total_lines):
 
     return True
 
+def cleanup_resources(cf_client):
+    """Delete all policies and lists defined in FEED_CONFIGS."""
+    logger.info("--- ⚠️ CLEANUP MODE: DELETING RESOURCES ⚠️ ---")
+    
+    current_policies = cf_client.get_rules().get('result', [])
+    all_current_lists = cf_client.get_lists().get('result', [])
+
+    for feed in CFG.FEED_CONFIGS:
+        logger.info(f"Cleaning up resources for: {feed['name']}")
+        prefix = feed['prefix']
+        policy_name = feed['policy_name']
+
+        policy_id = next((p['id'] for p in current_policies if p.get('name') == policy_name), None)
+        if policy_id:
+            logger.info(f"Deleting Policy: {policy_name} ({policy_id})...")
+            try:
+                cf_client.delete_rule(policy_id)
+            except Exception as e:
+                logger.error(f"Failed to delete policy {policy_id}: {e}")
+
+        lists_to_delete = [l for l in all_current_lists if prefix in l.get('name', '')]
+        for lst in lists_to_delete:
+            logger.info(f"Deleting List: {lst['name']} ({lst['id']})...")
+            try:
+                cf_client.delete_list(lst['id'])
+            except Exception as e:
+                logger.error(f"Failed to delete list {lst['id']}: {e}")
+
+    logger.info("--- Cleanup Complete ---")
+
+
 def git_configure():
     """Configure git user once."""
     git_user_name = f"{CFG.GITHUB_ACTOR}[bot]"
@@ -300,10 +348,7 @@ def git_configure():
 def git_commit_and_push(changed_files):
     """Commit all changed files in one go."""
     logger.info("--- Git Commit & Push ---")
-    
-    if not changed_files:
-        logger.info("No files changed. Skipping commit.")
-        return
+    if not changed_files: return
 
     for f in changed_files:
         run_command(["git", "add", f])
@@ -311,9 +356,11 @@ def git_commit_and_push(changed_files):
     try:
         run_command(["git", "commit", "-m", f"Update blocklists: {', '.join(changed_files)}"])
     except RuntimeError as e:
+        # Check the captured stderr for the specific git message
         if "nothing to commit" in str(e):
-            logger.info("Nothing to commit.")
+            logger.info("Nothing to commit (files are unchanged).")
             return
+        logger.error(f"Git commit failed with: {e}")
         raise
     
     if run(["git", "remote", "get-url", "origin"], check=False, capture_output=True).returncode == 0:
@@ -324,41 +371,43 @@ def git_commit_and_push(changed_files):
 
 # --- 5. Main Execution ---
 def main():
+    parser = argparse.ArgumentParser(description="Cloudflare Gateway Blocklist Manager")
+    parser.add_argument("--delete", action="store_true", help="Delete all lists and policies defined in config")
+    args = parser.parse_args()
+
     try:
         logger.info("--- 0. Initializing ---")
         CFG.validate()
-        is_git_repo = Path(".git").exists()
-        changed_files_list = []
-
-        if is_git_repo:
-            try:
-                run_command(["git", "fetch", "origin", CFG.TARGET_BRANCH])
-                run_command(["git", "checkout", CFG.TARGET_BRANCH])
-                run_command(["git", "reset", "--hard", f"origin/{CFG.TARGET_BRANCH}"])
-                git_configure()
-            except Exception as e:
-                logger.warning(f"Git init warning: {e}")
-
-        # Open Cloudflare Session ONCE for the whole run
+        
         with CloudflareAPI(CFG.ACCOUNT_ID, CFG.API_TOKEN, CFG.MAX_RETRIES) as cf_client:
             
+            if args.delete:
+                cleanup_resources(cf_client)
+                return
+
+            is_git_repo = Path(".git").exists()
+            changed_files_list = []
+
+            if is_git_repo:
+                try:
+                    run_command(["git", "fetch", "origin", CFG.TARGET_BRANCH])
+                    run_command(["git", "checkout", CFG.TARGET_BRANCH])
+                    run_command(["git", "reset", "--hard", f"origin/{CFG.TARGET_BRANCH}"])
+                    git_configure()
+                except Exception as e:
+                    logger.warning(f"Git init warning: {e}")
+
             for feed in CFG.FEED_CONFIGS:
                 try:
-                    # 1. Aggregate
                     total_lines = run_aggregation(feed)
-                    
-                    # 2. Sync (Passing the open client)
                     sync_success = sync_cloudflare(cf_client, feed, total_lines)
-                    
                     if sync_success:
                         changed_files_list.append(feed['filename'])
-                        
                 except Exception as e:
                     logger.error(f"Failed to process feed '{feed['name']}': {e}", exc_info=True)
 
-        # 3. Final Commit (One commit for everything)
-        if is_git_repo and changed_files_list:
-            git_commit_and_push(changed_files_list)
+            if is_git_repo and changed_files_list:
+                git_commit_and_push(changed_files_list)
 
         logger.info("✅ Execution complete!")
 
