@@ -41,9 +41,9 @@ class Config:
     FEED_CONFIGS = [
         {
             "name": "Ad Block Feed",
-            "prefix": "HaGeZi Normal",
-            "policy_name": "Ad Block Feed",
-            "filename": "HaGeZi_Normal.txt",
+            "prefix": "Block ads",
+            "policy_name": "Block ads",
+            "filename": "HaGeZi_Normal.txt", # Updated filename to match your preference
             "urls": [
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
             ]
@@ -122,7 +122,6 @@ class CloudflareAPI:
 
     def __enter__(self):
         self.session = requests.Session()
-        # Basic retries for connection issues
         adapter = requests.adapters.HTTPAdapter(max_retries=self.max_retries)
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
@@ -133,36 +132,26 @@ class CloudflareAPI:
             self.session.close()
 
     def _request(self, method, endpoint, **kwargs):
-        """Wrapper to handle Cloudflare API requests with custom 5xx retry logic."""
         url = f"{self.base_url}/{endpoint}"
         retries = 0
-        
         while retries <= self.max_retries:
             try:
                 response = self.session.request(method, url, headers=self.headers, **kwargs)
-                
-                # If success, return immediately
                 if response.status_code < 500:
                     response.raise_for_status()
                     return response.json()
-                
-                # If 5xx error, raise exception to trigger retry block
                 response.raise_for_status()
-                
             except requests.exceptions.RequestException as e:
-                # Check for 5xx errors (Server Errors) or connection errors
                 status_code = e.response.status_code if e.response is not None else 0
-                
                 if status_code >= 500 or status_code == 429:
                     retries += 1
-                    sleep_time = retries * 2 # Backoff: 2s, 4s, 6s...
+                    sleep_time = retries * 2
                     logger.warning(f"Cloudflare API Error ({status_code}). Retrying {retries}/{self.max_retries} in {sleep_time}s...")
                     time.sleep(sleep_time)
                     if retries > self.max_retries:
                         logger.error(f"Max retries exceeded for {method} {url}")
                         raise RuntimeError(f"Cloudflare API failed after retries: {e}")
                 else:
-                    # Client error (4xx) - Don't retry
                     logger.error(f"Cloudflare Client Error: {e}")
                     raise RuntimeError(f"Cloudflare API failed: {e}")
 
@@ -184,14 +173,11 @@ class CloudflareAPI:
 # --- 4. Workflow Functions ---
 
 def fetch_domains(feed_config):
-    """Download and process lists for a feed, returning a SET of domains."""
     logger.info(f"--- Fetching: {feed_config['name']} ---")
-    
     list_urls = feed_config['urls']
     temp_dir = Path(tempfile.mkdtemp())
     unique_domains = set()
 
-    # 1. Download Lists
     logger.info(f"Downloading {len(list_urls)} lists...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         future_to_url = {
@@ -200,18 +186,15 @@ def fetch_domains(feed_config):
         }
         concurrent.futures.wait(future_to_url)
 
-    # 2. Process
     for file_path in temp_dir.glob("list_*.txt"):
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith('#'): continue
-                    
                     parts = line.split()
                     if not parts: continue
                     candidate = parts[-1].lower() 
-                    
                     if '.' in candidate and not INVALID_CHARS_PATTERN.search(candidate):
                          if candidate not in COMMON_JUNK_DOMAINS:
                              unique_domains.add(candidate)
@@ -225,12 +208,9 @@ def fetch_domains(feed_config):
 def save_and_sync(cf_client, feed_config, domain_set):
     """Save the set to file and sync to Cloudflare."""
     output_path = Path(feed_config['filename'])
-    
-    # Save first
     logger.info(f"Saving {len(domain_set)} domains to {output_path}...")
     output_path.write_text('\n'.join(sorted(domain_set)) + '\n', encoding='utf-8')
     
-    # Sync Logic
     prefix = feed_config['prefix']
     policy_name = feed_config['policy_name']
     total_lines = len(domain_set)
@@ -241,8 +221,10 @@ def save_and_sync(cf_client, feed_config, domain_set):
 
     total_lists_needed = (total_lines + CFG.MAX_LIST_SIZE - 1) // CFG.MAX_LIST_SIZE
     
-    all_current_lists = cf_client.get_lists().get('result', [])
-    current_policies = cf_client.get_rules().get('result', [])
+    # --- FIX APPLIED HERE: Handle None return from Cloudflare ---
+    # .get('result') can return None if the key exists but is null. 'or []' fixes it.
+    all_current_lists = cf_client.get_lists().get('result') or []
+    current_policies = cf_client.get_rules().get('result') or []
 
     current_lists_with_prefix = [l for l in all_current_lists if prefix in l.get('name', '')]
     other_lists_count = len(all_current_lists) - len(current_lists_with_prefix)
@@ -262,9 +244,8 @@ def save_and_sync(cf_client, feed_config, domain_set):
         if excess_list_ids:
             list_id = excess_list_ids.pop(0)
             logger.info(f"Updating list {list_id} ({list_name})...")
-            
-            # This is where 502s usually happen, now protected by _request retry logic
-            old_items = cf_client.get_list_items(list_id, CFG.MAX_LIST_SIZE).get('result', [])
+            # Safe access with default empty list
+            old_items = cf_client.get_list_items(list_id, CFG.MAX_LIST_SIZE).get('result') or []
             remove_items = [item['value'] for item in old_items if item.get('value')]
             cf_client.update_list(list_id, append_items=items_json, remove_items=remove_items)
             used_list_ids.append(list_id)
@@ -273,7 +254,6 @@ def save_and_sync(cf_client, feed_config, domain_set):
             result = cf_client.create_list(list_name, items_json)
             used_list_ids.append(result['result']['id'])
     
-    # Update Policy
     policy_id = next((p['id'] for p in current_policies if p.get('name') == policy_name), None)
     
     or_clauses = [{"any": {"in": {"lhs": {"splat": "dns.domains"}, "rhs": f"${lid}"}}} for lid in used_list_ids]
@@ -291,7 +271,9 @@ def save_and_sync(cf_client, feed_config, domain_set):
     
     if policy_id:
         existing_policy = next((p for p in current_policies if p.get('id') == policy_id), {})
-        if existing_policy.get('conditions', [{}])[0].get('expression') != expression_json:
+        # Safety check for missing conditions
+        existing_conditions = existing_policy.get('conditions') or []
+        if existing_conditions and existing_conditions[0].get('expression') != expression_json:
             logger.info(f"Updating policy '{policy_name}'...")
             cf_client.update_rule(policy_id, policy_payload)
         else:
@@ -300,7 +282,6 @@ def save_and_sync(cf_client, feed_config, domain_set):
         logger.info(f"Creating policy '{policy_name}'...")
         cf_client.create_rule(policy_payload)
         
-    # Cleanup Excess
     for list_id in excess_list_ids:
         logger.info(f"Deleting excess list {list_id}...")
         try:
@@ -312,8 +293,9 @@ def save_and_sync(cf_client, feed_config, domain_set):
 
 def cleanup_resources(cf_client):
     logger.info("--- ⚠️ CLEANUP MODE: DELETING RESOURCES ⚠️ ---")
-    current_policies = cf_client.get_rules().get('result', [])
-    all_current_lists = cf_client.get_lists().get('result', [])
+    # --- FIX APPLIED HERE ALSO ---
+    current_policies = cf_client.get_rules().get('result') or []
+    all_current_lists = cf_client.get_lists().get('result') or []
 
     for feed in CFG.FEED_CONFIGS:
         logger.info(f"Cleaning up resources for: {feed['name']}")
@@ -344,12 +326,10 @@ def git_configure():
     run_command(["git", "config", "--global", "user.name", git_user_name])
 
 def discard_local_changes(file_path):
-    """Discard changes to a specific file to prevent dirty state."""
     logger.info(f"Discarding local changes to {file_path}...")
     try:
         run_command(["git", "checkout", "--", str(file_path)])
     except RuntimeError:
-        # Fallback if file is untracked
         try:
             os.remove(file_path)
         except OSError:
@@ -359,11 +339,9 @@ def git_commit_and_push(changed_files):
     logger.info("--- Git Commit & Push ---")
     if not changed_files: return
     
-    # Check if files actually changed
     files_to_commit = []
     for f in changed_files:
         try:
-            # git diff --exit-code returns 0 if NO changes, 1 if changes
             run_command(["git", "diff", "--exit-code", f])
             logger.info(f"File {f} matches repo. Skipping add.")
         except RuntimeError:
@@ -404,7 +382,6 @@ def main():
                 cleanup_resources(cf_client)
                 return
 
-            # --- Git Setup ---
             is_git_repo = Path(".git").exists()
             if is_git_repo:
                 try:
@@ -415,12 +392,10 @@ def main():
                 except Exception as e:
                     logger.warning(f"Git init warning: {e}")
 
-            # --- 1. Fetch ALL domains first ---
             feed_datasets = {}
             for feed in CFG.FEED_CONFIGS:
                 feed_datasets[feed['name']] = fetch_domains(feed)
 
-            # --- 2. Deduplication ---
             ad_feed_name = "Ad Block Feed"
             tif_feed_name = "Threat Intel Feed"
             
@@ -433,7 +408,6 @@ def main():
                     feed_datasets[tif_feed_name] = tif_domains - overlap
                     logger.info(f"✅ Removed overlapping domains from {tif_feed_name}.")
 
-            # --- 3. Save & Sync Loop ---
             changed_files_list = []
             for feed in CFG.FEED_CONFIGS:
                 try:
@@ -443,11 +417,9 @@ def main():
                         changed_files_list.append(feed['filename'])
                 except Exception as e:
                     logger.error(f"Failed to process feed '{feed['name']}': {e}", exc_info=True)
-                    # CLEANUP: If sync failed, revert the local file to prevent dirty git state
                     if is_git_repo:
                         discard_local_changes(feed['filename'])
 
-            # --- 4. Git Push ---
             if is_git_repo and changed_files_list:
                 git_commit_and_push(changed_files_list)
 
