@@ -41,8 +41,8 @@ class Config:
     FEED_CONFIGS = [
         {
             "name": "Ad Block Feed",
-            "prefix": "Hagezi Normal",
-            "policy_name": "Hagezi Normal",
+            "prefix": "Block ads",
+            "policy_name": "Block ads",
             "filename": "HaGeZi_Normal.txt",
             "urls": [
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
