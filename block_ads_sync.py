@@ -170,6 +170,10 @@ class CloudflareAPI:
                         logger.error(f"Max retries exceeded for {method} {url}")
                         raise RuntimeError(f"Cloudflare API failed after retries: {e}")
                 else:
+                    # Allow 400 errors to bubble up for specific handling (like deletion)
+                    if status_code == 400:
+                         # We manually raise it so we can catch it in delete_list
+                         raise e
                     logger.error(f"Cloudflare Client Error: {e}")
                     raise RuntimeError(f"Cloudflare API failed: {e}")
 
@@ -195,7 +199,7 @@ def fetch_domains(feed_config):
     list_urls = feed_config['urls']
     temp_dir = Path(tempfile.mkdtemp())
     unique_domains = set()
-    tld_filtered_count = 0 # NEW COUNTER
+    tld_filtered_count = 0
 
     logger.info(f"Downloading {len(list_urls)} lists...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
@@ -215,7 +219,6 @@ def fetch_domains(feed_config):
                     if not parts: continue
                     candidate = parts[-1].lower() 
                     
-                    # --- TLD FILTER CHECK ---
                     if candidate.endswith(CFG.BLOCKED_TLDS):
                         tld_filtered_count += 1
                         continue 
@@ -227,7 +230,6 @@ def fetch_domains(feed_config):
             logger.warning(f"Error processing file {file_path}: {e}")
 
     shutil.rmtree(temp_dir)
-    # Log the specific TLD count
     logger.info(f"   [TLD Filter] Removed {tld_filtered_count} junk domains.")
     logger.info(f"   [Net Result] Fetched {len(unique_domains)} unique domains.")
     return unique_domains
@@ -277,7 +279,6 @@ def save_and_sync(cf_client, feed_config, domain_set):
             result = cf_client.create_list(list_name, items_json)
             used_list_ids.append(result['result']['id'])
     
-    # --- POLICY UPDATE ---
     policy_id = next((p['id'] for p in current_policies if p.get('name') == policy_name), None)
     
     or_clauses = [{"any": {"in": {"lhs": {"splat": "dns.domains"}, "rhs": f"${lid}"}}} for lid in used_list_ids]
@@ -297,7 +298,6 @@ def save_and_sync(cf_client, feed_config, domain_set):
         existing_policy = next((p for p in current_policies if p.get('id') == policy_id), {})
         existing_conditions = existing_policy.get('conditions') or []
         
-        # FIX: Force update if we have lists to delete, to ensure they are detached
         needs_update = False
         if excess_list_ids:
             needs_update = True
@@ -313,15 +313,16 @@ def save_and_sync(cf_client, feed_config, domain_set):
         logger.info(f"Creating policy '{policy_name}'...")
         cf_client.create_rule(policy_payload)
         
-    # --- DELETE EXCESS ---
-    # FIX: Added try/except to catch 400 Bad Request if list is still momentarily in use
+    # --- DELETE EXCESS (ROBUST) ---
     for list_id in excess_list_ids:
         logger.info(f"Deleting excess list {list_id}...")
         try:
             cf_client.delete_list(list_id)
         except Exception as e:
-            if "400" in str(e):
-                logger.warning(f"Could not delete list {list_id} (Cloudflare reports it is still in use). Skipping cleanup.")
+            # Swallow 400 (Bad Request) or 7003 (Invalid ID) errors
+            err_str = str(e)
+            if "400" in err_str or "7003" in err_str or "7000" in err_str:
+                logger.warning(f"Skipping delete for {list_id}: List already gone or in use (Cloudflare Error).")
             else:
                 logger.warning(f"Failed to delete {list_id}: {e}")
 
