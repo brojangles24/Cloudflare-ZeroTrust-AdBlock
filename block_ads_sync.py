@@ -38,6 +38,7 @@ class Config:
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
 
     # --- JUNK TLD FILTER ---
+    # Domains ending in these will be discarded to save space and reduce false positives
     BLOCKED_TLDS = (
         ".rest", ".hair", ".top", ".cfd", ".boats", ".beauty", 
         ".mom", ".skin", ".okinawa", ".zip", ".xyz"
@@ -51,7 +52,9 @@ class Config:
             "policy_name": "Block Ads, Trackers and Telemetry",
             "filename": "HaGeZi_Normal.txt",
             "urls": [
+                # Hagezi Normal (Ads + Trackers) - The "Safe" core list
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+                # Hagezi Popups (Annoyances) - Blocks cookie banners & overlays
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/popups-onlydomains.txt",
             ]
         },
@@ -61,9 +64,14 @@ class Config:
             "policy_name": "Block Security Risks",
             "filename": "HaGeZi_Security.txt",
             "urls": [
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
+                # Badware Hoster (Malware distribution points)
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/badware-onlydomains.txt",
+                # Fake (Fake Shops, Support Scams)
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
+                # Dynamic DNS (Used by Botnets & Ransomware)
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
+                # DoH/VPN Bypass (Prevents users from bypassing your DNS)
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
             ]
         },
         {
@@ -72,6 +80,7 @@ class Config:
             "policy_name": "Threat Intelligence Feed",
             "filename": "TIF_Mini.txt",
             "urls": [
+                # TIF Mini (Active C2 & Phishing) - Updates every 24h
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt", 
             ]
         }
@@ -170,9 +179,8 @@ class CloudflareAPI:
                         logger.error(f"Max retries exceeded for {method} {url}")
                         raise RuntimeError(f"Cloudflare API failed after retries: {e}")
                 else:
-                    # Allow 400 errors to bubble up for specific handling (like deletion)
+                    # Bubble up 400 errors for special handling in delete operations
                     if status_code == 400:
-                         # We manually raise it so we can catch it in delete_list
                          raise e
                     logger.error(f"Cloudflare Client Error: {e}")
                     raise RuntimeError(f"Cloudflare API failed: {e}")
@@ -219,6 +227,7 @@ def fetch_domains(feed_config):
                     if not parts: continue
                     candidate = parts[-1].lower() 
                     
+                    # --- TLD FILTER ---
                     if candidate.endswith(CFG.BLOCKED_TLDS):
                         tld_filtered_count += 1
                         continue 
@@ -249,6 +258,7 @@ def save_and_sync(cf_client, feed_config, domain_set):
 
     total_lists_needed = (total_lines + CFG.MAX_LIST_SIZE - 1) // CFG.MAX_LIST_SIZE
     
+    # Handle None return from API (e.g. fresh account)
     all_current_lists = cf_client.get_lists().get('result') or []
     current_policies = cf_client.get_rules().get('result') or []
 
@@ -270,6 +280,7 @@ def save_and_sync(cf_client, feed_config, domain_set):
         if excess_list_ids:
             list_id = excess_list_ids.pop(0)
             logger.info(f"Updating list {list_id} ({list_name})...")
+            # Retry-protected fetch
             old_items = cf_client.get_list_items(list_id, CFG.MAX_LIST_SIZE).get('result') or []
             remove_items = [item['value'] for item in old_items if item.get('value')]
             cf_client.update_list(list_id, append_items=items_json, remove_items=remove_items)
@@ -279,6 +290,7 @@ def save_and_sync(cf_client, feed_config, domain_set):
             result = cf_client.create_list(list_name, items_json)
             used_list_ids.append(result['result']['id'])
     
+    # --- POLICY UPDATE ---
     policy_id = next((p['id'] for p in current_policies if p.get('name') == policy_name), None)
     
     or_clauses = [{"any": {"in": {"lhs": {"splat": "dns.domains"}, "rhs": f"${lid}"}}} for lid in used_list_ids]
@@ -298,11 +310,11 @@ def save_and_sync(cf_client, feed_config, domain_set):
         existing_policy = next((p for p in current_policies if p.get('id') == policy_id), {})
         existing_conditions = existing_policy.get('conditions') or []
         
-        needs_update = False
-        if excess_list_ids:
-            needs_update = True
-        elif existing_conditions and existing_conditions[0].get('expression') != expression_json:
-            needs_update = True
+        # Force update if we are deleting lists, to ensure they are detached
+        needs_update = bool(excess_list_ids)
+        if not needs_update and existing_conditions:
+             if existing_conditions[0].get('expression') != expression_json:
+                 needs_update = True
 
         if needs_update:
             logger.info(f"Updating policy '{policy_name}'...")
@@ -319,10 +331,10 @@ def save_and_sync(cf_client, feed_config, domain_set):
         try:
             cf_client.delete_list(list_id)
         except Exception as e:
-            # Swallow 400 (Bad Request) or 7003 (Invalid ID) errors
             err_str = str(e)
+            # Ignore 400/7003 errors (List already gone/invalid ID)
             if "400" in err_str or "7003" in err_str or "7000" in err_str:
-                logger.warning(f"Skipping delete for {list_id}: List already gone or in use (Cloudflare Error).")
+                logger.warning(f"Skipping delete for {list_id}: List appears to be already deleted or in use.")
             else:
                 logger.warning(f"Failed to delete {list_id}: {e}")
 
@@ -437,18 +449,21 @@ def main():
             security_name = "Security Feed"
             tif_name = "Threat Intel Feed"
 
+            # 1. Clean Security (Remove Ad domains)
             if ad_name in feed_datasets and security_name in feed_datasets:
                 overlap = feed_datasets[ad_name].intersection(feed_datasets[security_name])
                 if overlap:
                     logger.info(f"🔍 Found {len(overlap)} overlaps between Ads & Security.")
                     feed_datasets[security_name] -= overlap
 
+            # 2. Clean TIF (Remove Ad domains)
             if ad_name in feed_datasets and tif_name in feed_datasets:
                 overlap = feed_datasets[ad_name].intersection(feed_datasets[tif_name])
                 if overlap:
                     logger.info(f"🔍 Found {len(overlap)} overlaps between Ads & TIF.")
                     feed_datasets[tif_name] -= overlap
 
+            # 3. Clean TIF (Remove Security domains)
             if security_name in feed_datasets and tif_name in feed_datasets:
                 overlap = feed_datasets[security_name].intersection(feed_datasets[tif_name])
                 if overlap:
