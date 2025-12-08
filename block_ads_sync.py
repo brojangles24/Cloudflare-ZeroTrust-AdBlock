@@ -37,15 +37,35 @@ class Config:
     GITHUB_ACTOR: str = os.environ.get("GITHUB_ACTOR", "github-actions[bot]")
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
 
+    # --- JUNK TLD FILTER ---
+    # Any domain ending in these will be instantly discarded.
+    # Note: We include the leading dot to ensure we don't accidentally match "forest.com" when filtering ".rest"
+    BLOCKED_TLDS = (
+        ".rest", ".hair", ".top", ".cfd", ".boats", ".beauty", 
+        ".mom", ".skin", ".okinawa", ".zip", ".xyz"
+    )
+
     # --- DEFINITION OF FEEDS ---
     FEED_CONFIGS = [
         {
             "name": "Ad Block Feed",
             "prefix": "Block ads",
             "policy_name": "Block ads",
-            "filename": "HaGeZi_Normal.txt", # Updated filename to match your preference
+            "filename": "HaGeZi_Normal.txt",
             "urls": [
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/popups-onlydomains.txt",
+            ]
+        },
+        {
+            "name": "Security Feed",
+            "prefix": "Block Security",
+            "policy_name": "Block Security Risks",
+            "filename": "HaGeZi_Security.txt",
+            "urls": [
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/badware-onlydomains.txt",
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
             ]
         },
         {
@@ -195,6 +215,11 @@ def fetch_domains(feed_config):
                     parts = line.split()
                     if not parts: continue
                     candidate = parts[-1].lower() 
+                    
+                    # --- TLD FILTER CHECK ---
+                    if candidate.endswith(CFG.BLOCKED_TLDS):
+                        continue # Skip this domain
+                    
                     if '.' in candidate and not INVALID_CHARS_PATTERN.search(candidate):
                          if candidate not in COMMON_JUNK_DOMAINS:
                              unique_domains.add(candidate)
@@ -202,11 +227,10 @@ def fetch_domains(feed_config):
             logger.warning(f"Error processing file {file_path}: {e}")
 
     shutil.rmtree(temp_dir)
-    logger.info(f"Fetched {len(unique_domains)} unique domains.")
+    logger.info(f"Fetched {len(unique_domains)} unique domains (filtered by TLDs).")
     return unique_domains
 
 def save_and_sync(cf_client, feed_config, domain_set):
-    """Save the set to file and sync to Cloudflare."""
     output_path = Path(feed_config['filename'])
     logger.info(f"Saving {len(domain_set)} domains to {output_path}...")
     output_path.write_text('\n'.join(sorted(domain_set)) + '\n', encoding='utf-8')
@@ -221,8 +245,6 @@ def save_and_sync(cf_client, feed_config, domain_set):
 
     total_lists_needed = (total_lines + CFG.MAX_LIST_SIZE - 1) // CFG.MAX_LIST_SIZE
     
-    # --- FIX APPLIED HERE: Handle None return from Cloudflare ---
-    # .get('result') can return None if the key exists but is null. 'or []' fixes it.
     all_current_lists = cf_client.get_lists().get('result') or []
     current_policies = cf_client.get_rules().get('result') or []
 
@@ -244,7 +266,6 @@ def save_and_sync(cf_client, feed_config, domain_set):
         if excess_list_ids:
             list_id = excess_list_ids.pop(0)
             logger.info(f"Updating list {list_id} ({list_name})...")
-            # Safe access with default empty list
             old_items = cf_client.get_list_items(list_id, CFG.MAX_LIST_SIZE).get('result') or []
             remove_items = [item['value'] for item in old_items if item.get('value')]
             cf_client.update_list(list_id, append_items=items_json, remove_items=remove_items)
@@ -271,7 +292,6 @@ def save_and_sync(cf_client, feed_config, domain_set):
     
     if policy_id:
         existing_policy = next((p for p in current_policies if p.get('id') == policy_id), {})
-        # Safety check for missing conditions
         existing_conditions = existing_policy.get('conditions') or []
         if existing_conditions and existing_conditions[0].get('expression') != expression_json:
             logger.info(f"Updating policy '{policy_name}'...")
@@ -293,7 +313,6 @@ def save_and_sync(cf_client, feed_config, domain_set):
 
 def cleanup_resources(cf_client):
     logger.info("--- ⚠️ CLEANUP MODE: DELETING RESOURCES ⚠️ ---")
-    # --- FIX APPLIED HERE ALSO ---
     current_policies = cf_client.get_rules().get('result') or []
     all_current_lists = cf_client.get_lists().get('result') or []
 
@@ -396,17 +415,28 @@ def main():
             for feed in CFG.FEED_CONFIGS:
                 feed_datasets[feed['name']] = fetch_domains(feed)
 
-            ad_feed_name = "Ad Block Feed"
-            tif_feed_name = "Threat Intel Feed"
-            
-            if ad_feed_name in feed_datasets and tif_feed_name in feed_datasets:
-                ad_domains = feed_datasets[ad_feed_name]
-                tif_domains = feed_datasets[tif_feed_name]
-                overlap = ad_domains.intersection(tif_domains)
+            # --- SMART DEDUPLICATION ---
+            ad_name = "Ad Block Feed"
+            security_name = "Security Feed"
+            tif_name = "Threat Intel Feed"
+
+            if ad_name in feed_datasets and security_name in feed_datasets:
+                overlap = feed_datasets[ad_name].intersection(feed_datasets[security_name])
                 if overlap:
-                    logger.info(f"🔍 Found {len(overlap)} domains in both lists.")
-                    feed_datasets[tif_feed_name] = tif_domains - overlap
-                    logger.info(f"✅ Removed overlapping domains from {tif_feed_name}.")
+                    logger.info(f"🔍 Found {len(overlap)} overlaps between Ads & Security.")
+                    feed_datasets[security_name] -= overlap
+
+            if ad_name in feed_datasets and tif_name in feed_datasets:
+                overlap = feed_datasets[ad_name].intersection(feed_datasets[tif_name])
+                if overlap:
+                    logger.info(f"🔍 Found {len(overlap)} overlaps between Ads & TIF.")
+                    feed_datasets[tif_name] -= overlap
+
+            if security_name in feed_datasets and tif_name in feed_datasets:
+                overlap = feed_datasets[security_name].intersection(feed_datasets[tif_name])
+                if overlap:
+                    logger.info(f"🔍 Found {len(overlap)} overlaps between Security & TIF.")
+                    feed_datasets[tif_name] -= overlap
 
             changed_files_list = []
             for feed in CFG.FEED_CONFIGS:
