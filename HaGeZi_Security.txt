@@ -2844,7 +2844,6 @@ btcinvest.app
 btcminer.website
 btcoinpro.com
 btcswing.com
-btg.go4it.com.mx
 btguard.com
 bts01.dnscry.pt
 btunnel.co.in
@@ -3250,7 +3249,6 @@ charihoproducts.com
 charismatico.com
 charmdaily.com
 charmsvision.com
-chart.books.fivepals.com
 charter.com
 chasefirst.com
 chasellsm.click
@@ -3665,7 +3663,6 @@ cooffee.de
 coogle.at
 cookanddinesales.com
 cookskitchen.club
-cool-proxy.net
 coolgams.dk-condos.com
 coolgifts.shop
 cooling-ace.de
@@ -3701,7 +3698,6 @@ corporationw.com
 corralwestboot.com
 correspondine.com
 correspondu.com
-cors.x2u.in
 corsaircontrol.pro
 corsproxy.io
 corteiz.co
@@ -3792,7 +3788,6 @@ crocsuruguay.net
 crokdalien.com
 crop-bytes.com
 crossfitsuomi.co
-crossorigin.me
 crown-diamonds.com
 crownet.com
 crownno.com
@@ -3924,7 +3919,6 @@ cyclingzx.com
 cydertlinder.com
 cyliu.idv.tw
 cymgrup.com
-cynntex.fun
 cyno-sainti.ch
 cz-parts.de
 cz-parts.eu
@@ -4600,7 +4594,6 @@ ditac-tech.de
 ditchyourip.com
 dithclerk.com
 divalane.com
-divaloo.com
 divine-group.io
 divingshop.nl
 divisaautopecas.com
@@ -4768,7 +4761,6 @@ dns.bmwhocking.com
 dns.bofh.in
 dns.bortus.io
 dns.bovat.net
-dns.braene.com
 dns.brahma.world
 dns.brembeck.cloud
 dns.briac-mlb.fr
@@ -4821,7 +4813,6 @@ dns.comff.net
 dns.complianceauditores.com.br
 dns.connect.fail
 dns.consoro.eu
-dns.containerpi.com
 dns.controld.com
 dns.cooluc.com
 dns.cryptomize.com
@@ -4830,7 +4821,6 @@ dns.csa-rz.de
 dns.csaonline.de
 dns.csswg.org
 dns.cwlys.com
-dns.cybertonic.tech
 dns.cynthialabs.net
 dns.d365.in
 dns.d4d.moe
@@ -4884,7 +4874,6 @@ dns.edc-pws.com
 dns.eddi.net
 dns.edgeburnmedia.com
 dns.edgeworkssystems.ca
-dns.edgy.network
 dns.efficientdocuments.com
 dns.electrotm.org
 dns.elemental.software
@@ -4919,7 +4908,6 @@ dns.fifux.be
 dns.filipccz.eu
 dns.fizz.studio
 dns.flatuslifir.is
-dns.flightspace.net
 dns.floriantinney.de
 dns.flux24.net
 dns.flwagners.com
@@ -5609,7 +5597,6 @@ dnsdojo.net
 dnsdojo.org
 dnsdyn.net
 dnsdynamic.org
-dnsenc.com
 dnset.com
 dnsexit.com
 dnsfailover.net
@@ -6275,7 +6262,6 @@ eaticc.com
 eating-organic.net
 eatuo.com
 eaventura.de
-eazy.wtf
 eazzy.shop
 ebay.buyvip.live
 eberhard-versand.de
@@ -6733,7 +6719,6 @@ esprits.at
 esr-live-germany.com
 esrlive.co
 essaro.de
-essay.gov.blacknapkins.org
 essayplanet.org
 essenciabrand.com
 essentialoilnew.com
@@ -6893,7 +6878,6 @@ evermily.com
 evershape.at
 everton.com
 everyknives.com
-everyorigin.jwvbremen.nl
 everyproxies.info
 everyswimsuit.com
 evisas.travel
@@ -7865,7 +7849,6 @@ fuhrmann.store
 fuitrpt.com
 fukuda.ccnt.fr
 fulcio.fr
-full.boxathome.net
 fullaccesstointernet.jp.eu.org
 fullcarparts.com
 fun-carrer.work
@@ -8678,7 +8661,6 @@ grillwieseava.shop
 grillzentrale.shop
 grilmarkt.com
 grilmarktt.com
-grimace-shake.skibidi-rizz-gyatt-fanum-tax-sigma-ohio.ct.ws
 grimhat.com
 grizzlyroids.shop
 grjobremote.com
@@ -8791,7 +8773,6 @@ gurcanozturk.com
 gurdit.com
 guru4invest.com
 guruproxy.net
-gustamadh.dynv6.net
 gut-daheim.ch
 gut-werkzeug.com
 gutbutzow.de
@@ -9565,7 +9546,6 @@ home.weisbrod.me
 home.wriedts.de
 home27.duckdns.org
 home64.de
-homec92.dns.army
 homechelsea.com
 homecrestview.com
 homedecofactory.com
@@ -10646,7 +10626,6 @@ jupitervpn.ninja
 juproxy.com
 juretro.com
 jurre-home.duckdns.org
-justcors.com
 justdied.com
 justfor.myasustor.com
 justhost.bedro.cloud
@@ -11614,7 +11593,6 @@ linenhomestudio.com
 linenmia.com
 linens-chic.com
 linevo.de
-linewize.broomleigh.org
 link.altapo.ru
 linkglobalcargo.com
 linkideo.com
@@ -15130,7 +15108,6 @@ proxy-zone.net
 proxy.am
 proxy.cc
 proxy.com.de
-proxy.corsfix.com
 proxy.darkvpn.com
 proxy.e2encrypted.com
 proxy.eti.pw
@@ -15752,7 +15729,6 @@ resolve02.srv-pro.de
 resolve2.srv-pro.de
 resolver-eu.haringstad.com
 resolver.as203038.net
-resolver.dns.eban.eu.org
 resolver.dnsprivacy.org.uk
 resolver.frank-ruan.com
 resolver.haringstad.com
@@ -18101,7 +18077,6 @@ teslertrading.bestchoice-investment.com
 test-iq-online.com
 test.adg.siudzinski.net
 test.businessconnect.com.tr
-test.cors.workers.dev
 test.marss.pro
 test.privatenode.ru
 test.zkwg.duckdns.org
@@ -20271,7 +20246,6 @@ wg.pastorov.ru
 wg.req1.fr
 what-is-interstellar-all-i-know-is-linewize.easterndns.com
 whatcaniplay.com
-whateverorigin.org
 whatsexy.de
 whatsonthebox.net
 wheatinfall.com
@@ -20518,7 +20492,6 @@ wwwhamsterkiste.de
 wwwhost.biz
 wyx.cloud
 x-clarity.com
-x-o-x.duckdns.org
 x-wallart.com
 x-watches.co
 x.laoban.fun
@@ -20527,7 +20500,6 @@ x.res.wang
 x24customs.de
 x24hr.com
 x443.pw
-x861g.duckdns.org
 xaperni.com
 xaslnsh.com
 xatix-beratung.de
