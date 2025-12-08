@@ -38,8 +38,6 @@ class Config:
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
 
     # --- JUNK TLD FILTER ---
-    # Any domain ending in these will be instantly discarded.
-    # Note: We include the leading dot to ensure we don't accidentally match "forest.com" when filtering ".rest"
     BLOCKED_TLDS = (
         ".rest", ".hair", ".top", ".cfd", ".boats", ".beauty", 
         ".mom", ".skin", ".okinawa", ".zip", ".xyz"
@@ -50,7 +48,7 @@ class Config:
         {
             "name": "Ad Block Feed",
             "prefix": "Block ads",
-            "policy_name": "Block ads",
+            "policy_name": "Block Ads, Trackers and Telemetry",
             "filename": "HaGeZi_Normal.txt",
             "urls": [
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
@@ -197,6 +195,7 @@ def fetch_domains(feed_config):
     list_urls = feed_config['urls']
     temp_dir = Path(tempfile.mkdtemp())
     unique_domains = set()
+    tld_filtered_count = 0 # NEW COUNTER
 
     logger.info(f"Downloading {len(list_urls)} lists...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
@@ -218,7 +217,8 @@ def fetch_domains(feed_config):
                     
                     # --- TLD FILTER CHECK ---
                     if candidate.endswith(CFG.BLOCKED_TLDS):
-                        continue # Skip this domain
+                        tld_filtered_count += 1
+                        continue 
                     
                     if '.' in candidate and not INVALID_CHARS_PATTERN.search(candidate):
                          if candidate not in COMMON_JUNK_DOMAINS:
@@ -227,7 +227,9 @@ def fetch_domains(feed_config):
             logger.warning(f"Error processing file {file_path}: {e}")
 
     shutil.rmtree(temp_dir)
-    logger.info(f"Fetched {len(unique_domains)} unique domains (filtered by TLDs).")
+    # Log the specific TLD count
+    logger.info(f"   [TLD Filter] Removed {tld_filtered_count} junk domains.")
+    logger.info(f"   [Net Result] Fetched {len(unique_domains)} unique domains.")
     return unique_domains
 
 def save_and_sync(cf_client, feed_config, domain_set):
@@ -275,6 +277,7 @@ def save_and_sync(cf_client, feed_config, domain_set):
             result = cf_client.create_list(list_name, items_json)
             used_list_ids.append(result['result']['id'])
     
+    # --- POLICY UPDATE ---
     policy_id = next((p['id'] for p in current_policies if p.get('name') == policy_name), None)
     
     or_clauses = [{"any": {"in": {"lhs": {"splat": "dns.domains"}, "rhs": f"${lid}"}}} for lid in used_list_ids]
@@ -293,7 +296,15 @@ def save_and_sync(cf_client, feed_config, domain_set):
     if policy_id:
         existing_policy = next((p for p in current_policies if p.get('id') == policy_id), {})
         existing_conditions = existing_policy.get('conditions') or []
-        if existing_conditions and existing_conditions[0].get('expression') != expression_json:
+        
+        # FIX: Force update if we have lists to delete, to ensure they are detached
+        needs_update = False
+        if excess_list_ids:
+            needs_update = True
+        elif existing_conditions and existing_conditions[0].get('expression') != expression_json:
+            needs_update = True
+
+        if needs_update:
             logger.info(f"Updating policy '{policy_name}'...")
             cf_client.update_rule(policy_id, policy_payload)
         else:
@@ -302,12 +313,17 @@ def save_and_sync(cf_client, feed_config, domain_set):
         logger.info(f"Creating policy '{policy_name}'...")
         cf_client.create_rule(policy_payload)
         
+    # --- DELETE EXCESS ---
+    # FIX: Added try/except to catch 400 Bad Request if list is still momentarily in use
     for list_id in excess_list_ids:
         logger.info(f"Deleting excess list {list_id}...")
         try:
             cf_client.delete_list(list_id)
         except Exception as e:
-            logger.warning(f"Failed to delete {list_id}: {e}")
+            if "400" in str(e):
+                logger.warning(f"Could not delete list {list_id} (Cloudflare reports it is still in use). Skipping cleanup.")
+            else:
+                logger.warning(f"Failed to delete {list_id}: {e}")
 
     return True
 
