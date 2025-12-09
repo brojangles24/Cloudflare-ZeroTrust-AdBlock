@@ -39,19 +39,18 @@ class Config:
 
     # --- JUNK TLD FILTER ---
     BLOCKED_TLDS = (
-        ".cfd",     # "Clothing/Fashion/Design" - 99% Spam/Scams
-        ".sbs",     # "Side by Side" - Heavy Spam
-        ".bond",    # Financial Scams
-        ".cyou",    # "See You" - Heavy Malware/Phishing
-        ".gdn",     # "Global Domain Name" - Cheap Spam
-        ".xin",     # Alibaba registry - Heavy Spam
-        ".loan",    # Predatory loans/Scams
-        ".date",    # Dating scams
-        ".faith",   # Fake religious/charity scams
-        ".men",     # Heavy spam
-        ".party",   # Heavy spam
-        ".win",     # Gambling/Scams
-        ".kim"
+        # Smart Security + Eastern Bloc Lockdown
+        # Targets: Trash TLDs + High Abuse + China/Russia/Soviet Union
+        
+        ".cfd", ".sbs", ".bond", ".cyou", ".gdn", ".xin", 
+        ".loan", ".date", ".faith", ".men", ".party", ".win", 
+        ".kim", ".buzz", ".cam", ".icu", ".monster", ".lol", 
+        ".vip", ".click", ".top",
+        
+        # Geo-Blocks
+        ".cn",  # China 
+        ".su",  # Soviet Union (Malware/Crime)
+        ".ru"   # Russia (Botnets/Ransomware)
     )
 
     # --- DEFINITION OF FEEDS ---
