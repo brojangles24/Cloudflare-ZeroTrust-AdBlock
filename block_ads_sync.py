@@ -39,18 +39,26 @@ class Config:
 
     # --- JUNK TLD FILTER ---
     BLOCKED_TLDS = (
-        # Smart Security + Eastern Bloc Lockdown
-        # Targets: Trash TLDs + High Abuse + China/Russia/Soviet Union
+        # Level 3: "Aggressive Security"
+        # Targets: Trash + Geo-Block + Cheap Generics
         
+        # 1. The "Trash Tier" (Safe to block)
         ".cfd", ".sbs", ".bond", ".cyou", ".gdn", ".xin", 
         ".loan", ".date", ".faith", ".men", ".party", ".win", 
         ".kim", ".buzz", ".cam", ".icu", ".monster", ".lol", 
-        ".vip", ".click", ".top",
+        ".vip", ".click", ".top", ".best", ".fun",
         
-        # Geo-Blocks
-        ".cn",  # China 
-        ".su",  # Soviet Union (Malware/Crime)
-        ".ru"   # Russia (Botnets/Ransomware)
+        # 2. The "Eastern Bloc" (Geo-Politics)
+        ".cn", ".su", ".ru",
+
+        # 3. The "Cheap Generics" (+20% Aggression Tier)
+        # Warning: High chance of hitting small businesses/blogs
+        ".site",    # Massive spam, but also legitimate personal sites
+        ".online",  # Very common for both spam and cheap websites
+        ".shop",    # Blocks spam, but kills independent stores
+        ".live",    # Blocks piracy/cams, but hits some streamers
+        ".info",    # The classic spam folder of the internet
+        ".biz"      # 90% spam, 10% old businesses
     )
 
     # --- DEFINITION OF FEEDS ---
