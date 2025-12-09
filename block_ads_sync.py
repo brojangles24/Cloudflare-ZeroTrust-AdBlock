@@ -51,7 +51,7 @@ class Config:
             "policy_name": "Block Ads, Trackers and Telemetry", # <--- UPDATED NAME
             "filename": "HaGeZi_Normal.txt",
             "urls": [
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/popups-onlydomains.txt",
             ]
         },
