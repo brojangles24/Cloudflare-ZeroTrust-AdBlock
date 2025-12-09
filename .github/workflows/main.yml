@@ -2,8 +2,8 @@ name: Update Blocklists
 
 on:
   # 1. Run automatically every day at 4:00 AM UTC
-  #schedule:
-    #- cron: '0 * * * *'
+  schedule:
+    - cron: '0 * * * *'
   
   # 2. Manual Trigger with Option to Delete
   workflow_dispatch:
