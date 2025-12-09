@@ -44,7 +44,9 @@ class Config:
         ".cam", ".bond", ".sbs", ".cyou", ".gdn", ".lol",
         ".buzz", ".win", ".xin", ".kim", ".ink", ".red",
         ".click", ".loan", ".vip", ".live", ".shop", ".info",
-        ".pro", ".ru", ".cn", ".su", ".cc"
+        ".pro", ".ru", ".cn", ".su", ".cc", ".site", ".online",
+        ".icu", ".monster", ".best", ".fun", ".pw", ".tk", 
+        ".ml", ".ga", ".cf", ".gq"
     )
 
     # --- DEFINITION OF FEEDS ---
