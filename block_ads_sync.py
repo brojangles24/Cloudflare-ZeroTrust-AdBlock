@@ -40,7 +40,11 @@ class Config:
     # --- JUNK TLD FILTER ---
     BLOCKED_TLDS = (
         ".rest", ".hair", ".top", ".cfd", ".boats", ".beauty", 
-        ".mom", ".skin", ".okinawa", ".zip", ".xyz"
+        ".mom", ".skin", ".okinawa", ".zip", ".xyz", ".mov",
+        ".cam", ".bond", ".sbs", ".cyou", ".gdn", ".lol",
+        ".buzz", ".win", ".xin", ".kim", ".ink", ".red",
+        ".click", ".loan", ".vip", ".live", ".shop", ".info",
+        ".pro", ".ru", ".cn", ".su", ".cc"
     )
 
     # --- DEFINITION OF FEEDS ---
