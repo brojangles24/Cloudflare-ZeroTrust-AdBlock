@@ -77,7 +77,7 @@ class Config:
             "policy_name": "Threat Intelligence Feed",
             "filename": "TIF_Mini.txt",
             "urls": [
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt", 
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.medium-onlydomains.txt", 
             ]
         }
     ]
