@@ -33,32 +33,29 @@ class Config:
     MAX_RETRIES: int = 5
     
     # Git Configuration
-    TARGET_BRANCH: str = os.environ.get("GITHUB_REF_NAME") or os.environ.get("TARGET_BRANCH") or "main"
+    TARGET_BRANCH: str = os.environ.get("GITHUB_REF_NAME") or os.environ.get("TARGET_BRANCH") or "main" 
     GITHUB_ACTOR: str = os.environ.get("GITHUB_ACTOR", "github-actions[bot]")
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
 
     # --- JUNK TLD FILTER ---
     BLOCKED_TLDS = (
-        # Level 3: "Aggressive Security"
-        # Targets: Trash + Geo-Block + Cheap Generics
-        
-        # 1. The "Trash Tier" (Safe to block)
-        ".cfd", ".sbs", ".bond", ".cyou", ".gdn", ".xin", 
-        ".loan", ".date", ".faith", ".men", ".party", ".win", 
-        ".kim", ".buzz", ".cam", ".icu", ".monster", ".lol", 
-        ".vip", ".click", ".top", ".best", ".fun",
-        
-        # 2. The "Eastern Bloc" (Geo-Politics)
-        ".cn", ".su", ".ru",
+        # The "Zero Breakage" Blocklist
+        # Targets: High-abuse "Trash" TLDs only.
+        # Safe for: Shopping, Banking, Foreign Content, & APIs.
 
-        # 3. The "Cheap Generics" (+20% Aggression Tier)
-        # Warning: High chance of hitting small businesses/blogs
-        ".site",    # Massive spam, but also legitimate personal sites
-        ".online",  # Very common for both spam and cheap websites
-        ".shop",    # Blocks spam, but kills independent stores
-        ".live",    # Blocks piracy/cams, but hits some streamers
-        ".info",    # The classic spam folder of the internet
-        ".biz"      # 90% spam, 10% old businesses
+        ".cfd",     # 99% Spam/Scams (Clothing/Fashion/Design)
+        ".sbs",     # Heavy SMS Spam (Side by Side)
+        ".bond",    # Financial/Crypto Scams
+        ".cyou",    # Malware/Phishing (See You)
+        ".gdn",     # Cheap Spam (Global Domain Name)
+        ".xin",     # Alibaba registry - Heavy Spam
+        ".loan",    # Predatory loans/Scams
+        ".date",    # Dating scams/Bots
+        ".faith",   # Fake charity scams
+        ".men",     # High volume spam
+        ".party",   # High volume spam
+        ".win",     # Gambling/Scam landing pages
+        ".kim"      # High volume spam
     )
 
     # --- DEFINITION OF FEEDS ---
@@ -69,7 +66,7 @@ class Config:
             "policy_name": "Block Ads, Trackers and Telemetry", # <--- UPDATED NAME
             "filename": "HaGeZi_Normal.txt",
             "urls": [
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/popups-onlydomains.txt",
             ]
         },
@@ -81,8 +78,7 @@ class Config:
             "urls": [
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/badware-onlydomains.txt",
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
             ]
         },
         {
