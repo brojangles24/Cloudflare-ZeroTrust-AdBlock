@@ -67,7 +67,6 @@ class Config:
             "filename": "HaGeZi_Normal.txt",
             "urls": [
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/popups-onlydomains.txt",
             ]
         },
         {
@@ -78,7 +77,6 @@ class Config:
             "urls": [
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/badware-onlydomains.txt",
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
-                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
             ]
         },
         {
