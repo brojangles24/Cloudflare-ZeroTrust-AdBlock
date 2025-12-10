@@ -35,15 +35,21 @@ HAGEZI_TIF_MINI = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wild
 HAGEZI_TIF_MEDIUM = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.medium-onlydomains.txt"
 HAGEZI_SPAM_TLDS_IDNS = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt" 
 
-TOP_15_TLDS_TUPLE = ("zip", "mov", "xyz", "top", "gdn", "win", "loan", "bid", "stream", "tk", "ml", "ga", "cf", "gq", "cn")
+# --- TLD DEFINITIONS ---
+TOP_15_TLDS_TUPLE = (
+    "zip", "mov", "xyz", "top", "gdn", "win", "loan", "bid",
+    "stream", "tk", "ml", "ga", "cf", "gq", "cn",
+)
 AGGR_TLDS_IDNS = HAGEZI_SPAM_TLDS_IDNS
 
 class Config:
     API_TOKEN: str = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID: str = os.environ.get("ACCOUNT_ID", "")
+    
     MAX_LIST_SIZE: int = 1000
     MAX_LISTS: int = 300 
     MAX_RETRIES: int = 5
+    
     TARGET_BRANCH: str = os.environ.get("GITHUB_REF_NAME") or os.environ.get("TARGET_BRANCH") or "main" 
     GITHUB_ACTOR: str = os.environ.get("GITHUB_ACTOR", "github-actions[bot]")
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
@@ -51,6 +57,7 @@ class Config:
     CURRENT_LEVEL: str = "0"
     LAST_DEPLOYED_LEVEL: str = "0"
     SHOULD_WIPE: bool = False
+    
     BLOCKED_TLDS_SET: set = set()
     TLD_SOURCE: str | tuple = () 
     FEED_CONFIGS: list = []
@@ -152,6 +159,8 @@ class Config:
 CFG = Config()
 
 # --- 2. Helper Functions ---
+# Only allow alphanumeric, dashes, and dots. Prevents regex injection via quotes.
+SAFE_TLD_PATTERN = re.compile(r'^[a-z0-9\-\.]+$')
 INVALID_CHARS_PATTERN = re.compile(r'[<>&;\"\'/=\s]')
 COMMON_JUNK_DOMAINS = {'localhost', '127.0.0.1', '0.0.0.0', '::1', 'broadcasthost'}
 
@@ -175,7 +184,7 @@ def run_command(command):
 def download_list(url, file_path):
     r = requests.get(url, timeout=30); r.raise_for_status(); file_path.write_bytes(r.content)
 
-# --- 3. Cloudflare API Client (REAL) ---
+# --- 3. Cloudflare API Client ---
 class CloudflareAPI:
     def __init__(self, account_id, api_token, max_retries):
         self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/gateway"
@@ -198,14 +207,9 @@ class CloudflareAPI:
                 data = resp.json()
                 if not data.get('success'):
                     msgs = [e.get('message', 'Unknown') for e in data.get('errors', [])]
-                    err_str = str(msgs).lower()
-                    
-                    # --- ROBUST ERROR HANDLING FIX ---
-                    # Ignore 'not found' or 'invalid id' during deletion
-                    if method == "DELETE":
-                        if "not found" in err_str or "invalid" in err_str:
-                            return {'success': True}
-                            
+                    # Robust cleanup: Ignore 404s on delete
+                    if method == "DELETE" and any("not found" in m.lower() or "invalid" in m.lower() for m in msgs):
+                        return {'success': True}
                     raise requests.exceptions.HTTPError(f"API Error: {msgs}", response=resp)
                 return data
             except Exception as e:
@@ -226,9 +230,31 @@ class CloudflareAPI:
 # --- 4. Logic Functions ---
 
 def create_tld_regex(content):
-    tlds = [l.strip().lstrip('.').lower() for l in content.splitlines() if l.strip() and not l.startswith('#')]
-    if not tlds: return ""
-    return f"(?i)\\.({'|'.join(sorted(set(tlds)))})$"
+    tlds = content.splitlines()
+    cleaned_tlds = []
+    
+    for line in tlds:
+        # Standardize and sanitize
+        item = line.strip().lstrip('.').lower()
+        
+        if not item or line.startswith('#'): 
+            continue
+            
+        # SANITIZATION: Skip any TLD that contains weird characters to prevent regex injection
+        if not SAFE_TLD_PATTERN.match(item):
+            logger.warning(f"Skipping unsafe TLD entry: {item}")
+            continue
+            
+        cleaned_tlds.append(item)
+    
+    if not cleaned_tlds:
+        return ""
+
+    # FIX: Use [.] instead of \. to avoid backslash hell in JSON/API logic.
+    # [.] means "match literal dot" in regex and requires NO escaping.
+    tld_pattern = "|".join(sorted(set(cleaned_tlds)))
+    regex = f"(?i)[.]({tld_pattern})$"
+    return regex
 
 def create_tld_policy(cf, file, level):
     name = f"Level {level}: Junk TLD/IDN Blocking"
@@ -236,9 +262,12 @@ def create_tld_policy(cf, file, level):
     regex = create_tld_regex(file.read_text(encoding='utf-8'))
     if not regex: return
     
+    # We construct the string carefully
+    traffic_expr = f'dns.fqdn matches regex "{regex}"'
+    
     payload = {
         "name": name, "description": "Managed by script.", "enabled": True, "action": "block", "filters": ["dns"],
-        "traffic": f"dns.fqdn matches regex \"{regex}\"", "rule_settings": {"block_page_enabled": False}
+        "traffic": traffic_expr, "rule_settings": {"block_page_enabled": False}
     }
     rules = cf.get_rules().get('result') or []
     pid = next((p['id'] for p in rules if p.get('name') == name), None)
@@ -261,16 +290,19 @@ def deploy_category_policies(cf, level):
 
     if config.get("block_tor"):
         p_name = f"Level {level}: Block Tor DNS"
-        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": "dns.fqdn matches regex \"(?i)\\.onion$\"", "rule_settings": {"block_page_enabled": False}})
+        # Using [.]onion to avoid backslash issues
+        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": 'dns.fqdn matches regex "(?i)[.]onion$"', "rule_settings": {"block_page_enabled": False}})
 
     if config.get("block_countries"):
         p_name = f"Level {level}: Block Countries"
         c_regex = "|".join([c.lower() for c in config["block_countries"]])
-        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": f"dns.fqdn matches regex \"(?i)\\.({c_regex})$\"", "rule_settings": {"block_page_enabled": False}})
+        # Using [.] to avoid backslash issues
+        expr = f'dns.fqdn matches regex "(?i)[.]({c_regex})$"'
+        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": expr, "rule_settings": {"block_page_enabled": False}})
 
     if config.get("block_bypass"):
         p_name = f"Level {level}: Block Apple and Cox DNS"
-        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": "dns.fqdn in {\"mask.icloud.com\" \"mask-h2.icloud.com\" \"mask-api.icloud.com\"}", "rule_settings": {"block_page_enabled": False}})
+        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": 'dns.fqdn in {"mask.icloud.com" "mask-h2.icloud.com" "mask-api.icloud.com"}', "rule_settings": {"block_page_enabled": False}})
 
 def _deploy_policy(cf, name, payload):
     rules = cf.get_rules().get('result') or []
@@ -354,19 +386,16 @@ def cleanup_resources(cf):
     rules = cf.get_rules().get('result') or []
     lists = cf.get_lists().get('result') or []
     
-    # 1. Identify ALL Lists to delete
     lists_to_delete = lists
     list_ids_to_delete = {l['id'] for l in lists_to_delete}
     logger.info(f"Found {len(lists_to_delete)} lists to delete.")
 
-    # 2. Identify Policies to delete
     policies_to_delete = []
     keywords = ["Level", "Block", "Ads", "Security", "TIF", "Junk", "Malware", "Tor", "Country"]
     for p in rules:
         if any(lid in str(p) for lid in list_ids_to_delete) or any(k in p.get('name', '') for k in keywords):
             policies_to_delete.append(p)
 
-    # 3. Delete Policies First
     if policies_to_delete:
         logger.info(f"Deleting {len(policies_to_delete)} conflicting policies...")
         for p in policies_to_delete:
@@ -379,7 +408,6 @@ def cleanup_resources(cf):
     else:
         logger.info("No conflicting policies found.")
 
-    # 4. Delete Lists
     for l in lists_to_delete:
         logger.info(f"Deleting List: {l['name']} ({l['id']})...")
         try: cf.delete_list(l['id'])
