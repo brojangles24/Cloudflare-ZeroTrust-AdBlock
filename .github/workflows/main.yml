@@ -11,7 +11,7 @@ on:
         type: boolean
         default: false
       nuke_mode:
-        description: '☢️ NUKE MODE (Delete ALL lists/rules)'
+        description: '☢️ SMART NUKE ☢️'
         type: boolean
         default: false
       dry_run:
