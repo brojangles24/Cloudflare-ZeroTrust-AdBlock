@@ -291,15 +291,17 @@ def sync_feed(cf_client: CloudflareAPI, feed: FeedConfig, domains: Set[str]):
         raise ScriptExit(msg)
 
     # 2. UNLOCK: Delete the Policy if it exists
-    # This releases the lock on the lists, preventing 409 Conflict errors during update.
     policies = cf_client.get_rules().get('result') or []
     existing_policy = next((p for p in policies if p.get('name') == feed.policy_name), None)
     
     if existing_policy:
         logger.info(f"🔓 Unlocking lists by temporarily deleting policy: {feed.policy_name}")
         cf_client.delete_rule(existing_policy['id'])
+        # CRITICAL FIX: Give Cloudflare time to propagate the deletion and unlock the lists
+        logger.info("⏳ Waiting 15s for Cloudflare propagation...")
+        time.sleep(15)
     
-    # 3. SYNC: Update Lists (Reduced Concurrency to avoid API stress)
+    # 3. SYNC: Update Lists
     used_ids = []
     logger.info(f"⚡ Syncing {total_needed} lists...")
     
@@ -322,7 +324,6 @@ def sync_feed(cf_client: CloudflareAPI, feed: FeedConfig, domains: Set[str]):
                 if "result" in res: used_ids.append(res['result']['id'])
             except Exception as e:
                 logger.error(f"{future_map[f]} failed: {e}")
-                # We raise here because if a list fails to create, the policy will be partial
                 raise e
 
     # 4. CLEANUP: Delete excess lists
