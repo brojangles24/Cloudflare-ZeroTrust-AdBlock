@@ -1,5 +1,0 @@
-# config.toml
-
-# Set the desired security level here. 
-# 1: Minimal, 2: Normal, 3: Aggressive, 4: Extreme
-security_level = 3
