@@ -24,7 +24,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- FEED URL DEFINITIONS (Constants) ---
+# --- CONSTANTS ---
 HAGEZI_ULTIMATE = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
 HAGEZI_PRO = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
 HAGEZI_NORMAL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/normal-onlydomains.txt"
@@ -35,21 +35,15 @@ HAGEZI_TIF_MINI = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wild
 HAGEZI_TIF_MEDIUM = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.medium-onlydomains.txt"
 HAGEZI_SPAM_TLDS_IDNS = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt" 
 
-# --- TLD DEFINITIONS ---
-TOP_15_TLDS_TUPLE = (
-    "zip", "mov", "xyz", "top", "gdn", "win", "loan", "bid",
-    "stream", "tk", "ml", "ga", "cf", "gq", "cn",
-)
+TOP_15_TLDS_TUPLE = ("zip", "mov", "xyz", "top", "gdn", "win", "loan", "bid", "stream", "tk", "ml", "ga", "cf", "gq", "cn")
 AGGR_TLDS_IDNS = HAGEZI_SPAM_TLDS_IDNS
 
 class Config:
     API_TOKEN: str = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID: str = os.environ.get("ACCOUNT_ID", "")
-    
     MAX_LIST_SIZE: int = 1000
     MAX_LISTS: int = 300 
     MAX_RETRIES: int = 5
-    
     TARGET_BRANCH: str = os.environ.get("GITHUB_REF_NAME") or os.environ.get("TARGET_BRANCH") or "main" 
     GITHUB_ACTOR: str = os.environ.get("GITHUB_ACTOR", "github-actions[bot]")
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
@@ -57,7 +51,6 @@ class Config:
     CURRENT_LEVEL: str = "0"
     LAST_DEPLOYED_LEVEL: str = "0"
     SHOULD_WIPE: bool = False
-    
     BLOCKED_TLDS_SET: set = set()
     TLD_SOURCE: str | tuple = () 
     FEED_CONFIGS: list = []
@@ -182,7 +175,7 @@ def run_command(command):
 def download_list(url, file_path):
     r = requests.get(url, timeout=30); r.raise_for_status(); file_path.write_bytes(r.content)
 
-# --- 3. Cloudflare API Client ---
+# --- 3. Cloudflare API Client (REAL) ---
 class CloudflareAPI:
     def __init__(self, account_id, api_token, max_retries):
         self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/gateway"
@@ -194,6 +187,7 @@ class CloudflareAPI:
         self.session.mount('https://', requests.adapters.HTTPAdapter(max_retries=self.max_retries))
         return self
     def __exit__(self, exc_type, exc_value, traceback): self.session.close()
+    
     def _request(self, method, endpoint, **kwargs):
         url = f"{self.base_url}/{endpoint}"
         retries = 0
@@ -204,14 +198,21 @@ class CloudflareAPI:
                 data = resp.json()
                 if not data.get('success'):
                     msgs = [e.get('message', 'Unknown') for e in data.get('errors', [])]
-                    # Handle deletion 404 gracefully
-                    if method == "DELETE" and any("not found" in m.lower() for m in msgs): return {'success': True}
+                    err_str = str(msgs).lower()
+                    
+                    # --- ROBUST ERROR HANDLING FIX ---
+                    # Ignore 'not found' or 'invalid id' during deletion
+                    if method == "DELETE":
+                        if "not found" in err_str or "invalid" in err_str:
+                            return {'success': True}
+                            
                     raise requests.exceptions.HTTPError(f"API Error: {msgs}", response=resp)
                 return data
             except Exception as e:
                 retries += 1
                 if retries > self.max_retries: raise RuntimeError(f"API failed: {e}")
                 time.sleep(retries * 2)
+
     def get_lists(self): return self._request("GET", "lists")
     def get_list_items(self, lid, lim): return self._request("GET", f"lists/{lid}/items?limit={lim}")
     def update_list(self, lid, app, rem): return self._request("PATCH", f"lists/{lid}", json={"append": app, "remove": rem})
@@ -254,7 +255,6 @@ def deploy_category_policies(cf, level):
     
     if sec_cats:
         p_name = f"Level {level}: Block Malware"
-        # FIX: Build string separately to support Python 3.11 (no backslash in f-string expression)
         cats_formatted = ' '.join([f'"{c}"' for c in sec_cats])
         expr = f"any(dns.security_category[*] in {{{cats_formatted}}})"
         _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": expr, "rule_settings": {"block_page_enabled": False}})
@@ -354,23 +354,19 @@ def cleanup_resources(cf):
     rules = cf.get_rules().get('result') or []
     lists = cf.get_lists().get('result') or []
     
+    # 1. Identify ALL Lists to delete
     lists_to_delete = lists
     list_ids_to_delete = {l['id'] for l in lists_to_delete}
-    
     logger.info(f"Found {len(lists_to_delete)} lists to delete.")
 
+    # 2. Identify Policies to delete
     policies_to_delete = []
-    # Ruthless: Delete ANY policy that matches our keywords OR uses our lists
     keywords = ["Level", "Block", "Ads", "Security", "TIF", "Junk", "Malware", "Tor", "Country"]
-    
     for p in rules:
-        if any(lid in str(p) for lid in list_ids_to_delete):
+        if any(lid in str(p) for lid in list_ids_to_delete) or any(k in p.get('name', '') for k in keywords):
             policies_to_delete.append(p)
-            continue
-        if any(k in p.get('name', '') for k in keywords):
-            policies_to_delete.append(p)
-            continue
 
+    # 3. Delete Policies First
     if policies_to_delete:
         logger.info(f"Deleting {len(policies_to_delete)} conflicting policies...")
         for p in policies_to_delete:
@@ -383,6 +379,7 @@ def cleanup_resources(cf):
     else:
         logger.info("No conflicting policies found.")
 
+    # 4. Delete Lists
     for l in lists_to_delete:
         logger.info(f"Deleting List: {l['name']} ({l['id']})...")
         try: cf.delete_list(l['id'])
@@ -439,9 +436,7 @@ def main():
             if sync_ok:
                 tld_f = next((f for f in CFG.FEED_CONFIGS if f['name'] == 'Junk TLDs and IDNs'), None)
                 if tld_f: create_tld_policy(cf, Path(tld_f['filename']), CFG.CURRENT_LEVEL)
-                
                 deploy_category_policies(cf, CFG.CURRENT_LEVEL)
-                
                 Path(".last_deployed_profile").write_text(CFG.CURRENT_LEVEL)
                 logger.info("✅ Deployment Complete.")
                 
