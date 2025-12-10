@@ -159,7 +159,6 @@ class Config:
 CFG = Config()
 
 # --- 2. Helper Functions ---
-# Only allow alphanumeric, dashes, and dots. Prevents regex injection via quotes.
 SAFE_TLD_PATTERN = re.compile(r'^[a-z0-9\-\.]+$')
 INVALID_CHARS_PATTERN = re.compile(r'[<>&;\"\'/=\s]')
 COMMON_JUNK_DOMAINS = {'localhost', '127.0.0.1', '0.0.0.0', '::1', 'broadcasthost'}
@@ -234,26 +233,16 @@ def create_tld_regex(content):
     cleaned_tlds = []
     
     for line in tlds:
-        # Standardize and sanitize
         item = line.strip().lstrip('.').lower()
-        
-        if not item or line.startswith('#'): 
-            continue
-            
-        # SANITIZATION: Skip any TLD that contains weird characters to prevent regex injection
-        if not SAFE_TLD_PATTERN.match(item):
-            logger.warning(f"Skipping unsafe TLD entry: {item}")
-            continue
-            
+        if not item or line.startswith('#'): continue
+        if not SAFE_TLD_PATTERN.match(item): continue 
         cleaned_tlds.append(item)
     
-    if not cleaned_tlds:
-        return ""
+    if not cleaned_tlds: return ""
 
-    # FIX: Use [.] instead of \. to avoid backslash hell in JSON/API logic.
-    # [.] means "match literal dot" in regex and requires NO escaping.
+    # FIX: Use [.] to avoid backslash hell. No (?i) needed as Cloudflare is CI by default.
     tld_pattern = "|".join(sorted(set(cleaned_tlds)))
-    regex = f"(?i)[.]({tld_pattern})$"
+    regex = f"[.]({tld_pattern})$" 
     return regex
 
 def create_tld_policy(cf, file, level):
@@ -291,13 +280,12 @@ def deploy_category_policies(cf, level):
     if config.get("block_tor"):
         p_name = f"Level {level}: Block Tor DNS"
         # Using [.]onion to avoid backslash issues
-        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": 'dns.fqdn matches regex "(?i)[.]onion$"', "rule_settings": {"block_page_enabled": False}})
+        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": 'dns.fqdn matches regex "[.]onion$"', "rule_settings": {"block_page_enabled": False}})
 
     if config.get("block_countries"):
         p_name = f"Level {level}: Block Countries"
         c_regex = "|".join([c.lower() for c in config["block_countries"]])
-        # Using [.] to avoid backslash issues
-        expr = f'dns.fqdn matches regex "(?i)[.]({c_regex})$"'
+        expr = f'dns.fqdn matches regex "[.]({c_regex})$"'
         _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": expr, "rule_settings": {"block_page_enabled": False}})
 
     if config.get("block_bypass"):
