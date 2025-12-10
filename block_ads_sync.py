@@ -9,6 +9,7 @@ import argparse
 import time
 from typing import List, Set, Optional
 from pathlib import Path
+from subprocess import run  # <--- This is the fix
 from itertools import islice
 from dataclasses import dataclass
 
@@ -81,7 +82,7 @@ class Config:
     MAX_LIST_SIZE: int = 1000
     MAX_LISTS: int = 300 
     MAX_RETRIES: int = 5
-    USER_AGENT: str = "Mozilla/5.0 (compatible; CloudflareBlocklistManager/3.3)"
+    USER_AGENT: str = "Mozilla/5.0 (compatible; CloudflareBlocklistManager/3.5)"
     
     # Git
     TARGET_BRANCH: str = os.environ.get("GITHUB_REF_NAME") or os.environ.get("TARGET_BRANCH") or "main" 
@@ -104,7 +105,7 @@ class Config:
             policy_name="Block Security Risks",
             filename="HaGeZi_Security.txt",
             urls=[
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt", 
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
             ]
         ),
@@ -302,7 +303,7 @@ def sync_feed(cf_client: CloudflareAPI, feed: FeedConfig, domains: Set[str]):
     used_ids = []
     logger.info(f"⚡ Syncing {total_needed} lists...")
     
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor: # Reduced from 4 to 2
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor: 
         future_map = {}
         for i, chunk in enumerate(chunks):
             list_name = f"{feed.prefix} - {i + 1:03d}"
