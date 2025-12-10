@@ -66,52 +66,17 @@ class Config:
     TLD_SOURCE: str | tuple = () # The source definition (URL or Tuple)
     FEED_CONFIGS: list = []
 
-    # --- PROFILE DEFINITIONS ---
+    # --- PROFILE DEFINITIONS (Same as previous step) ---
     PROFILE_LEVELS = {
-        # 1. MINIMAL (No TLD/IDN Blocking)
-        "1": {
-            "name": "Minimal",
-            "tlds_source": (), 
-            "feeds": [
-                {"name": "Ads Light", "prefix": "Block 1A", "policy_name": "Level 1: Minimal Ads/Trackers", "filename": "L1_Light.txt", "urls": [HAGEZI_LIGHT]},
-                {"name": "Security Mini", "prefix": "Block 1S", "policy_name": "Level 1: Minimal Security", "filename": "L1_Security.txt", "urls": [HAGEZI_TIF_MINI, HAGEZI_BADWARE, HAGEZI_FAKE]}, 
-            ]
-        },
-        
-        # 2. NORMAL (Top 15 TLDs)
-        "2": {
-            "name": "Normal",
-            "tlds_source": TOP_15_TLDS_TUPLE, 
-            "feeds": [
-                {"name": "Ads Normal", "prefix": "Block 2A", "policy_name": "Level 2: Normal Ads/Trackers", "filename": "L2_Normal.txt", "urls": [HAGEZI_NORMAL]}, 
-                {"name": "Security Mini", "prefix": "Block 2S", "policy_name": "Level 2: Normal Security", "filename": "L2_Security.txt", "urls": [HAGEZI_TIF_MINI, HAGEZI_BADWARE, HAGEZI_FAKE]}, 
-            ]
-        },
-        
-        # 3. AGGRESSIVE (Pro Ads, External TLD/IDN List)
-        "3": {
-            "name": "Aggressive",
-            "tlds_source": AGGR_TLDS_IDNS, # External TLD list URL
-            "feeds": [
-                {"name": "Ads Pro", "prefix": "Block 3A", "policy_name": "Level 3: Aggressive Ads/Trackers", "filename": "L3_Pro.txt", "urls": [HAGEZI_PRO]}, 
-                {"name": "Threat Intel Mini", "prefix": "Block 3S", "policy_name": "Level 3: Strong Security", "filename": "L3_Security.txt", "urls": [HAGEZI_TIF_MINI]},
-            ]
-        },
-
-        # 4. EXTREME (Ultimate Ads, External TLD/IDN List)
-        "4": {
-            "name": "Extreme",
-            "tlds_source": AGGR_TLDS_IDNS, # External TLD list URL
-            "feeds": [
-                {"name": "Ads Ultimate", "prefix": "Block 4A", "policy_name": "Level 4: Ultimate Scorched Earth", "filename": "L4_Ultimate.txt", "urls": [HAGEZI_ULTIMATE]}, 
-                {"name": "Threat Intel Medium", "prefix": "Block 4S", "policy_name": "Level 4: Extreme Security", "filename": "L4_Security.txt", "urls": [HAGEZI_TIF_MEDIUM]},
-            ]
-        },
+        "1": {"name": "Minimal", "tlds_source": (), "feeds": [{"name": "Ads Light", "prefix": "Block 1A", "policy_name": "Level 1: Minimal Ads/Trackers", "filename": "L1_Light.txt", "urls": [HAGEZI_LIGHT]}, {"name": "Security Mini", "prefix": "Block 1S", "policy_name": "Level 1: Minimal Security", "filename": "L1_Security.txt", "urls": [HAGEZI_TIF_MINI, HAGEZI_BADWARE, HAGEZI_FAKE]}]},
+        "2": {"name": "Normal", "tlds_source": TOP_15_TLDS_TUPLE, "feeds": [{"name": "Ads Normal", "prefix": "Block 2A", "policy_name": "Level 2: Normal Ads/Trackers", "filename": "L2_Normal.txt", "urls": [HAGEZI_NORMAL]}, {"name": "Security Mini", "prefix": "Block 2S", "policy_name": "Level 2: Normal Security", "filename": "L2_Security.txt", "urls": [HAGEZI_TIF_MINI, HAGEZI_BADWARE, HAGEZI_FAKE]}]},
+        "3": {"name": "Aggressive", "tlds_source": AGGR_TLDS_IDNS, "feeds": [{"name": "Ads Pro", "prefix": "Block 3A", "policy_name": "Level 3: Aggressive Ads/Trackers", "filename": "L3_Pro.txt", "urls": [HAGEZI_PRO]}, {"name": "Threat Intel Mini", "prefix": "Block 3S", "policy_name": "Level 3: Strong Security", "filename": "L3_Security.txt", "urls": [HAGEZI_TIF_MINI]}]},
+        "4": {"name": "Extreme", "tlds_source": AGGR_TLDS_IDNS, "feeds": [{"name": "Ads Ultimate", "prefix": "Block 4A", "policy_name": "Level 4: Ultimate Scorched Earth", "filename": "L4_Ultimate.txt", "urls": [HAGEZI_ULTIMATE]}, {"name": "Threat Intel Medium", "prefix": "Block 4S", "policy_name": "Level 4: Extreme Security", "filename": "L4_Security.txt", "urls": [HAGEZI_TIF_MEDIUM]}]},
     }
 
     @classmethod
     def load_config_data(cls):
-        # 1. Load desired level from config.toml
+        # ... (load_config_data logic remains the same, assuming correct TLD_SOURCE handling)
         config_path = Path("config.toml")
         if not config_path.exists():
              raise ScriptExit("config.toml not found. Please create it.", critical=True)
@@ -124,11 +89,9 @@ class Config:
         except Exception as e:
             raise ScriptExit(f"Error reading config.toml: {e}", critical=True)
 
-        # 2. Check last deployed level from a local cache file
         cache_path = Path(".last_deployed_profile")
         last_level = cache_path.read_text().strip() if cache_path.exists() else "0"
         
-        # 3. Determine if a full wipe is needed
         cls.CURRENT_LEVEL = level_str
         cls.LAST_DEPLOYED_LEVEL = last_level
 
@@ -139,12 +102,10 @@ class Config:
             cls.SHOULD_WIPE = False
             logger.info(f"Profile {cls.CURRENT_LEVEL} is consistent. Performing update sync.")
 
-        # 4. Assign dynamic config and TLD source
         profile = cls.PROFILE_LEVELS[level_str]
         cls.TLD_SOURCE = profile["tlds_source"]
         cls.FEED_CONFIGS = profile["feeds"]
         
-        # 5. Populate TLD_BLOCKING_SET for fast filtering (Handles both tuple and URL source)
         if isinstance(cls.TLD_SOURCE, tuple) and cls.TLD_SOURCE:
             cls.BLOCKED_TLDS_SET = set(cls.TLD_SOURCE)
         elif isinstance(cls.TLD_SOURCE, str) and cls.TLD_SOURCE:
@@ -159,9 +120,8 @@ class Config:
                 os.remove(temp_file)
             except Exception as e:
                 logger.error(f"Failed to load external TLD list for filtering: {e}")
-                cls.BLOCKED_TLDS_SET = set() # Fail safe
-
-        # 6. Add TLD Blocking as a dedicated feed for list creation and policy assembly
+                cls.BLOCKED_TLDS_SET = set()
+        
         if cls.TLD_SOURCE:
             tld_feed = {
                 "name": "Junk TLDs and IDNs",
@@ -171,7 +131,6 @@ class Config:
                 "urls": [cls.TLD_SOURCE] if isinstance(cls.TLD_SOURCE, str) else []
             }
             cls.FEED_CONFIGS.append(tld_feed)
-
 
     @classmethod
     def validate(cls):
@@ -222,36 +181,75 @@ def download_list(url, file_path):
     response.raise_for_status()
     file_path.write_bytes(response.content)
 
-# --- 3. Cloudflare API Client (Requires actual implementation in your environment) ---
-# NOTE: The following is a DUMMY class for code completeness. 
-# Use your complete, working CloudflareAPI class here.
+# --- 3. Cloudflare API Client (REAL IMPLEMENTATION) ---
+
 class CloudflareAPI:
     def __init__(self, account_id, api_token, max_retries):
         self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/gateway"
-        self.headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+        self.headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+        }
         self.max_retries = max_retries
-        self.session = requests.Session()
+        self.session = None
 
-    def __enter__(self): return self
-    def __exit__(self, exc_type, exc_value, traceback): self.session.close()
+    def __enter__(self):
+        self.session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(max_retries=self.max_retries)
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.session:
+            self.session.close()
 
     def _request(self, method, endpoint, **kwargs):
-        # NOTE: Implement actual API logic here. Returning mock data for completeness.
-        logger.debug(f"API CALL: {method} {endpoint}")
-        if 'lists' in endpoint and 'GET' in method: return {'result': []}
-        if 'rules' in endpoint and 'GET' in method: return {'result': []}
-        return {'success': True, 'result': {'id': 'mock-id'}}
-    
+        url = f"{self.base_url}/{endpoint}"
+        retries = 0
+        while retries <= self.max_retries:
+            try:
+                response = self.session.request(method, url, headers=self.headers, **kwargs)
+                
+                # Check for rate limiting or server errors (5xx)
+                if response.status_code >= 500 or response.status_code == 429:
+                    response.raise_for_status() 
+                
+                response_json = response.json()
+                if not response_json.get('success'):
+                    error_messages = [err.get('message', 'Unknown API Error') for err in response_json.get('errors', [])]
+                    raise requests.exceptions.HTTPError(f"API failed: {', '.join(error_messages)}", response=response)
+                    
+                response.raise_for_status()
+                return response_json
+                
+            except requests.exceptions.RequestException as e:
+                status_code = e.response.status_code if e.response is not None else 0
+                if status_code >= 500 or status_code == 429:
+                    retries += 1
+                    sleep_time = retries * 2
+                    logger.warning(f"Cloudflare API Error ({status_code}). Retrying {retries}/{self.max_retries} in {sleep_time}s...")
+                    time.sleep(sleep_time)
+                    if retries > self.max_retries:
+                        logger.error(f"Max retries exceeded for {method} {url}")
+                        raise RuntimeError(f"Cloudflare API failed after retries: {e}")
+                else:
+                    logger.error(f"Cloudflare Client Error: {e}")
+                    raise RuntimeError(f"Cloudflare API failed: {e}")
+
     def get_lists(self): return self._request("GET", "lists")
-    def get_rules(self): return self._request("GET", "rules")
-    def delete_rule(self, rule_id): return self._request("DELETE", f"rules/{rule_id}")
-    def delete_list(self, list_id): return self._request("DELETE", f"lists/{list_id}")
-    def create_list(self, name, items): return self._request("POST", "lists", json={"name": name, "items": items})
-    def update_list(self, list_id, append_items, remove_items): return self._request("PATCH", f"lists/{list_id}")
     def get_list_items(self, list_id, limit): return self._request("GET", f"lists/{list_id}/items?limit={limit}")
+    def update_list(self, list_id, append_items, remove_items):
+        data = {"append": append_items, "remove": remove_items}
+        return self._request("PATCH", f"lists/{list_id}", json=data)
+    def create_list(self, name, items):
+        data = {"name": name, "type": "DOMAIN", "items": items}
+        return self._request("POST", "lists", json=data)
+    def delete_list(self, list_id): return self._request("DELETE", f"lists/{list_id}")
+    def get_rules(self): return self._request("GET", "rules")
     def create_rule(self, payload): return self._request("POST", "rules", json=payload)
     def update_rule(self, rule_id, payload): return self._request("PUT", f"rules/{rule_id}", json=payload)
-# --- END Cloudflare API Class ---
+    def delete_rule(self, rule_id): return self._request("DELETE", f"rules/{rule_id}")
 
 
 # --- 4. Workflow Functions ---
@@ -261,7 +259,6 @@ def create_tld_regex(tld_list_content):
     
     tlds = tld_list_content.splitlines()
     
-    # Clean the TLD strings (remove dot, remove comments, lowercase)
     cleaned_tlds = []
     for line in tlds:
         line = line.strip().lstrip('.').lower()
@@ -287,7 +284,6 @@ def create_tld_policy(cf_client, tld_list_file, level):
         logger.error("Cannot create TLD policy: TLD file not found locally.")
         return
 
-    # 1. Read the list content to generate the regex
     tld_list_content = tld_list_file.read_text(encoding='utf-8')
     tld_regex = create_tld_regex(tld_list_content)
     
@@ -295,7 +291,6 @@ def create_tld_policy(cf_client, tld_list_file, level):
         logger.warning("TLD policy skipped: Regex pattern is empty.")
         return
 
-    # 2. Prepare the policy payload
     policy_payload = {
         "name": policy_name,
         "description": f"Managed by script. Blocks known spam, phishing, and IDN TLDs for Level {level}.",
@@ -307,7 +302,6 @@ def create_tld_policy(cf_client, tld_list_file, level):
         "rule_settings": {"block_page_enabled": False},
     }
     
-    # 3. Check and deploy
     current_policies = cf_client.get_rules().get('result') or []
     policy_id = next((p['id'] for p in current_policies if p.get('name') == policy_name), None)
 
@@ -328,10 +322,8 @@ def fetch_domains(feed_config):
 
     # Special handling for TLD blocking list from local tuple (Level 2)
     if feed_config['name'] == "Junk TLDs and IDNs" and isinstance(CFG.TLD_SOURCE, tuple):
-        # Create dummy domains using the TLD list, as Cloudflare lists need FQDNs
         unique_domains = set(f"domain.{tld}" for tld in CFG.TLD_SOURCE)
         
-        # Save TLDs to file for the regex assembly step later
         output_path = Path(feed_config['filename'])
         output_path.write_text('\n'.join(sorted(CFG.TLD_SOURCE)) + '\n', encoding='utf-8')
         
@@ -357,7 +349,6 @@ def fetch_domains(feed_config):
                     if not parts: continue
                     candidate = parts[-1].lower() 
                     
-                    # TLD Filter logic (Using the fast BLOCKED_TLDS_SET)
                     if CFG.BLOCKED_TLDS_SET:
                         if '.' in candidate:
                             if candidate.split('.')[-1] in CFG.BLOCKED_TLDS_SET:
@@ -379,7 +370,6 @@ def fetch_domains(feed_config):
 def save_and_sync(cf_client, feed_config, domain_set, force_update=False):
     output_path = Path(feed_config['filename'])
     
-    # Check if this is the TLD list from a URL (Levels 3/4)
     is_tld_url_feed = feed_config['name'] == "Junk TLDs and IDNs" and isinstance(CFG.TLD_SOURCE, str)
     
     if output_path.exists() and not force_update:
@@ -389,13 +379,10 @@ def save_and_sync(cf_client, feed_config, domain_set, force_update=False):
         if current_content == new_content:
             logger.info(f"✅ [No Changes] {feed_config['name']} matches local file. Skipping Cloudflare sync.")
             return True 
-
-    # If this is the TLD URL feed, we save the content locally (Tlds as lines)
+    
     if is_tld_url_feed:
         logger.info(f"Saving {len(domain_set)} TLDs/IDNs to {output_path} for Regex assembly...")
         output_path.write_text('\n'.join(sorted(domain_set)) + '\n', encoding='utf-8')
-        
-        # We don't need to upload TLDs as domains to CF lists, so we exit sync here
         logger.info(f"Skipping Cloudflare List sync for {feed_config['name']} (Handled by Regex Policy).")
         return True
     
@@ -404,34 +391,98 @@ def save_and_sync(cf_client, feed_config, domain_set, force_update=False):
     logger.info(f"💾 Saving {len(domain_set)} domains to {output_path}...")
     output_path.write_text(new_content, encoding='utf-8')
     
-    # ... (Rest of CF API interaction logic remains the same) ...
-    
     prefix = feed_config['prefix']
     policy_name = feed_config['policy_name']
     total_lines = len(domain_set)
 
-    # NOTE: The rest of the CF API list/policy creation/update logic goes here.
-    # We must assume the user's original implementation of this section is correct.
-    
-    # --- START MOCK API CALLS (Replace with your robust implementation) ---
-    logger.info(f"--- MOCK SYNC: {policy_name} ---")
     if total_lines == 0:
-        logger.warning("Mock: List is empty. Skipping API Sync.")
+        logger.warning(f"Feed {feed_config['name']} is empty. Skipping Sync.")
         return False
-    # Mocking successful list and policy creation/update.
-    logger.info(f"Mock: Syncing {total_lines} domains across 1 list...")
-    logger.info(f"Mock: Policy '{policy_name}' successfully updated/created.")
+
+    total_lists_needed = (total_lines + CFG.MAX_LIST_SIZE - 1) // CFG.MAX_LIST_SIZE
+    
+    all_current_lists = cf_client.get_lists().get('result') or []
+    current_policies = cf_client.get_rules().get('result') or []
+
+    current_lists_with_prefix = [l for l in all_current_lists if prefix in l.get('name', '')]
+    other_lists_count = len(all_current_lists) - len(current_lists_with_prefix)
+    
+    if total_lists_needed > CFG.MAX_LISTS - other_lists_count:
+        logger.error(f"Not enough capacity! Needed: {total_lists_needed}, Available: {CFG.MAX_LISTS - other_lists_count}")
+        return False
+
+    used_list_ids = []
+    excess_list_ids = [l['id'] for l in current_lists_with_prefix]
+
+    sorted_domains = sorted(domain_set)
+    for i, domains_chunk in enumerate(chunked_iterable(sorted_domains, CFG.MAX_LIST_SIZE)):
+        list_name = f"{prefix} - {i + 1:03d}"
+        items_json = domains_to_cf_items(domains_chunk)
+        
+        if excess_list_ids:
+            list_id = excess_list_ids.pop(0)
+            logger.info(f"Updating list {list_id} ({list_name})...")
+            old_items = cf_client.get_list_items(list_id, CFG.MAX_LIST_SIZE).get('result') or []
+            remove_items = [item['value'] for item in old_items if item.get('value')]
+            cf_client.update_list(list_id, append_items=items_json, remove_items=remove_items)
+            used_list_ids.append(list_id)
+        else:
+            logger.info(f"Creating new list: {list_name}...")
+            result = cf_client.create_list(list_name, items_json)
+            used_list_ids.append(result['result']['id'])
+    
+    policy_id = next((p['id'] for p in current_policies if p.get('name') == policy_name), None)
+    
+    or_clauses = [{"any": {"in": {"lhs": {"splat": "dns.domains"}, "rhs": f"${lid}"}}} for lid in used_list_ids]
+    expression_json = {"or": or_clauses} if len(or_clauses) > 1 else (or_clauses[0] if or_clauses else {"not": {"eq": {"lhs": "dns.domains", "rhs": "null"}}})
+
+    policy_payload = {
+        "name": policy_name,
+        "conditions": [{"type": "traffic", "expression": expression_json}],
+        "action": "block",
+        "enabled": True,
+        "description": f"Managed by script: {feed_config['name']}",
+        "rule_settings": {"block_page_enabled": False},
+        "filters": ["dns"]
+    }
+    
+    if policy_id:
+        existing_policy = next((p for p in current_policies if p.get('id') == policy_id), {})
+        existing_conditions = existing_policy.get('conditions') or []
+        
+        needs_update = bool(excess_list_ids)
+        if not needs_update and existing_conditions:
+             if existing_conditions[0].get('expression') != expression_json:
+                 needs_update = True
+
+        if needs_update:
+            logger.info(f"Updating policy '{policy_name}'...")
+            cf_client.update_rule(policy_id, policy_payload)
+        else:
+            logger.info(f"Policy '{policy_name}' up to date.")
+    else:
+        logger.info(f"Creating policy '{policy_name}'...")
+        cf_client.create_rule(policy_payload)
+        
+    for list_id in excess_list_ids:
+        logger.info(f"Deleting excess list {list_id}...")
+        try:
+            cf_client.delete_list(list_id)
+        except Exception as e:
+            err_str = str(e)
+            if "400" in err_str or "7003" in err_str or "7000" in err_str:
+                logger.warning(f"Skipping delete for {list_id}: List appears to be already deleted or in use.")
+            else:
+                logger.warning(f"Failed to delete {list_id}: {e}")
+
     return True
-    # --- END MOCK API CALLS ---
 
 def cleanup_resources(cf_client):
     logger.info("--- ⚠️ CLEANUP MODE: DELETING RESOURCES ⚠️ ---")
     current_policies = cf_client.get_rules().get('result') or []
     all_current_lists = cf_client.get_lists().get('result') or []
 
-    # Clean up Policies
     for policy in current_policies:
-        # Delete any policy created by the script (starting with "Level ")
         if policy.get('name', '').startswith("Level "):
             logger.info(f"Deleting Policy: {policy['name']} ({policy['id']})...")
             try:
@@ -439,9 +490,7 @@ def cleanup_resources(cf_client):
             except Exception as e:
                 logger.error(f"Failed to delete policy {policy['id']}: {e}")
 
-    # Clean up Lists
     for lst in all_current_lists:
-        # Match lists created by this script (starting with "Block ")
         if lst.get('name', '').startswith("Block "):
             logger.info(f"Deleting List: {lst['name']} ({lst['id']})...")
             try:
@@ -449,25 +498,56 @@ def cleanup_resources(cf_client):
             except Exception as e:
                 logger.error(f"Failed to delete list {lst['id']}: {e}")
                 
-    # Update cache file to ensure the new level is recorded after successful cleanup
     Path(".last_deployed_profile").write_text(CFG.CURRENT_LEVEL)
     logger.info("--- Cleanup Complete. Cache file updated. ---")
 
 def git_configure():
     git_user_name = f"{CFG.GITHUB_ACTOR}[bot]"
     git_user_email = f"{CFG.GITHUB_ACTOR_ID}+{CFG.GITHUB_ACTOR}@users.noreply.github.com"
-    # Assuming run_command is defined and executes git commands
-    # run_command(["git", "config", "--global", "user.email", git_user_email])
-    # run_command(["git", "config", "--global", "user.name", git_user_name])
-    logger.info("Mock: Git configured.")
+    run_command(["git", "config", "--global", "user.email", git_user_email])
+    run_command(["git", "config", "--global", "user.name", git_user_name])
+    logger.info("Git configured.")
 
 def discard_local_changes(file_path):
-    logger.warning("Mock: Discarding local changes.")
-    # Assuming git commands or file deletion runs here.
+    logger.info(f"Discarding local changes to {file_path}...")
+    try:
+        run_command(["git", "checkout", "--", str(file_path)])
+    except RuntimeError:
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
 
 def git_commit_and_push(changed_files):
-    logger.info("Mock: Git Commit and Push skipped.")
-    # Assuming git commands run here.
+    logger.info("--- Git Commit & Push ---")
+    if not changed_files: return
+    
+    files_to_commit = []
+    for f in changed_files:
+        try:
+            run_command(["git", "diff", "--exit-code", f])
+            logger.info(f"File {f} matches repo. Skipping add.")
+        except RuntimeError:
+            logger.info(f"File {f} has changes. Staging.")
+            run_command(["git", "add", f])
+            files_to_commit.append(f)
+
+    if not files_to_commit:
+        logger.info("No files actually changed. Skipping commit.")
+        return
+
+    try:
+        run_command(["git", "commit", "-m", f"Update blocklists: {', '.join(files_to_commit)}"])
+    except RuntimeError as e:
+        if "nothing to commit" in str(e) or "no changes added to commit" in str(e):
+            logger.info("Git reported nothing to commit.")
+            return
+        logger.error(f"Git commit failed with: {e}")
+        raise
+    
+    if run(["git", "remote", "get-url", "origin"], check=False, capture_output=True).returncode == 0:
+        logger.info(f"Pushing to {CFG.TARGET_BRANCH}...")
+        run_command(["git", "push", "origin", CFG.TARGET_BRANCH])
 
 
 # --- 5. Main Execution ---
@@ -480,11 +560,9 @@ def main():
     try:
         logger.info("--- 0. Initializing ---")
         
-        # Load config and determine wipe necessity
         CFG.load_config_data()
         CFG.validate()
         
-        # IMPORTANT: Using the mock CloudflareAPI defined above. Replace with your actual implementation.
         with CloudflareAPI(CFG.ACCOUNT_ID, CFG.API_TOKEN, CFG.MAX_RETRIES) as cf_client:
             
             if args.delete or CFG.SHOULD_WIPE:
@@ -493,8 +571,10 @@ def main():
 
             is_git_repo = Path(".git").exists()
             if is_git_repo:
-                # ... (git setup remains here) ...
                 try:
+                    run_command(["git", "fetch", "origin", CFG.TARGET_BRANCH])
+                    run_command(["git", "checkout", CFG.TARGET_BRANCH])
+                    run_command(["git", "reset", "--hard", f"origin/{CFG.TARGET_BRANCH}"])
                     git_configure()
                 except Exception as e:
                     logger.warning(f"Git init warning: {e}")
@@ -507,9 +587,27 @@ def main():
             ad_name = next((f['name'] for f in CFG.FEED_CONFIGS if 'Ads ' in f['name']), None)
             security_name = next((f['name'] for f in CFG.FEED_CONFIGS if 'Security' in f['name']), None)
             tif_name = next((f['name'] for f in CFG.FEED_CONFIGS if 'Threat Intel' in f['name']), None)
-
-            # Deduplication logic (removed for brevity, but should remain in your final script)
             
+            if ad_name and security_name and ad_name in feed_datasets and security_name in feed_datasets:
+                 overlap = feed_datasets[ad_name].intersection(feed_datasets[security_name])
+                 if overlap:
+                     logger.info(f"🔍 Found {len(overlap)} overlaps between Ads & Security.")
+                     feed_datasets[security_name] -= overlap
+
+            if ad_name and tif_name and ad_name in feed_datasets and tif_name in feed_datasets:
+                overlap = feed_datasets[ad_name].intersection(feed_datasets[tif_name])
+                if overlap:
+                    logger.info(f"🔍 Found {len(overlap)} overlaps between Ads & TIF.")
+                    feed_datasets[tif_name] -= overlap
+
+            if security_name and tif_name and security_name in feed_datasets and tif_name in feed_datasets:
+                overlap = feed_datasets[security_name].intersection(feed_datasets[tif_name])
+                if overlap:
+                    logger.info(f"🔍 Found {len(overlap)} overlaps between Security & TIF.")
+                    feed_datasets[tif_name] -= overlap
+            # --- END DEDUPLICATION ---
+
+
             changed_files_list = []
             sync_success_global = True
             
