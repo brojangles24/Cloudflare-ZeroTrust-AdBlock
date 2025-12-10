@@ -9,7 +9,6 @@ import argparse
 import time
 from typing import List, Set, Optional
 from pathlib import Path
-from subprocess import run
 from itertools import islice
 from dataclasses import dataclass
 
@@ -82,7 +81,7 @@ class Config:
     MAX_LIST_SIZE: int = 1000
     MAX_LISTS: int = 300 
     MAX_RETRIES: int = 5
-    USER_AGENT: str = "Mozilla/5.0 (compatible; CloudflareBlocklistManager/3.2)"
+    USER_AGENT: str = "Mozilla/5.0 (compatible; CloudflareBlocklistManager/3.3)"
     
     # Git
     TARGET_BRANCH: str = os.environ.get("GITHUB_REF_NAME") or os.environ.get("TARGET_BRANCH") or "main" 
@@ -91,7 +90,6 @@ class Config:
 
     ALLOWLIST_FILE: str = "allowlist.txt"
 
-    # Define your feeds here
     FEEDS: List[FeedConfig] = [
         FeedConfig(
             name="Ad Block Feed",
@@ -190,10 +188,22 @@ class CloudflareAPI:
         while retries <= self.max_retries:
             try:
                 response = self.session.request(method, url, headers=self.headers, **kwargs)
+                
+                # Handle Rate Limits (429)
                 if response.status_code == 429:
-                    time.sleep(int(response.headers.get("Retry-After", 10)))
+                    wait = int(response.headers.get("Retry-After", 10))
+                    logger.warning(f"Rate limited (429). Waiting {wait}s...")
+                    time.sleep(wait)
                     retries += 1
                     continue
+                
+                # Handle Conflicts (409) - usually means list is locked
+                if response.status_code == 409:
+                    logger.warning(f"Conflict (409) on {endpoint}. Retrying in 5s...")
+                    time.sleep(5)
+                    retries += 1
+                    continue
+
                 response.raise_for_status()
                 return response.json()
             except requests.exceptions.RequestException as e:
@@ -260,15 +270,18 @@ def fetch_domains(feed_config: FeedConfig, allowlist: Set[str]) -> Set[str]:
     return valid_domains
 
 def sync_feed(cf_client: CloudflareAPI, feed: FeedConfig, domains: Set[str]):
+    """Syncs a specific feed. Deletes the policy first to avoid 409 Conflicts."""
     if not domains: return
     
     sorted_domains = sorted(domains)
     chunks = [sorted_domains[i:i + CFG.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), CFG.MAX_LIST_SIZE)]
     total_needed = len(chunks)
 
+    # 1. PREP: Get existing lists and rules
     all_lists = cf_client.get_lists().get('result') or []
     my_lists = sorted([l for l in all_lists if feed.prefix in l.get('name', '')], key=lambda x: x['name'])
     
+    # Capacity Check
     available = CFG.MAX_LISTS - (len(all_lists) - len(my_lists))
     if total_needed > available:
         msg = f"❌ Capacity Exceeded: {feed.name} needs {total_needed}, has {available}."
@@ -276,9 +289,20 @@ def sync_feed(cf_client: CloudflareAPI, feed: FeedConfig, domains: Set[str]):
         NotificationHandler.send(msg, "error")
         raise ScriptExit(msg)
 
-    used_ids = []
+    # 2. UNLOCK: Delete the Policy if it exists
+    # This releases the lock on the lists, preventing 409 Conflict errors during update.
+    policies = cf_client.get_rules().get('result') or []
+    existing_policy = next((p for p in policies if p.get('name') == feed.policy_name), None)
     
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+    if existing_policy:
+        logger.info(f"🔓 Unlocking lists by temporarily deleting policy: {feed.policy_name}")
+        cf_client.delete_rule(existing_policy['id'])
+    
+    # 3. SYNC: Update Lists (Reduced Concurrency to avoid API stress)
+    used_ids = []
+    logger.info(f"⚡ Syncing {total_needed} lists...")
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor: # Reduced from 4 to 2
         future_map = {}
         for i, chunk in enumerate(chunks):
             list_name = f"{feed.prefix} - {i + 1:03d}"
@@ -297,16 +321,17 @@ def sync_feed(cf_client: CloudflareAPI, feed: FeedConfig, domains: Set[str]):
                 if "result" in res: used_ids.append(res['result']['id'])
             except Exception as e:
                 logger.error(f"{future_map[f]} failed: {e}")
+                # We raise here because if a list fails to create, the policy will be partial
+                raise e
 
-    # Cleanup Excess
+    # 4. CLEANUP: Delete excess lists
     if len(my_lists) > total_needed:
         for lst in my_lists[total_needed:]:
+            logger.info(f"Deleting unused list: {lst['name']}")
             cf_client.delete_list(lst['id'])
 
-    # Update Policy
-    policies = cf_client.get_rules().get('result') or []
-    pid = next((p['id'] for p in policies if p.get('name') == feed.policy_name), None)
-    
+    # 5. LOCK: Recreate the Policy
+    logger.info(f"🔒 Recreating policy: {feed.policy_name}")
     or_clauses = [{"any": {"in": {"lhs": {"splat": "dns.domains"}, "rhs": f"${lid}"}}} for lid in used_ids]
     expr = {"or": or_clauses} if len(or_clauses) > 1 else (or_clauses[0] if or_clauses else {})
     
@@ -318,16 +343,11 @@ def sync_feed(cf_client: CloudflareAPI, feed: FeedConfig, domains: Set[str]):
         "description": f"Managed by script: {feed.name}",
         "filters": ["dns"]
     }
+    cf_client.create_rule(payload)
 
-    if pid: cf_client.update_rule(pid, payload)
-    else: cf_client.create_rule(payload)
 
 def nuke_all_resources(cf_client: CloudflareAPI):
-    """
-    SMART NUKE: 
-    1. Delete ONLY rules managed by this script.
-    2. Delete ALL Domain Lists (cleaning up everything).
-    """
+    """Smart Nuke: Delete managed rules and ALL lists."""
     logger.warning("☢️ SMART NUKE INITIATED ☢️")
     NotificationHandler.send("☢️ Smart Nuke: Cleaning up managed resources...", "warning")
 
@@ -340,8 +360,6 @@ def nuke_all_resources(cf_client: CloudflareAPI):
             logger.info(f"🔥 Deleting Managed Rule: {rule['name']}")
             try: cf_client.delete_rule(rule['id'])
             except Exception: pass
-        else:
-            logger.info(f"🛡️ Skipping Custom Rule: {rule['name']}")
 
     # 2. Delete ALL Domain Lists
     lists = cf_client.get_lists().get('result') or []
