@@ -13,7 +13,7 @@ from subprocess import run, CalledProcessError
 from itertools import islice
 
 import requests
-import toml 
+import toml
 
 # --- 1. Configuration & Setup ---
 
@@ -24,7 +24,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- CONSTANTS ---
+# --- FEED URL DEFINITIONS (Constants) ---
 HAGEZI_ULTIMATE = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
 HAGEZI_PRO = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
 HAGEZI_NORMAL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/normal-onlydomains.txt"
@@ -35,15 +35,21 @@ HAGEZI_TIF_MINI = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wild
 HAGEZI_TIF_MEDIUM = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.medium-onlydomains.txt"
 HAGEZI_SPAM_TLDS_IDNS = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt" 
 
-TOP_15_TLDS_TUPLE = ("zip", "mov", "xyz", "top", "gdn", "win", "loan", "bid", "stream", "tk", "ml", "ga", "cf", "gq", "cn")
+# --- TLD DEFINITIONS ---
+TOP_15_TLDS_TUPLE = (
+    "zip", "mov", "xyz", "top", "gdn", "win", "loan", "bid",
+    "stream", "tk", "ml", "ga", "cf", "gq", "cn",
+)
 AGGR_TLDS_IDNS = HAGEZI_SPAM_TLDS_IDNS
 
 class Config:
     API_TOKEN: str = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID: str = os.environ.get("ACCOUNT_ID", "")
+    
     MAX_LIST_SIZE: int = 1000
     MAX_LISTS: int = 300 
     MAX_RETRIES: int = 5
+    
     TARGET_BRANCH: str = os.environ.get("GITHUB_REF_NAME") or os.environ.get("TARGET_BRANCH") or "main" 
     GITHUB_ACTOR: str = os.environ.get("GITHUB_ACTOR", "github-actions[bot]")
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
@@ -51,12 +57,11 @@ class Config:
     CURRENT_LEVEL: str = "0"
     LAST_DEPLOYED_LEVEL: str = "0"
     SHOULD_WIPE: bool = False
+    
     BLOCKED_TLDS_SET: set = set()
     TLD_SOURCE: str | tuple = () 
     FEED_CONFIGS: list = []
-    
-    # --- NEW: POLICY FLAGS PER LEVEL ---
-    POLICY_CONFIG: dict = {} 
+    POLICY_CONFIG: dict = {}
 
     PROFILE_LEVELS = {
         "1": {
@@ -66,13 +71,7 @@ class Config:
                 {"name": "Ads Light", "prefix": "Block 1A", "policy_name": "Level 1: Minimal Ads/Trackers", "filename": "L1_Light.txt", "urls": [HAGEZI_LIGHT]},
                 {"name": "Security Mini", "prefix": "Block 1S", "policy_name": "Level 1: Minimal Security", "filename": "L1_Security.txt", "urls": [HAGEZI_TIF_MINI, HAGEZI_BADWARE, HAGEZI_FAKE]}
             ],
-            "policies": { # Minimal: Only core security
-                "block_malware": True,
-                "block_scam": False,
-                "block_tor": False,
-                "block_countries": [],
-                "block_bypass": False # Allow Apple Relay
-            }
+            "policies": {"block_malware": True, "block_scam": False, "block_tor": False, "block_countries": [], "block_bypass": False}
         },
         "2": {
             "name": "Normal",
@@ -81,13 +80,7 @@ class Config:
                 {"name": "Ads Normal", "prefix": "Block 2A", "policy_name": "Level 2: Normal Ads/Trackers", "filename": "L2_Normal.txt", "urls": [HAGEZI_NORMAL]},
                 {"name": "Security Mini", "prefix": "Block 2S", "policy_name": "Level 2: Normal Security", "filename": "L2_Security.txt", "urls": [HAGEZI_TIF_MINI, HAGEZI_BADWARE, HAGEZI_FAKE]}
             ],
-            "policies": { # Normal: Standard security + Tor + High Risk Countries
-                "block_malware": True,
-                "block_scam": True,
-                "block_tor": True,
-                "block_countries": ["CN", "RU", "KP", "IR"],
-                "block_bypass": False
-            }
+            "policies": {"block_malware": True, "block_scam": True, "block_tor": True, "block_countries": ["CN", "RU", "KP", "IR"], "block_bypass": False}
         },
         "3": {
             "name": "Aggressive",
@@ -96,13 +89,7 @@ class Config:
                 {"name": "Ads Pro", "prefix": "Block 3A", "policy_name": "Level 3: Aggressive Ads/Trackers", "filename": "L3_Pro.txt", "urls": [HAGEZI_PRO]},
                 {"name": "Threat Intel Mini", "prefix": "Block 3S", "policy_name": "Level 3: Strong Security", "filename": "L3_Security.txt", "urls": [HAGEZI_TIF_MINI]}
             ],
-            "policies": { # Aggressive: + Crypto, Apple Bypass, Extended Countries
-                "block_malware": True,
-                "block_scam": True,
-                "block_tor": True,
-                "block_countries": ["CN", "RU", "KP", "IR", "SY", "BY", "AF"],
-                "block_bypass": True # Blocks mask.icloud.com
-            }
+            "policies": {"block_malware": True, "block_scam": True, "block_tor": True, "block_countries": ["CN", "RU", "KP", "IR", "SY", "BY", "AF"], "block_bypass": True}
         },
         "4": {
             "name": "Extreme",
@@ -111,13 +98,7 @@ class Config:
                 {"name": "Ads Ultimate", "prefix": "Block 4A", "policy_name": "Level 4: Ultimate Scorched Earth", "filename": "L4_Ultimate.txt", "urls": [HAGEZI_ULTIMATE]},
                 {"name": "Threat Intel Medium", "prefix": "Block 4S", "policy_name": "Level 4: Extreme Security", "filename": "L4_Security.txt", "urls": [HAGEZI_TIF_MEDIUM]}
             ],
-            "policies": { # Extreme: Everything
-                "block_malware": True,
-                "block_scam": True,
-                "block_tor": True,
-                "block_countries": ["CN", "RU", "KP", "IR", "SY", "BY", "AF", "IQ", "LY", "SO", "VN"],
-                "block_bypass": True
-            }
+            "policies": {"block_malware": True, "block_scam": True, "block_tor": True, "block_countries": ["CN", "RU", "KP", "IR", "SY", "BY", "AF", "IQ", "LY", "SO", "VN"], "block_bypass": True}
         },
     }
 
@@ -144,9 +125,8 @@ class Config:
         profile = cls.PROFILE_LEVELS[level_str]
         cls.TLD_SOURCE = profile["tlds_source"]
         cls.FEED_CONFIGS = profile["feeds"]
-        cls.POLICY_CONFIG = profile.get("policies", {}) # Load policy flags
+        cls.POLICY_CONFIG = profile.get("policies", {})
         
-        # TLD Set Population (Same as before)
         if isinstance(cls.TLD_SOURCE, tuple) and cls.TLD_SOURCE:
             cls.BLOCKED_TLDS_SET = set(cls.TLD_SOURCE)
         elif isinstance(cls.TLD_SOURCE, str) and cls.TLD_SOURCE:
@@ -162,7 +142,6 @@ class Config:
                 logger.error(f"Failed to load external TLD list: {e}")
                 cls.BLOCKED_TLDS_SET = set()
         
-        # Add TLD Feed if applicable (Same as before)
         if cls.TLD_SOURCE:
             tld_feed = {
                 "name": "Junk TLDs and IDNs",
@@ -179,7 +158,7 @@ class Config:
 
 CFG = Config()
 
-# --- 2. Helper Functions (Standard) ---
+# --- 2. Helper Functions ---
 INVALID_CHARS_PATTERN = re.compile(r'[<>&;\"\'/=\s]')
 COMMON_JUNK_DOMAINS = {'localhost', '127.0.0.1', '0.0.0.0', '::1', 'broadcasthost'}
 
@@ -225,7 +204,8 @@ class CloudflareAPI:
                 data = resp.json()
                 if not data.get('success'):
                     msgs = [e.get('message', 'Unknown') for e in data.get('errors', [])]
-                    if method == "DELETE" and "not found" in str(msgs).lower(): return {'success': True}
+                    # Handle deletion 404 gracefully
+                    if method == "DELETE" and any("not found" in m.lower() for m in msgs): return {'success': True}
                     raise requests.exceptions.HTTPError(f"API Error: {msgs}", response=resp)
                 return data
             except Exception as e:
@@ -264,66 +244,31 @@ def create_tld_policy(cf, file, level):
     if pid: cf.update_rule(pid, payload)
     else: cf.create_rule(payload)
 
-# --- NEW: CATEGORY POLICY DEPLOYMENT ---
 def deploy_category_policies(cf, level):
     logger.info(f"--- Deploying Category Policies for Level {level} ---")
     config = CFG.POLICY_CONFIG
     
-    # 1. Malware / Security Categories
-    # We combine standard security categories into one policy
     sec_cats = []
     if config.get("block_malware"): sec_cats.extend(["Malware", "Phishing", "Command and Control"])
     if config.get("block_scam"): sec_cats.extend(["Spam", "Spyware", "Botnet"])
-    # Note: 'Crypto Mining' is often separate, add if needed.
     
     if sec_cats:
         p_name = f"Level {level}: Block Malware"
-        # Expression: any(dns.security_category[*] in {"Malware" "Phishing" ...})
-        cats_str = " ".join([f"\"{c}\"" for c in sec_cats])
-        expr = f"any(dns.security_category[*] in {{{cats_str}}})"
-        
-        payload = {
-            "name": p_name, "description": "Managed security categories", "enabled": True, "action": "block", "filters": ["dns"],
-            "traffic": expr, "rule_settings": {"block_page_enabled": False}
-        }
-        _deploy_policy(cf, p_name, payload)
+        expr = f"any(dns.security_category[*] in {{{' '.join([f'\"{c}\"' for c in sec_cats])}}})"
+        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": expr, "rule_settings": {"block_page_enabled": False}})
 
-    # 2. Tor Blocking
     if config.get("block_tor"):
         p_name = f"Level {level}: Block Tor DNS"
-        # Block .onion TLD AND 'Anonymizer' category if available
-        # Expression: dns.fqdn matches regex "(?i)\.onion$"
-        payload = {
-            "name": p_name, "enabled": True, "action": "block", "filters": ["dns"],
-            "traffic": "dns.fqdn matches regex \"(?i)\\.onion$\"", "rule_settings": {"block_page_enabled": False}
-        }
-        _deploy_policy(cf, p_name, payload)
+        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": "dns.fqdn matches regex \"(?i)\\.onion$\"", "rule_settings": {"block_page_enabled": False}})
 
-    # 3. Country Blocking
-    countries = config.get("block_countries", [])
-    if countries:
+    if config.get("block_countries"):
         p_name = f"Level {level}: Block Countries"
-        # Expression: dns.fqdn matches regex "(?i)\.(cn|ru|kp)$"
-        # We block the TLDs of these countries
-        c_regex = "|".join([c.lower() for c in countries])
-        expr = f"dns.fqdn matches regex \"(?i)\\.({c_regex})$\""
-        
-        payload = {
-            "name": p_name, "enabled": True, "action": "block", "filters": ["dns"],
-            "traffic": expr, "rule_settings": {"block_page_enabled": False}
-        }
-        _deploy_policy(cf, p_name, payload)
+        c_regex = "|".join([c.lower() for c in config["block_countries"]])
+        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": f"dns.fqdn matches regex \"(?i)\\.({c_regex})$\"", "rule_settings": {"block_page_enabled": False}})
 
-    # 4. Apple/Cox Bypass (DoH)
     if config.get("block_bypass"):
         p_name = f"Level {level}: Block Apple and Cox DNS"
-        # Blocks iCloud Private Relay domains
-        expr = "dns.fqdn in {\"mask.icloud.com\" \"mask-h2.icloud.com\" \"mask-api.icloud.com\"}"
-        payload = {
-            "name": p_name, "enabled": True, "action": "block", "filters": ["dns"],
-            "traffic": expr, "rule_settings": {"block_page_enabled": False}
-        }
-        _deploy_policy(cf, p_name, payload)
+        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": "dns.fqdn in {\"mask.icloud.com\" \"mask-h2.icloud.com\" \"mask-api.icloud.com\"}", "rule_settings": {"block_page_enabled": False}})
 
 def _deploy_policy(cf, name, payload):
     rules = cf.get_rules().get('result') or []
@@ -335,7 +280,6 @@ def _deploy_policy(cf, name, payload):
         logger.info(f"Creating Policy: {name}")
         cf.create_rule(payload)
 
-# --- Standard Fetch/Sync Functions (Simplified for length) ---
 def fetch_domains(cfg):
     logger.info(f"Fetching: {cfg['name']}")
     if cfg['name'] == "Junk TLDs and IDNs" and isinstance(CFG.TLD_SOURCE, tuple):
@@ -362,7 +306,7 @@ def save_and_sync(cf, cfg, d_set, force=False):
     out = Path(cfg['filename'])
     if cfg['name'] == "Junk TLDs and IDNs" and isinstance(CFG.TLD_SOURCE, str):
         out.write_text('\n'.join(sorted(d_set)) + '\n', encoding='utf-8')
-        return True # Skip list sync for URL-based TLDs
+        return True 
     
     content = '\n'.join(sorted(d_set)) + '\n'
     if out.exists() and out.read_text(encoding='utf-8') == content and not force: return True
@@ -373,7 +317,6 @@ def save_and_sync(cf, cfg, d_set, force=False):
     
     lists = cf.get_lists().get('result') or []
     curr_l = [l for l in lists if prefix in l.get('name', '')]
-    req = (len(d_set) + CFG.MAX_LIST_SIZE - 1) // CFG.MAX_LIST_SIZE
     
     used_ids = []
     ids_to_del = [l['id'] for l in curr_l]
@@ -391,7 +334,6 @@ def save_and_sync(cf, cfg, d_set, force=False):
             logger.info(f"Creating List: {name}")
             used_ids.append(cf.create_list(name, items)['result']['id'])
             
-    # Policy Logic
     or_c = [{"any": {"in": {"lhs": {"splat": "dns.domains"}, "rhs": f"${lid}"}}} for lid in used_ids]
     expr = {"or": or_c} if len(or_c) > 1 else or_c[0]
     pl = {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], 
@@ -404,34 +346,59 @@ def save_and_sync(cf, cfg, d_set, force=False):
         cf.delete_list(lid)
     return True
 
+# --- REVISED CLEANUP: Ruthless Edition ---
 def cleanup_resources(cf):
     logger.info("--- ⚠️ CLEANUP MODE: DELETING RESOURCES ⚠️ ---")
     rules = cf.get_rules().get('result') or []
     lists = cf.get_lists().get('result') or []
     
-    l_del = [l for l in lists if l.get('name', '').startswith("Block ") or "Block" in l.get('name', '')]
-    l_ids = {l['id'] for l in l_del}
+    # 1. Identify ALL Lists to delete (Nuke everything)
+    # This solves the "TIF Mini" issue by deleting ANY list present.
+    # If you have critical manual lists, you must exclude them here.
+    # Currently configured to delete ALL lists to ensure clean state.
+    lists_to_delete = lists
+    list_ids_to_delete = {l['id'] for l in lists_to_delete}
     
-    # 1. Delete ALL script-managed policies first to break dependencies
-    prefixes = ["Level ", "Block "]
-    p_del = [p for p in rules if any(p.get('name', '').startswith(pre) for pre in prefixes) or 
-             any(lid in str(p) for lid in l_ids)]
-             
-    for p in p_del:
-        logger.info(f"Deleting Policy: {p['name']}...")
-        try: cf.delete_rule(p['id'])
-        except Exception as e: logger.error(f"Err: {e}")
+    logger.info(f"Found {len(lists_to_delete)} lists to delete.")
+
+    # 2. Identify Policies to delete
+    # Delete ANY policy that uses a list we are deleting.
+    # AND delete any policy that matches our known script keywords.
+    policies_to_delete = []
+    keywords = ["Level", "Block", "Ads", "Security", "TIF", "Junk", "Malware", "Tor", "Country"]
+    
+    for p in rules:
+        # Check 1: Does it depend on a list we are wiping?
+        if any(lid in str(p) for lid in list_ids_to_delete):
+            policies_to_delete.append(p)
+            continue
         
-    if p_del: 
-        logger.info("Waiting 15s for policy deletion..."); time.sleep(15)
+        # Check 2: Does it look like one of our managed policies?
+        if any(k in p.get('name', '') for k in keywords):
+            policies_to_delete.append(p)
+            continue
+
+    # 3. Delete Policies First
+    if policies_to_delete:
+        logger.info(f"Deleting {len(policies_to_delete)} conflicting policies...")
+        for p in policies_to_delete:
+            logger.info(f"Deleting Policy: {p['name']} ({p['id']})...")
+            try: cf.delete_rule(p['id'])
+            except Exception as e: logger.error(f"Err: {e}")
         
-    # 2. Delete Lists
-    for l in l_del:
-        logger.info(f"Deleting List: {l['name']}...")
+        logger.info("Waiting 15s for policy deletion to propagate...")
+        time.sleep(15) # Essential for Cloudflare consistency
+    else:
+        logger.info("No conflicting policies found.")
+
+    # 4. Delete Lists
+    for l in lists_to_delete:
+        logger.info(f"Deleting List: {l['name']} ({l['id']})...")
         try: cf.delete_list(l['id'])
         except Exception as e: logger.error(f"Err: {e}")
         
     Path(".last_deployed_profile").write_text(CFG.CURRENT_LEVEL)
+    logger.info("--- Cleanup Complete. ---")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -448,28 +415,55 @@ def main():
                 cleanup_resources(cf)
                 if args.delete: return
 
-            # Git setup (omitted for brevity, assume present)
-            
-            # 1. Fetch & Sync List-Based Feeds
+            # Git setup (Assuming git repo exists)
+            is_git = Path(".git").exists()
+            if is_git:
+                try: 
+                    run_command(["git", "config", "--global", "user.email", f"{CFG.GITHUB_ACTOR_ID}+{CFG.GITHUB_ACTOR}@users.noreply.github.com"])
+                    run_command(["git", "config", "--global", "user.name", f"{CFG.GITHUB_ACTOR}[bot]"])
+                except Exception as e: logger.warning(f"Git init: {e}")
+
             feed_data = {}
             for f in CFG.FEED_CONFIGS: feed_data[f['name']] = fetch_domains(f)
             
-            # (Deduplication Logic Here - Omitted for brevity)
+            # Deduplication
+            ad = next((f['name'] for f in CFG.FEED_CONFIGS if 'Ads ' in f['name']), None)
+            sec = next((f['name'] for f in CFG.FEED_CONFIGS if 'Security' in f['name']), None)
+            tif = next((f['name'] for f in CFG.FEED_CONFIGS if 'Threat' in f['name']), None)
             
-            glob_sync = True
+            if ad and sec and ad in feed_data and sec in feed_data:
+                 overlap = feed_data[ad].intersection(feed_data[sec])
+                 if overlap: logger.info(f"Dedupe Ads/Sec: {len(overlap)}"); feed_data[sec] -= overlap
+            if ad and tif and ad in feed_data and tif in feed_data:
+                 overlap = feed_data[ad].intersection(feed_data[tif])
+                 if overlap: logger.info(f"Dedupe Ads/TIF: {len(overlap)}"); feed_data[tif] -= overlap
+            if sec and tif and sec in feed_data and tif in feed_data:
+                 overlap = feed_data[sec].intersection(feed_data[tif])
+                 if overlap: logger.info(f"Dedupe Sec/TIF: {len(overlap)}"); feed_data[tif] -= overlap
+
+            changed = []
+            sync_ok = True
             for f in CFG.FEED_CONFIGS:
-                if not save_and_sync(cf, f, feed_data[f['name']], args.force): glob_sync = False
+                if not save_and_sync(cf, f, feed_data[f['name']], args.force): sync_ok = False
+                else: changed.append(f['filename'])
                 
-            if glob_sync:
-                # 2. Deploy TLD Regex Policy
+            if sync_ok:
                 tld_f = next((f for f in CFG.FEED_CONFIGS if f['name'] == 'Junk TLDs and IDNs'), None)
                 if tld_f: create_tld_policy(cf, Path(tld_f['filename']), CFG.CURRENT_LEVEL)
                 
-                # 3. Deploy Category Policies (Malware, Tor, Countries, etc.)
                 deploy_category_policies(cf, CFG.CURRENT_LEVEL)
                 
                 Path(".last_deployed_profile").write_text(CFG.CURRENT_LEVEL)
                 logger.info("✅ Deployment Complete.")
+                
+                if is_git and changed:
+                    for f in changed:
+                        try: run_command(["git", "add", f])
+                        except: pass
+                    try:
+                        run_command(["git", "commit", "-m", "Update blocklists"])
+                        run_command(["git", "push"])
+                    except: pass
             else:
                 logger.error("Sync failed.")
 
