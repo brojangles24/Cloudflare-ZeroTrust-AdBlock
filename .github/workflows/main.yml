@@ -1,7 +1,7 @@
 name: Update Blocklists
 
 on:
-  # 1. Run automatically every day at 4:00 AM UTC
+  # 1. Run automatically every hour (you had it set to every hour, not every day at 4 AM)
   schedule:
     - cron: '0 * * * *'
   
@@ -27,19 +27,24 @@ jobs:
         with:
           fetch-depth: 0 # Download full history so git diff works correctly
 
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5 # Updated to v5
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies
-        run: pip install requests
+      - name: Install Dependencies (FIXED: Added toml)
+        # We need requests (for HTTP), toml (for config), and gitpython (common)
+        run: pip install requests toml
+        # If your script ends up using any libraries for git or configuration besides toml, 
+        # you might need to add them here (e.g., gitpython, PyYAML).
 
       - name: Run Blocklist Manager
         env:
+          # Ensure these secrets are defined in your repository settings
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
         run: |
-          # Check if the "Delete" box was checked in the manual trigger
+          # The script is now responsible for handling the delete/wipe logic internally 
+          # upon a level change detected in config.toml. We only pass the explicit --delete flag.
           if [ "${{ github.event.inputs.delete_mode }}" == "true" ]; then
             echo "⚠️ DELETE MODE ACTIVE: Wiping all lists..."
             python3 block_ads_sync.py --delete
