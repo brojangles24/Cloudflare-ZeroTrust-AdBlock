@@ -1,7 +1,7 @@
 name: Update Blocklists
 
 on:
-  # 1. Run automatically every hour (you had it set to every hour, not every day at 4 AM)
+  # 1. Run automatically every hour (UTC)
   schedule:
     - cron: '0 * * * *'
   
@@ -23,32 +23,31 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Download full history so git diff works correctly
 
-      - uses: actions/setup-python@v5 # Updated to v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.11' # Use your specific version
 
-      - name: Install Dependencies (FIXED: Added toml)
-        # We need requests (for HTTP), toml (for config), and gitpython (common)
+      - name: Install Dependencies (Fixed)
+        # We need 'requests' for HTTP and 'toml' for configuration
         run: pip install requests toml
-        # If your script ends up using any libraries for git or configuration besides toml, 
-        # you might need to add them here (e.g., gitpython, PyYAML).
 
       - name: Run Blocklist Manager
         env:
-          # Ensure these secrets are defined in your repository settings
+          # Secrets are automatically masked by GitHub Actions
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
         run: |
-          # The script is now responsible for handling the delete/wipe logic internally 
-          # upon a level change detected in config.toml. We only pass the explicit --delete flag.
+          # Check if the manual 'delete_mode' input was provided
           if [ "${{ github.event.inputs.delete_mode }}" == "true" ]; then
             echo "⚠️ DELETE MODE ACTIVE: Wiping all lists..."
             python3 block_ads_sync.py --delete
           else
-            echo "✅ NORMAL MODE: Updating lists..."
+            echo "✅ NORMAL MODE: Starting sync based on config.toml profile..."
             python3 block_ads_sync.py
           fi
