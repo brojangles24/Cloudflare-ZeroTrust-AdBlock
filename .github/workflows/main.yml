@@ -1,15 +1,20 @@
 name: Update Blocklists
 
 on:
-  # 1. Run automatically every hour (UTC)
+  # 1. Run automatically every hour
   schedule:
     - cron: '0 * * * *'
   
-  # 2. Manual Trigger with Option to Delete
+  # 2. Manual Trigger with Advanced Options
   workflow_dispatch:
     inputs:
-      delete_mode:
-        description: '⚠️ Check this to DELETE all lists.'
+      force_update:
+        description: 'Force Update (Ignore local file diffs)'
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Dry Run (Simulate only - no API calls)'
         required: false
         type: boolean
         default: false
@@ -17,6 +22,7 @@ on:
 jobs:
   update-blocklists:
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # Safety timeout to prevent hanging jobs
     
     # REQUIRED: Allows the script to commit/push changes back to the repo
     permissions:
@@ -26,28 +32,36 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Download full history so git diff works correctly
+          fetch-depth: 0 # Download full history for git diff
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' # Use your specific version
+          python-version: '3.11'
 
-      - name: Install Dependencies (Fixed)
-        # We need 'requests' for HTTP and 'toml' for configuration
-        run: pip install requests toml
+      - name: Install Dependencies
+        # The new script only requires 'requests'
+        run: pip install requests
 
       - name: Run Blocklist Manager
         env:
-          # Secrets are automatically masked by GitHub Actions
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
+          # Optional: Add this secret to your repo for Discord/Slack alerts
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: |
-          # Check if the manual 'delete_mode' input was provided
-          if [ "${{ github.event.inputs.delete_mode }}" == "true" ]; then
-            echo "⚠️ DELETE MODE ACTIVE: Wiping all lists..."
-            python3 block_ads_sync.py --delete
-          else
-            echo "✅ NORMAL MODE: Starting sync based on config.toml profile..."
-            python3 block_ads_sync.py
+          # Construct flags based on manual inputs
+          FLAGS=""
+          
+          if [ "${{ inputs.force_update }}" == "true" ]; then
+            echo "⚠️ FORCE MODE ACTIVE"
+            FLAGS="$FLAGS --force"
           fi
+          
+          if [ "${{ inputs.dry_run }}" == "true" ]; then
+            echo "🧪 DRY RUN ACTIVE"
+            FLAGS="$FLAGS --dry-run"
+          fi
+
+          # Run the script
+          python3 block_ads_sync.py $FLAGS
