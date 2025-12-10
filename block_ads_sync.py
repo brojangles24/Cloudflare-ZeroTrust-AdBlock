@@ -52,21 +52,21 @@ class Config:
     MAX_LISTS: int = 300 
     MAX_RETRIES: int = 5
     
-    # Git Configuration (Using default GitHub Actions setup)
+    # Git Configuration
     TARGET_BRANCH: str = os.environ.get("GITHUB_REF_NAME") or os.environ.get("TARGET_BRANCH") or "main" 
     GITHUB_ACTOR: str = os.environ.get("GITHUB_ACTOR", "github-actions[bot]")
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
 
-    # Dynamic Configuration (Set in load_config_data)
+    # Dynamic Configuration
     CURRENT_LEVEL: str = "0"
     LAST_DEPLOYED_LEVEL: str = "0"
     SHOULD_WIPE: bool = False
     
-    BLOCKED_TLDS_SET: set = set() # Set of TLDs to filter *other* feeds against
-    TLD_SOURCE: str | tuple = () # The source definition (URL or Tuple)
+    BLOCKED_TLDS_SET: set = set()
+    TLD_SOURCE: str | tuple = () 
     FEED_CONFIGS: list = []
 
-    # --- PROFILE DEFINITIONS (Same as previous step) ---
+    # --- PROFILE DEFINITIONS ---
     PROFILE_LEVELS = {
         "1": {"name": "Minimal", "tlds_source": (), "feeds": [{"name": "Ads Light", "prefix": "Block 1A", "policy_name": "Level 1: Minimal Ads/Trackers", "filename": "L1_Light.txt", "urls": [HAGEZI_LIGHT]}, {"name": "Security Mini", "prefix": "Block 1S", "policy_name": "Level 1: Minimal Security", "filename": "L1_Security.txt", "urls": [HAGEZI_TIF_MINI, HAGEZI_BADWARE, HAGEZI_FAKE]}]},
         "2": {"name": "Normal", "tlds_source": TOP_15_TLDS_TUPLE, "feeds": [{"name": "Ads Normal", "prefix": "Block 2A", "policy_name": "Level 2: Normal Ads/Trackers", "filename": "L2_Normal.txt", "urls": [HAGEZI_NORMAL]}, {"name": "Security Mini", "prefix": "Block 2S", "policy_name": "Level 2: Normal Security", "filename": "L2_Security.txt", "urls": [HAGEZI_TIF_MINI, HAGEZI_BADWARE, HAGEZI_FAKE]}]},
@@ -76,7 +76,6 @@ class Config:
 
     @classmethod
     def load_config_data(cls):
-        # ... (load_config_data logic remains the same, assuming correct TLD_SOURCE handling)
         config_path = Path("config.toml")
         if not config_path.exists():
              raise ScriptExit("config.toml not found. Please create it.", critical=True)
@@ -156,7 +155,6 @@ def domains_to_cf_items(domains):
     return [{"value": domain} for domain in domains if domain]
 
 def chunked_iterable(iterable, size):
-    """Yield successive chunks from iterable."""
     it = iter(iterable)
     while True:
         chunk = list(islice(it, size))
@@ -165,7 +163,6 @@ def chunked_iterable(iterable, size):
         yield chunk
 
 def run_command(command):
-    """Run a shell command. Raises RuntimeError with the actual error output if it fails."""
     command_str = ' '.join(command)
     logger.debug(f"Running command: {command_str}")
     try:
@@ -181,7 +178,7 @@ def download_list(url, file_path):
     response.raise_for_status()
     file_path.write_bytes(response.content)
 
-# --- 3. Cloudflare API Client (REAL IMPLEMENTATION) ---
+# --- 3. Cloudflare API Client (REAL) ---
 
 class CloudflareAPI:
     def __init__(self, account_id, api_token, max_retries):
@@ -210,14 +207,15 @@ class CloudflareAPI:
         while retries <= self.max_retries:
             try:
                 response = self.session.request(method, url, headers=self.headers, **kwargs)
-                
-                # Check for rate limiting or server errors (5xx)
                 if response.status_code >= 500 or response.status_code == 429:
                     response.raise_for_status() 
                 
                 response_json = response.json()
                 if not response_json.get('success'):
                     error_messages = [err.get('message', 'Unknown API Error') for err in response_json.get('errors', [])]
+                    # Specific check to handle 404 deletion gracefully
+                    if "not found" in str(error_messages).lower() and method == "DELETE":
+                        return {'success': True}
                     raise requests.exceptions.HTTPError(f"API failed: {', '.join(error_messages)}", response=response)
                     
                 response.raise_for_status()
@@ -255,10 +253,7 @@ class CloudflareAPI:
 # --- 4. Workflow Functions ---
 
 def create_tld_regex(tld_list_content):
-    """Assembles the final TLD/IDN regex for Cloudflare Gateway from raw content."""
-    
     tlds = tld_list_content.splitlines()
-    
     cleaned_tlds = []
     for line in tlds:
         line = line.strip().lstrip('.').lower()
@@ -269,15 +264,11 @@ def create_tld_regex(tld_list_content):
         return ""
 
     tld_pattern = "|".join(sorted(set(cleaned_tlds)))
-
-    # The final regex pattern: (?i)\.(tld1|tld2|...)$
     regex = f"(?i)\\.({tld_pattern})$"
-    
     return regex
 
 
 def create_tld_policy(cf_client, tld_list_file, level):
-    """Creates or updates the TLD blocking policy in Cloudflare Zero Trust."""
     policy_name = f"Level {level}: Junk TLD/IDN Blocking"
     
     if not tld_list_file.exists():
@@ -320,13 +311,10 @@ def fetch_domains(feed_config):
     unique_domains = set()
     tld_filtered_count = 0
 
-    # Special handling for TLD blocking list from local tuple (Level 2)
     if feed_config['name'] == "Junk TLDs and IDNs" and isinstance(CFG.TLD_SOURCE, tuple):
         unique_domains = set(f"domain.{tld}" for tld in CFG.TLD_SOURCE)
-        
         output_path = Path(feed_config['filename'])
         output_path.write_text('\n'.join(sorted(CFG.TLD_SOURCE)) + '\n', encoding='utf-8')
-        
         shutil.rmtree(temp_dir)
         logger.info(f"  [Net Result] Generated {len(unique_domains)} domains for TLD List.")
         return unique_domains
@@ -386,7 +374,6 @@ def save_and_sync(cf_client, feed_config, domain_set, force_update=False):
         logger.info(f"Skipping Cloudflare List sync for {feed_config['name']} (Handled by Regex Policy).")
         return True
     
-    # Standard domain list sync below
     new_content = '\n'.join(sorted(domain_set)) + '\n'
     logger.info(f"💾 Saving {len(domain_set)} domains to {output_path}...")
     output_path.write_text(new_content, encoding='utf-8')
@@ -469,29 +456,37 @@ def save_and_sync(cf_client, feed_config, domain_set, force_update=False):
         try:
             cf_client.delete_list(list_id)
         except Exception as e:
-            err_str = str(e)
-            if "400" in err_str or "7003" in err_str or "7000" in err_str:
-                logger.warning(f"Skipping delete for {list_id}: List appears to be already deleted or in use.")
-            else:
-                logger.warning(f"Failed to delete {list_id}: {e}")
+            logger.warning(f"Failed to delete {list_id}: {e}")
 
     return True
 
+# --- CLEANUP FUNCTION WITH IMPROVED POLICY DETECTION ---
 def cleanup_resources(cf_client):
     logger.info("--- ⚠️ CLEANUP MODE: DELETING RESOURCES ⚠️ ---")
     current_policies = cf_client.get_rules().get('result') or []
     all_current_lists = cf_client.get_lists().get('result') or []
 
+    # 1. DELETE POLICIES FIRST (Aggressive Match)
+    prefixes_to_delete = ["Level ", "Block ", "Ads ", "Security ", "Threat Intel", "Junk TLD"]
+    
     for policy in current_policies:
-        if policy.get('name', '').startswith("Level "):
-            logger.info(f"Deleting Policy: {policy['name']} ({policy['id']})...")
+        name = policy.get('name', '')
+        # Check if the policy name starts with or contains any of our keywords
+        if any(name.startswith(p) for p in prefixes_to_delete) or "Managed by script" in policy.get('description', ''):
+            logger.info(f"Deleting Policy: {name} ({policy['id']})...")
             try:
                 cf_client.delete_rule(policy['id'])
             except Exception as e:
                 logger.error(f"Failed to delete policy {policy['id']}: {e}")
 
+    # 2. WAIT for Cloudflare to release the locks
+    logger.info("Waiting 5 seconds for policy deletion to propagate...")
+    time.sleep(5)
+
+    # 3. DELETE LISTS
     for lst in all_current_lists:
-        if lst.get('name', '').startswith("Block "):
+        # Match lists created by this script 
+        if lst.get('name', '').startswith("Block ") or "Block" in lst.get('name', ''):
             logger.info(f"Deleting List: {lst['name']} ({lst['id']})...")
             try:
                 cf_client.delete_list(lst['id'])
@@ -506,7 +501,6 @@ def git_configure():
     git_user_email = f"{CFG.GITHUB_ACTOR_ID}+{CFG.GITHUB_ACTOR}@users.noreply.github.com"
     run_command(["git", "config", "--global", "user.email", git_user_email])
     run_command(["git", "config", "--global", "user.name", git_user_name])
-    logger.info("Git configured.")
 
 def discard_local_changes(file_path):
     logger.info(f"Discarding local changes to {file_path}...")
