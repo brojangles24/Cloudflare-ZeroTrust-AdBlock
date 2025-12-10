@@ -39,23 +39,304 @@ class Config:
 
     # --- JUNK TLD FILTER ---
     BLOCKED_TLDS = (
-        # The "Zero Breakage" Blocklist
-        # Targets: High-abuse "Trash" TLDs only.
-        # Safe for: Shopping, Banking, Foreign Content, & APIs.
+# --- High Threat / Malware Vectors ---
+    ".zip",       # Phishing Risk (File extension confusion)
+    ".mov",       # Phishing Risk (File extension confusion)
+    ".top",       # #1 Malware/C2 TLD (Very cheap)
+    ".gdn",       # Cheap Spam (Global Domain Name)
+    ".win",       # Gambling/Scam landing pages
+    ".men",       # High volume spam/Malware
+    ".loan",      # Predatory loans/Scams
+    ".bid",       # Auction scams/Spam
+    ".stream",    # Illegal streaming/Piracy/Malvertising
+    ".review",    # Fake review farms/Affiliate spam
+    ".party",     # High volume spam
+    ".trade",     # Crypto/Financial scams
+    ".science",   # Junk content/SEO spam
+    ".cricket",   # Sports betting/Spam
+    ".accountant",# Fake financial services
+    ".date",      # Dating scams/Bots
+    ".faith",     # Fake charity scams
+    ".racing",    # Betting/Gambling spam
+    ".kim",       # High volume spam
+    ".mom",       # High volume spam
+    ".pro",       # Fake support/Tech scams
+    ".info",      # Legacy Spam/Malware
+    ".cam",       # Adult content/Cam sites/Malware
+    ".link",      # Link shorteners/Redirect chains
+    ".click",     # Click-fraud/Phishing
+    ".download",  # Fake software/Malware
+    ".help",      # Fake support scams
+    ".guru",      # Fake courses/Guru scams
+    ".cloud",     # Hosted spam/C2 infrastructure
+    ".agency",    # SEO Spam/Fake agencies
+    ".uno",       # Gambling/Spam
+    ".tokyo",     # Regional spam
+    ".london",    # Regional spam
+    ".email",     # Spam/Phishing
+    ".support",   # Tech support scams
+    ".tech",      # Tech support scams (also legitimate dev use)
+    ".today",     # News spam/Clickbait
+    ".life",      # Lifestyle scams/MLM
+    ".solutions", # Corporate spam
+    ".services",  # Corporate spam
+    ".ninja",     # Cheap spam
+    ".one",       # Cheap spam
+    ".systems",   # Tech support scams
+    ".digital",   # SEO spam
+    ".world",     # Global spam
+    ".fun",       # Cheap spam/Gambling
+    ".sbs",       # Heavy SMS Spam (Side by Side)
+    ".cfd",       # 99% Spam/Scams (Clothing/Fashion/Design)
+    ".bond",      # Financial/Crypto Scams
+    ".cyou",      # Malware/Phishing (See You)
+    ".pics",      # Adult/Spam
+    ".photo",     # Adult/Spam
+    ".makeup",    # Drop-shipping scams
+    ".skin",      # Drop-shipping scams
+    ".quest",     # Gaming spam/Scams
+    ".autos",     # Car warranty scams
+    ".motorcycles",# Niche spam
+    ".homes",     # Real estate scams
+    ".boats",     # Niche spam
+    ".yachts",    # Niche spam
+    ".lat",       # Regional spam
+    ".africa",    # Regional scam/Spam
+    ".asia",      # Regional scam/Spam
+    ".best",      # Affiliate spam/Fake reviews
+    ".blue",      # Cheap spam
+    ".pink",      # Cheap spam
+    ".red",       # Cheap spam
+    ".black",     # Shopping scams (Black Friday)
+    ".promo",     # Affiliate spam
+    ".pet",       # Puppy mills/Scams
+    ".ink",       # Cheap spam
+    ".wiki",      # SEO spam/Fake wikis
+    ".fail",      # Junk content
+    ".fyi",       # Junk content/Clickbait
+    ".run",       # Cheap spam
+    ".ren",       # Cheap spam
+    ".bazar",     # Marketplace scams (Darknet associations)
+    ".bet",       # Gambling/Malvertising
+    ".bingo",     # Gambling/Malvertising
+    ".casino",    # Gambling/Malvertising
+    ".poker",     # Gambling/Malvertising
+    ".vodka",     # Alcohol/Spam
+    ".beer",      # Alcohol/Spam
+    ".wine",      # Alcohol/Spam
+    ".cooking",   # Recipe spam (SEO)
+    ".fishing",   # Niche spam
+    ".horse",     # Betting/Spam
+    ".rodeo",     # Betting/Spam
+    ".surf",      # Niche spam
+    ".garden",    # Niche spam
+    ".house",     # Real estate spam
+    ".casa",      # Real estate spam
+    ".christmas", # Seasonal scams
+    ".gift",      # Gift card scams
+    ".guitars",   # Niche spam
+    ".audio",     # Piracy/Spam
+    ".hiphop",    # Niche spam
+    ".juegos",    # Gaming/Gambling (Spanish)
+    ".luxe",      # Luxury goods scams
+    ".voto",      # Niche spam
+    ".adult",     # Pornography/Malvertising
+    ".porn",      # Pornography/Malvertising
+    ".sex",       # Pornography/Malvertising
+    ".sexy",      # Pornography/Malvertising
+    ".xxx",       # Pornography/Malvertising
+    ".webcam",    # Cam sites/Malware
+    ".tube",      # Pornography/Piracy
+    ".gent",      # Niche spam
+    ".work",      # Employment scams
+    ".rest",      # Niche spam
+    ".bar",       # Niche spam
+    ".kred",      # Crypto/Scam
+    ".live",      # Piracy/Streaming/Cam sites
+    ".buzz",      # Clickbait/Ad farms
+    ".fit",       # Diet pills/Health scams
+    ".shop",      # Shopping scams (High volume)
+    ".site",      # Cheap spam/Malware
+    ".zone",      # Cheap spam
+    ".monster",   # Malware/Spam
+    ".ooo",       # Cheap spam
+    ".rocks",     # Cheap spam
+    ".vip",       # Gambling/Scams
+    ".xyz",       # The #1 Spam TLD (Also Web3/Crypto)
+    ".club",      # Cheap spam
+    ".online",    # Cheap spam (High volume)
+    ".icu",       # "I See You" - High malware/Phishing
+    ".wang",      # Chinese spam
+    ".host",      # Hosting spam
+    ".space",     # Cheap spam
+    ".website",   # Cheap spam
 
-        ".cfd",     # 99% Spam/Scams (Clothing/Fashion/Design)
-        ".sbs",     # Heavy SMS Spam (Side by Side)
-        ".bond",    # Financial/Crypto Scams
-        ".cyou",    # Malware/Phishing (See You)
-        ".gdn",     # Cheap Spam (Global Domain Name)
-        ".xin",     # Alibaba registry - Heavy Spam
-        ".loan",    # Predatory loans/Scams
-        ".date",    # Dating scams/Bots
-        ".faith",   # Fake charity scams
-        ".men",     # High volume spam
-        ".party",   # High volume spam
-        ".win",     # Gambling/Scam landing pages
-        ".kim"      # High volume spam
+    # --- The "Freenom" Gang (Historically High Abuse) ---
+    ".tk",        # Tokelau (Legacy Abuse)
+    ".ml",        # Mali (Legacy Abuse)
+    ".ga",        # Gabon (Legacy Abuse)
+    ".cf",        # Central African Republic (Legacy Abuse)
+    ".gq",        # Equatorial Guinea (Legacy Abuse)
+
+    # --- Geopolitical / Sanctioned Regions ---
+    ".cn",        # China (High Scanning/Attacks)
+    ".ru",        # Russia (Malware/C2/Ransomware)
+    ".su",        # Soviet Union (Carding/Botnets)
+    ".ir",        # Iran (Sanctioned)
+    ".kp",        # North Korea (Sanctioned)
+    ".by",        # Belarus (Cyber Threat Actor)
+    ".pk",        # Pakistan (Spam volume)
+    ".xn--11b4c3d",     # IDN Spam / Phishing
+    ".xn--1ck2e1b",     # IDN Spam / Phishing
+    ".xn--1qqw23a",     # IDN Spam (Chinese)
+    ".xn--2scrj9c",     # IDN Spam (Indian)
+    ".xn--30rr7y",      # IDN Spam (Chinese)
+    ".xn--3bst00m",     # IDN Spam / Phishing
+    ".xn--3ds443g",     # .online (Chinese - High Abuse)
+    ".xn--3e0b707e",    # IDN Spam (Korean)
+    ".xn--3hcrj9c",     # IDN Spam / Phishing
+    ".xn--3oq18vl8pn36a", # IDN Spam (Chinese)
+    ".xn--3pxu8k",      # .dot (Chinese)
+    ".xn--42c2d9a",     # IDN Spam (Thai)
+    ".xn--45br5cyl",    # IDN Spam (Indian)
+    ".xn--45brj9c",     # IDN Spam (Indian)
+    ".xn--45q11c",      # IDN Spam / Phishing
+    ".xn--4gbrim",      # .site (Arabic - High Abuse)
+    ".xn--54b7fta0cc",  # IDN Spam (Bengali)
+    ".xn--55qw42g",     # .public (Chinese)
+    ".xn--55qx5d",      # .company (Chinese - High Abuse)
+    ".xn--5su34j936bgsg", # .health (Chinese)
+    ".xn--5tzm5g",      # .website (Chinese)
+    ".xn--6frz82g",     # .mobile (Chinese)
+    ".xn--6qq986b3xl",  # .pharmacy (High Phishing)
+    ".xn--80adxhks",    # .moscow (Russia - High Risk)
+    ".xn--80ao21a",     # .kz (Kazakhstan)
+    ".xn--80aqecdr1a",  # .pharmacy (Russian)
+    ".xn--80asehdb",    # .online (Russia - High Abuse)
+    ".xn--80aswg",      # .site (Russia - High Abuse)
+    ".xn--8y0a063a",    # IDN Spam (Chinese)
+    ".xn--90a3ac",      # .srb (Serbia)
+    ".xn--90ae",        # .bg (Bulgaria)
+    ".xn--90ais",       # .by (Belarus - Cyber Threat)
+    ".xn--9dbq2a",      # IDN Spam (Hebrew)
+    ".xn--9et52u",      # IDN Spam (Chinese)
+    ".xn--9krt00a",     # IDN Spam / Phishing
+    ".xn--b4w605ferd",  # .fashion (Chinese)
+    ".xn--bck1b9a5dre4c", # .shopping (Japanese)
+    ".xn--c1avg",       # .org (Russia - High Abuse)
+    ".xn--c2br7g",      # IDN Spam (Indian)
+    ".xn--cck2b3b",     # IDN Spam (Korean)
+    ".xn--cckwcxetd",   # .amazon (Phishing Vector)
+    ".xn--cg4bki",      # .samsung (Phishing Vector)
+    ".xn--clchc0ea0b2g2a9gcd", # IDN Spam
+    ".xn--czr694b",     # .trademark (Spam)
+    ".xn--czrs0t",      # .store (Chinese)
+    ".xn--czru2d",      # .mall (Chinese)
+    ".xn--d1acj3b",     # .kids (Russia)
+    ".xn--d1alf",       # .mk (Macedonia)
+    ".xn--e1a4c",       # .eu (Cyrillic - Phishing)
+    ".xn--eckvdtc9d",   # .sale (Chinese)
+    ".xn--efvy88h",     # .help (Chinese)
+    ".xn--fct429k",     # .family (Chinese)
+    ".xn--fhbei",       # .shabaka (Arabic)
+    ".xn--fiq228c5hs",  # .mobile (Chinese)
+    ".xn--fiq64b",      # .link (Chinese)
+    ".xn--fiqs8s",      # .china (High Scanning/Attacks)
+    ".xn--fiqz9s",      # .cisco (Phishing Vector)
+    ".xn--fjq720a",     # .entertainment (Chinese)
+    ".xn--flw351e",     # .google (Phishing Vector)
+    ".xn--fpcrj9c3d",   # IDN Spam (Indian)
+    ".xn--fzc2c9e2c",   # .shopping (Sri Lanka)
+    ".xn--fzys8d69uvgm", # .vip (Chinese)
+    ".xn--g2xx48c",     # .photos (Chinese)
+    ".xn--gckr3f0f",    # .download (Chinese)
+    ".xn--gecrj9c",     # IDN Spam (Indian)
+    ".xn--gk3at1e",     # .brasil (Phishing)
+    ".xn--h2breg3eve",  # IDN Spam (Indian)
+    ".xn--h2brj9c",     # .bharat (India - Spam)
+    ".xn--h2brj9c8c",   # IDN Spam (Indian)
+    ".xn--hxt814e",     # .web (Chinese)
+    ".xn--i1b6b1a6a2e", # .organization (Hindi)
+    ".xn--imr513n",     # .restaurant (Chinese)
+    ".xn--io0a7i",      # .network (Chinese - High Abuse)
+    ".xn--j1aef",       # .com (Cyrillic - Phishing)
+    ".xn--j1amh",       # .uk (Cyrillic - Phishing)
+    ".xn--j6w193g",     # .hk (Hong Kong)
+    ".xn--jlq480n2rg",  # .amazon (Chinese Phishing)
+    ".xn--jlq61u9w7b",  # .nokia (Chinese Phishing)
+    ".xn--jvr189m",     # .live (Chinese)
+    ".xn--kcrx77d1x4a", # .website (Thai)
+    ".xn--kprw13d",     # .kp (Taiwan)
+    ".xn--kpry57d",     # .tw (Taiwan)
+    ".xn--kput3i",      # .pt (Mobile Spam)
+    ".xn--l1acc",       # .mn (Mongolia)
+    ".xn--lgbbat1ad8j", # .algeria (Arabic)
+    ".xn--mgb9awbf",    # .oman (Arabic)
+    ".xn--mgba3a3ejt",  # .armenia (Arabic)
+    ".xn--mgba3a4f16a", # .iran (Arabic - Sanctioned)
+    ".xn--mgba7c0bbn0a", # .mauritania (Arabic)
+    ".xn--mgbaakc7dvf", # .tunisia (Arabic)
+    ".xn--mgbaam7a8h",  # .uae (Arabic - Spam)
+    ".xn--mgbab2bd",    # .bazar (Marketplace Scams)
+    ".xn--mgbah1a3hjkrd", # .mauritania (Arabic)
+    ".xn--mgbai9azgqp6j", # .pakistan (Arabic)
+    ".xn--mgbayh7gpa",  # .jordan (Arabic)
+    ".xn--mgbbh1a",     # .sudan (Arabic)
+    ".xn--mgbbh1a71e",  # .india (Arabic)
+    ".xn--mgbc0a9azcg", # .morocco (Arabic)
+    ".xn--mgbca7dzdo",  # .abudhabi (Arabic)
+    ".xn--mgbcpq6gpa1a", # .bahrain (Arabic)
+    ".xn--mgberp4a5d4ar", # .saudiarabia (Arabic)
+    ".xn--mgbgu82a",    # .com (Arabic - Phishing)
+    ".xn--mgbi4ecexp",  # .catholic (Arabic)
+    ".xn--mgbpl2fh",    # .net (Arabic)
+    ".xn--mgbt3dhd",    # .kirghizstan (Arabic)
+    ".xn--mgbtx2b",     # .iraq (Arabic - High Risk)
+    ".xn--mgbx4cd0ab",  # .malaysia (Arabic)
+    ".xn--mix891f",     # .macau (Chinese)
+    ".xn--mk1bu44c",    # .com (Arabic)
+    ".xn--mxtq1m",      # .govt (Chinese - Fake Gov)
+    ".xn--ngbc5azd",    # .shabaka (Arabic Web Spam)
+    ".xn--ngbe9e0a",    # .kuwait (Arabic)
+    ".xn--ngbrx",       # .arab (Arabic)
+    ".xn--node",        # .ge (Georgia)
+    ".xn--nqv7f",       # .organization (Spam)
+    ".xn--nqv7fs00ema", # .organization (Chinese)
+    ".xn--nyqy26a",     # .health (Chinese)
+    ".xn--o3cw4h",      # .th (Thailand)
+    ".xn--ogbpf8fl",    # .syria (Arabic - Sanctioned)
+    ".xn--otu796d",     # .job (Chinese)
+    ".xn--p1acf",       # .rus (Russian Spam)
+    ".xn--p1ai",        # .rf (Russia - #1 Malware Source)
+    ".xn--pgbs0dh",     # .tunisia
+    ".xn--pssy2u",      # .club (Chinese Spam)
+    ".xn--q7ce6a",      # .lao (Laos)
+    ".xn--q9jyb4c",     # .google (Homograph Phishing)
+    ".xn--qcka1pmc",    # .google (Homograph Phishing)
+    ".xn--qxa6a",       # .eu (Greek)
+    ".xn--qxam",        # .gr (Greece)
+    ".xn--rhqv96g",     # .world (Chinese Spam)
+    ".xn--rovu88b",     # .intel (Phishing)
+    ".xn--rvc1e0am3e",  # .norway (Chinese)
+    ".xn--s9brj9c",     # IDN Spam (Indian)
+    ".xn--ses554g",     # .site (Chinese - High Abuse)
+    ".xn--t60b56a",     # .dot (Chinese)
+    ".xn--tckwe",       # .com (Japanese)
+    ".xn--tiq49xqyj",   # .cloud (Chinese)
+    ".xn--unup4y",      # .game (Chinese)
+    ".xn--vhquv",       # .art (Chinese)
+    ".xn--vuq861b",     # .com (Chinese - High Phishing)
+    ".xn--w4r85el8fhu5dnra", # .japanese (Japanese)
+    ".xn--w4rs40l",     # .fly (Chinese)
+    ".xn--wgbh1c",      # .market (Arabic Spam)
+    ".xn--wgbl6a",      # .qatar (Arabic)
+    ".xn--xhq521b",     # .guangdong (Chinese)
+    ".xn--xkc2al3hye2a", # .srilanka (Tamil)
+    ".xn--xkc2dl3a5ee0h", # .tamilnadu (Tamil)
+    ".xn--y9a3aq",      # .am (Armenia - Spam)
+    ".xn--yfro4i67o",   # .singapore (Chinese)
+    ".xn--ygbi2ammx",   # .palestine (Arabic)
+    ".xn--zfr164b",     # .gov (Arabic - Fake Gov)
     )
 
     # --- DEFINITION OF FEEDS ---
@@ -75,7 +356,7 @@ class Config:
             "policy_name": "Block Security Risks",
             "filename": "HaGeZi_Security.txt",
             "urls": [
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/badware-onlydomains.txt",
+                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/badware-onlydomains.txt",
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
             ]
         },
