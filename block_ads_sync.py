@@ -182,7 +182,7 @@ def run_command(command):
 def download_list(url, file_path):
     r = requests.get(url, timeout=30); r.raise_for_status(); file_path.write_bytes(r.content)
 
-# --- 3. Cloudflare API Client (REAL) ---
+# --- 3. Cloudflare API Client ---
 class CloudflareAPI:
     def __init__(self, account_id, api_token, max_retries):
         self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/gateway"
@@ -254,7 +254,9 @@ def deploy_category_policies(cf, level):
     
     if sec_cats:
         p_name = f"Level {level}: Block Malware"
-        expr = f"any(dns.security_category[*] in {{{' '.join([f'\"{c}\"' for c in sec_cats])}}})"
+        # FIX: Build string separately to support Python 3.11 (no backslash in f-string expression)
+        cats_formatted = ' '.join([f'"{c}"' for c in sec_cats])
+        expr = f"any(dns.security_category[*] in {{{cats_formatted}}})"
         _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": expr, "rule_settings": {"block_page_enabled": False}})
 
     if config.get("block_tor"):
@@ -352,33 +354,23 @@ def cleanup_resources(cf):
     rules = cf.get_rules().get('result') or []
     lists = cf.get_lists().get('result') or []
     
-    # 1. Identify ALL Lists to delete (Nuke everything)
-    # This solves the "TIF Mini" issue by deleting ANY list present.
-    # If you have critical manual lists, you must exclude them here.
-    # Currently configured to delete ALL lists to ensure clean state.
     lists_to_delete = lists
     list_ids_to_delete = {l['id'] for l in lists_to_delete}
     
     logger.info(f"Found {len(lists_to_delete)} lists to delete.")
 
-    # 2. Identify Policies to delete
-    # Delete ANY policy that uses a list we are deleting.
-    # AND delete any policy that matches our known script keywords.
     policies_to_delete = []
+    # Ruthless: Delete ANY policy that matches our keywords OR uses our lists
     keywords = ["Level", "Block", "Ads", "Security", "TIF", "Junk", "Malware", "Tor", "Country"]
     
     for p in rules:
-        # Check 1: Does it depend on a list we are wiping?
         if any(lid in str(p) for lid in list_ids_to_delete):
             policies_to_delete.append(p)
             continue
-        
-        # Check 2: Does it look like one of our managed policies?
         if any(k in p.get('name', '') for k in keywords):
             policies_to_delete.append(p)
             continue
 
-    # 3. Delete Policies First
     if policies_to_delete:
         logger.info(f"Deleting {len(policies_to_delete)} conflicting policies...")
         for p in policies_to_delete:
@@ -387,11 +379,10 @@ def cleanup_resources(cf):
             except Exception as e: logger.error(f"Err: {e}")
         
         logger.info("Waiting 15s for policy deletion to propagate...")
-        time.sleep(15) # Essential for Cloudflare consistency
+        time.sleep(15) 
     else:
         logger.info("No conflicting policies found.")
 
-    # 4. Delete Lists
     for l in lists_to_delete:
         logger.info(f"Deleting List: {l['name']} ({l['id']})...")
         try: cf.delete_list(l['id'])
@@ -415,7 +406,6 @@ def main():
                 cleanup_resources(cf)
                 if args.delete: return
 
-            # Git setup (Assuming git repo exists)
             is_git = Path(".git").exists()
             if is_git:
                 try: 
@@ -426,7 +416,6 @@ def main():
             feed_data = {}
             for f in CFG.FEED_CONFIGS: feed_data[f['name']] = fetch_domains(f)
             
-            # Deduplication
             ad = next((f['name'] for f in CFG.FEED_CONFIGS if 'Ads ' in f['name']), None)
             sec = next((f['name'] for f in CFG.FEED_CONFIGS if 'Security' in f['name']), None)
             tif = next((f['name'] for f in CFG.FEED_CONFIGS if 'Threat' in f['name']), None)
