@@ -24,7 +24,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Full TLD list - Domains ending in these are automatically dropped
+# Full TLD list
 BLOCKED_TLDS = (
     ".zip", ".mov", ".xyz", ".top", ".gdn", ".win", ".loan", ".bid", ".stream", 
     ".tk", ".ml", ".ga", ".cf", ".gq", ".cn", ".ru", ".sbs", ".cfd", ".bond", 
@@ -82,7 +82,7 @@ class Config:
     MAX_LIST_SIZE: int = 1000
     MAX_LISTS: int = 300 
     MAX_RETRIES: int = 5
-    USER_AGENT: str = "Mozilla/5.0 (compatible; CloudflareBlocklistManager/3.1)"
+    USER_AGENT: str = "Mozilla/5.0 (compatible; CloudflareBlocklistManager/3.2)"
     
     # Git
     TARGET_BRANCH: str = os.environ.get("GITHUB_REF_NAME") or os.environ.get("TARGET_BRANCH") or "main" 
@@ -91,15 +91,14 @@ class Config:
 
     ALLOWLIST_FILE: str = "allowlist.txt"
 
-    # Waterfall Priority: Feeds at the top are processed first.
-    # Domains in top feeds are removed from lower feeds.
+    # Define your feeds here
     FEEDS: List[FeedConfig] = [
         FeedConfig(
             name="Ad Block Feed",
             prefix="Block ads",
             policy_name="Block Ads, Trackers and Telemetry",
             filename="HaGeZi_Normal.txt",
-            urls=["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"]
+            urls=["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/normal-onlydomains.txt"]
         ),
         FeedConfig(
             name="Security Feed",
@@ -136,7 +135,6 @@ class ScriptExit(Exception):
         self.critical = critical
 
 class GitHubActions:
-    """Handles reporting to GitHub Actions Job Summaries."""
     @staticmethod
     def is_running(): return os.getenv('GITHUB_ACTIONS') == 'true'
 
@@ -149,13 +147,12 @@ class GitHubActions:
                 f.write("\n".join(lines) + "\n")
 
 class NotificationHandler:
-    """Sends status updates to Discord/Slack/Teams."""
     @staticmethod
     def send(message: str, level: str = "info"):
         if not CFG.WEBHOOK_URL: return
-        color = 3066993  # Green
-        if level == "error": color = 15158332 # Red
-        if level == "warning": color = 16776960 # Yellow
+        color = 3066993
+        if level == "error": color = 15158332
+        if level == "warning": color = 16776960
         payload = {
             "username": "Blocklist Manager",
             "embeds": [{"description": message, "color": color, "timestamp": time.strftime('%Y-%m-%dT%H:%M:%S.000Z')}]
@@ -219,13 +216,11 @@ VALID_DOMAIN_PATTERN = re.compile(r'^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+
 COMMON_JUNK_DOMAINS = {'localhost', '127.0.0.1', '0.0.0.0', '::1', 'broadcasthost', 'ip6-localhost'}
 
 def clean_domain(domain_str: str) -> Optional[str]:
-    """Validates and enforces IDNA (Punycode) encoding."""
     if not domain_str or domain_str.startswith('#'): return None
     d = domain_str.split()[0].strip().lower().rstrip('.')
     if d in COMMON_JUNK_DOMAINS: return None
     if d.endswith(BLOCKED_TLDS): return None
     try:
-        # Enforce Punycode (e.g., 'café.com' -> 'xn--caf-dma.com')
         puny = d.encode('idna').decode('ascii')
         if VALID_DOMAIN_PATTERN.match(puny): return puny
     except Exception: pass
@@ -328,25 +323,39 @@ def sync_feed(cf_client: CloudflareAPI, feed: FeedConfig, domains: Set[str]):
     else: cf_client.create_rule(payload)
 
 def nuke_all_resources(cf_client: CloudflareAPI):
-    """⚠️ DANGER: Deletes ALL domain lists and blocking policies in the account."""
-    logger.warning("☢️ NUKE MODE INITIATED: DELETING ALL GATEWAY LISTS AND RULES ☢️")
-    NotificationHandler.send("☢️ NUKE MODE INITIATED: Account Wipe in progress...", "warning")
+    """
+    SMART NUKE: 
+    1. Delete ONLY rules managed by this script.
+    2. Delete ALL Domain Lists (cleaning up everything).
+    """
+    logger.warning("☢️ SMART NUKE INITIATED ☢️")
+    NotificationHandler.send("☢️ Smart Nuke: Cleaning up managed resources...", "warning")
+
+    # 1. Identify Managed Policies
+    managed_policy_names = {feed.policy_name for feed in CFG.FEEDS}
     
     rules = cf_client.get_rules().get('result') or []
     for rule in rules:
-        logger.info(f"🔥 Deleting Rule: {rule['name']}")
-        try: cf_client.delete_rule(rule['id'])
-        except Exception: pass
+        if rule['name'] in managed_policy_names:
+            logger.info(f"🔥 Deleting Managed Rule: {rule['name']}")
+            try: cf_client.delete_rule(rule['id'])
+            except Exception: pass
+        else:
+            logger.info(f"🛡️ Skipping Custom Rule: {rule['name']}")
 
+    # 2. Delete ALL Domain Lists
     lists = cf_client.get_lists().get('result') or []
+    deleted_count = 0
     for lst in lists:
         if lst['type'] == 'DOMAIN':
             logger.info(f"🔥 Deleting List: {lst['name']}")
-            try: cf_client.delete_list(lst['id'])
+            try: 
+                cf_client.delete_list(lst['id'])
+                deleted_count += 1
             except Exception: pass
             
-    logger.info("☢️ Nuke Complete. Account is clean.")
-    NotificationHandler.send("☢️ Nuke Complete. Account is clean.", "info")
+    logger.info(f"☢️ Nuke Complete. Deleted {deleted_count} lists.")
+    NotificationHandler.send(f"☢️ Nuke Complete. Deleted {deleted_count} lists.", "info")
 
 # --- 5. Main ---
 
@@ -354,7 +363,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--dry-run", action="store_true", help="Simulate without changes")
     p.add_argument("--force", action="store_true", help="Force update regardless of diff")
-    p.add_argument("--nuke", action="store_true", help="DELETE ALL LISTS AND RULES")
+    p.add_argument("--nuke", action="store_true", help="Delete ALL lists and managed rules")
     args = p.parse_args()
 
     start_time = time.time()
