@@ -3,7 +3,7 @@ name: Cloudflare Gateway Sync
 on:
   # 1. Automatic: Run every day at 04:00 UTC
   schedule:
-    - cron: '0 4 * * *'
+    - cron: '0 * * * *'
 
   # 2. Manual: Trigger with options
   workflow_dispatch:
@@ -13,7 +13,7 @@ on:
         type: boolean
         default: false
       delete_mode:
-        description: '⚠️ Cleanup Mode (Delete all lists/policies)'
+        description: '⚠️ Cleanup Mode (Delete all lists/relevant policies)'
         type: boolean
         default: false
 
