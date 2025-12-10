@@ -1,28 +1,27 @@
-name: Update Blocklists
+name: Cloudflare Gateway Sync
 
 on:
+  # 1. Automatic: Run every day at 04:00 UTC
   schedule:
-    - cron: '0 * * * *'
-  
+    - cron: '0 4 * * *'
+
+  # 2. Manual: Trigger with options
   workflow_dispatch:
     inputs:
-      force_update:
-        description: 'Force Update (Ignore diffs)'
+      force_mode:
+        description: 'Force Update (Ignore local file diffs)'
         type: boolean
         default: false
-      nuke_mode:
-        description: '☢️ SMART NUKE ☢️'
-        type: boolean
-        default: false
-      dry_run:
-        description: 'Dry Run (Simulate only)'
+      delete_mode:
+        description: '⚠️ Cleanup Mode (Delete all lists/policies)'
         type: boolean
         default: false
 
 jobs:
-  update-blocklists:
+  run-sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    
+    # REQUIRED: Grants permission to commit and push changes back to the repo
     permissions:
       contents: write
 
@@ -30,7 +29,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Fetch full history so git diff/reset works correctly
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -42,22 +41,25 @@ jobs:
 
       - name: Run Blocklist Manager
         env:
+          # You must set these in your Repository Settings > Secrets and Variables > Actions
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
-          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: |
-          FLAGS=""
-          
-          if [ "${{ inputs.nuke_mode }}" == "true" ]; then
-            echo "☢️ NUKE MODE ACTIVE"
-            FLAGS="--nuke"
-          else
-            if [ "${{ inputs.force_update }}" == "true" ]; then
-              FLAGS="$FLAGS --force"
-            fi
-            if [ "${{ inputs.dry_run }}" == "true" ]; then
-              FLAGS="$FLAGS --dry-run"
-            fi
+          # Initialize arguments variable
+          SCRIPT_ARGS=""
+
+          # Check for Manual Inputs
+          if [ "${{ inputs.force_mode }}" == "true" ]; then
+            echo "🔥 Force Mode Active"
+            SCRIPT_ARGS="$SCRIPT_ARGS --force"
           fi
 
-          python3 block_ads_sync.py $FLAGS
+          if [ "${{ inputs.delete_mode }}" == "true" ]; then
+            echo "⚠️ Delete Mode Active"
+            SCRIPT_ARGS="$SCRIPT_ARGS --delete"
+          fi
+
+          # Execute the script
+          # IMPORTANT: Ensure your python file is named 'block_ads_sync.py' 
+          # or change the name below to match your file.
+          python3 block_ads_sync.py $SCRIPT_ARGS
