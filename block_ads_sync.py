@@ -127,6 +127,7 @@ class Config:
         cls.FEED_CONFIGS = profile["feeds"]
         cls.POLICY_CONFIG = profile.get("policies", {})
         
+        # Load TLDs
         if isinstance(cls.TLD_SOURCE, tuple) and cls.TLD_SOURCE:
             cls.BLOCKED_TLDS_SET = set(cls.TLD_SOURCE)
         elif isinstance(cls.TLD_SOURCE, str) and cls.TLD_SOURCE:
@@ -206,7 +207,6 @@ class CloudflareAPI:
                 data = resp.json()
                 if not data.get('success'):
                     msgs = [e.get('message', 'Unknown') for e in data.get('errors', [])]
-                    # Robust cleanup: Ignore 404s on delete
                     if method == "DELETE" and any("not found" in m.lower() or "invalid" in m.lower() for m in msgs):
                         return {'success': True}
                     raise requests.exceptions.HTTPError(f"API Error: {msgs}", response=resp)
@@ -231,7 +231,6 @@ class CloudflareAPI:
 def create_tld_regex(content):
     tlds = content.splitlines()
     cleaned_tlds = []
-    
     for line in tlds:
         item = line.strip().lstrip('.').lower()
         if not item or line.startswith('#'): continue
@@ -240,9 +239,10 @@ def create_tld_regex(content):
     
     if not cleaned_tlds: return ""
 
-    # FIX: Use [.] to avoid backslash hell. No (?i) needed as Cloudflare is CI by default.
+    # FIX: Use string concatenation and raw strings to avoid Python f-string backslash errors
+    # AND to generate the correct regex syntax `\.` for Cloudflare.
     tld_pattern = "|".join(sorted(set(cleaned_tlds)))
-    regex = f"[.]({tld_pattern})$" 
+    regex = r"(?i)\.(" + tld_pattern + r")$"
     return regex
 
 def create_tld_policy(cf, file, level):
@@ -251,7 +251,8 @@ def create_tld_policy(cf, file, level):
     regex = create_tld_regex(file.read_text(encoding='utf-8'))
     if not regex: return
     
-    # We construct the string carefully
+    # Construct expression using string formatting without f-strings for the inner regex part if needed,
+    # but here f-string is safe because we aren't putting backslashes directly in the {}
     traffic_expr = f'dns.fqdn matches regex "{regex}"'
     
     payload = {
@@ -279,13 +280,13 @@ def deploy_category_policies(cf, level):
 
     if config.get("block_tor"):
         p_name = f"Level {level}: Block Tor DNS"
-        # Using [.]onion to avoid backslash issues
-        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": 'dns.fqdn matches regex "[.]onion$"', "rule_settings": {"block_page_enabled": False}})
+        # Standard regex without backslash issues
+        _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": 'dns.fqdn matches regex "(?i)[.]onion$"', "rule_settings": {"block_page_enabled": False}})
 
     if config.get("block_countries"):
         p_name = f"Level {level}: Block Countries"
         c_regex = "|".join([c.lower() for c in config["block_countries"]])
-        expr = f'dns.fqdn matches regex "[.]({c_regex})$"'
+        expr = f'dns.fqdn matches regex "(?i)[.]({c_regex})$"'
         _deploy_policy(cf, p_name, {"name": p_name, "enabled": True, "action": "block", "filters": ["dns"], "traffic": expr, "rule_settings": {"block_page_enabled": False}})
 
     if config.get("block_bypass"):
@@ -368,7 +369,11 @@ def save_and_sync(cf, cfg, d_set, force=False):
         cf.delete_list(lid)
     return True
 
-# --- REVISED CLEANUP: Ruthless Edition ---
+# --- REVISED CLEANUP: Parallel & Ruthless ---
+def delete_single_list(cf, lid):
+    try: cf.delete_list(lid)
+    except: pass
+
 def cleanup_resources(cf):
     logger.info("--- ⚠️ CLEANUP MODE: DELETING RESOURCES ⚠️ ---")
     rules = cf.get_rules().get('result') or []
@@ -396,10 +401,10 @@ def cleanup_resources(cf):
     else:
         logger.info("No conflicting policies found.")
 
-    for l in lists_to_delete:
-        logger.info(f"Deleting List: {l['name']} ({l['id']})...")
-        try: cf.delete_list(l['id'])
-        except Exception as e: logger.error(f"Err: {e}")
+    logger.info("Deleting lists in parallel (Max 4 threads)...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(delete_single_list, cf, l['id']) for l in lists_to_delete]
+        concurrent.futures.wait(futures)
         
     Path(".last_deployed_profile").write_text(CFG.CURRENT_LEVEL)
     logger.info("--- Cleanup Complete. ---")
@@ -429,19 +434,14 @@ def main():
             feed_data = {}
             for f in CFG.FEED_CONFIGS: feed_data[f['name']] = fetch_domains(f)
             
-            ad = next((f['name'] for f in CFG.FEED_CONFIGS if 'Ads ' in f['name']), None)
-            sec = next((f['name'] for f in CFG.FEED_CONFIGS if 'Security' in f['name']), None)
-            tif = next((f['name'] for f in CFG.FEED_CONFIGS if 'Threat' in f['name']), None)
-            
-            if ad and sec and ad in feed_data and sec in feed_data:
-                 overlap = feed_data[ad].intersection(feed_data[sec])
-                 if overlap: logger.info(f"Dedupe Ads/Sec: {len(overlap)}"); feed_data[sec] -= overlap
-            if ad and tif and ad in feed_data and tif in feed_data:
-                 overlap = feed_data[ad].intersection(feed_data[tif])
-                 if overlap: logger.info(f"Dedupe Ads/TIF: {len(overlap)}"); feed_data[tif] -= overlap
-            if sec and tif and sec in feed_data and tif in feed_data:
-                 overlap = feed_data[sec].intersection(feed_data[tif])
-                 if overlap: logger.info(f"Dedupe Sec/TIF: {len(overlap)}"); feed_data[tif] -= overlap
+            # IMPROVED DEDUPLICATION (From Pro version)
+            feed_names = [f['name'] for f in CFG.FEED_CONFIGS if f['name'] in feed_data]
+            for i in range(len(feed_names)):
+                high_pri_name = feed_names[i]
+                for j in range(i + 1, len(feed_names)):
+                    low_pri_name = feed_names[j]
+                    overlap = feed_data[high_pri_name].intersection(feed_data[low_pri_name])
+                    if overlap: feed_data[low_pri_name] -= overlap
 
             changed = []
             sync_ok = True
