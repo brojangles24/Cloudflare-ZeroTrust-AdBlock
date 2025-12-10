@@ -39,153 +39,27 @@ class Config:
 
     # --- JUNK TLD FILTER ---
     BLOCKED_TLDS = (
-# --- High Threat / Malware Vectors ---
-    ".zip",       # Phishing Risk (File extension confusion)
-    ".mov",       # Phishing Risk (File extension confusion)
-    ".top",       # #1 Malware/C2 TLD (Very cheap)
-    ".gdn",       # Cheap Spam (Global Domain Name)
-    ".win",       # Gambling/Scam landing pages
-    ".men",       # High volume spam/Malware
-    ".loan",      # Predatory loans/Scams
-    ".bid",       # Auction scams/Spam
-    ".stream",    # Illegal streaming/Piracy/Malvertising
-    ".review",    # Fake review farms/Affiliate spam
-    ".party",     # High volume spam
-    ".trade",     # Crypto/Financial scams
-    ".science",   # Junk content/SEO spam
-    ".cricket",   # Sports betting/Spam
-    ".accountant",# Fake financial services
-    ".date",      # Dating scams/Bots
-    ".faith",     # Fake charity scams
-    ".racing",    # Betting/Gambling spam
-    ".kim",       # High volume spam
-    ".mom",       # High volume spam
-    ".pro",       # Fake support/Tech scams
-    ".info",      # Legacy Spam/Malware
-    ".cam",       # Adult content/Cam sites/Malware
-    ".link",      # Link shorteners/Redirect chains
-    ".click",     # Click-fraud/Phishing
-    ".download",  # Fake software/Malware
-    ".help",      # Fake support scams
-    ".guru",      # Fake courses/Guru scams
-    ".cloud",     # Hosted spam/C2 infrastructure
-    ".agency",    # SEO Spam/Fake agencies
-    ".uno",       # Gambling/Spam
-    ".tokyo",     # Regional spam
-    ".london",    # Regional spam
-    ".email",     # Spam/Phishing
-    ".support",   # Tech support scams
-    ".tech",      # Tech support scams (also legitimate dev use)
-    ".today",     # News spam/Clickbait
-    ".life",      # Lifestyle scams/MLM
-    ".solutions", # Corporate spam
-    ".services",  # Corporate spam
-    ".ninja",     # Cheap spam
-    ".one",       # Cheap spam
-    ".systems",   # Tech support scams
-    ".digital",   # SEO spam
-    ".world",     # Global spam
-    ".fun",       # Cheap spam/Gambling
-    ".sbs",       # Heavy SMS Spam (Side by Side)
-    ".cfd",       # 99% Spam/Scams (Clothing/Fashion/Design)
-    ".bond",      # Financial/Crypto Scams
-    ".cyou",      # Malware/Phishing (See You)
-    ".pics",      # Adult/Spam
-    ".photo",     # Adult/Spam
-    ".makeup",    # Drop-shipping scams
-    ".skin",      # Drop-shipping scams
-    ".quest",     # Gaming spam/Scams
-    ".autos",     # Car warranty scams
-    ".motorcycles",# Niche spam
-    ".homes",     # Real estate scams
-    ".boats",     # Niche spam
-    ".yachts",    # Niche spam
-    ".lat",       # Regional spam
-    ".africa",    # Regional scam/Spam
-    ".asia",      # Regional scam/Spam
-    ".best",      # Affiliate spam/Fake reviews
-    ".blue",      # Cheap spam
-    ".pink",      # Cheap spam
-    ".red",       # Cheap spam
-    ".black",     # Shopping scams (Black Friday)
-    ".promo",     # Affiliate spam
-    ".pet",       # Puppy mills/Scams
-    ".ink",       # Cheap spam
-    ".wiki",      # SEO spam/Fake wikis
-    ".fail",      # Junk content
-    ".fyi",       # Junk content/Clickbait
-    ".run",       # Cheap spam
-    ".ren",       # Cheap spam
-    ".bazar",     # Marketplace scams (Darknet associations)
-    ".bet",       # Gambling/Malvertising
-    ".bingo",     # Gambling/Malvertising
-    ".casino",    # Gambling/Malvertising
-    ".poker",     # Gambling/Malvertising
-    ".vodka",     # Alcohol/Spam
-    ".beer",      # Alcohol/Spam
-    ".wine",      # Alcohol/Spam
-    ".cooking",   # Recipe spam (SEO)
-    ".fishing",   # Niche spam
-    ".horse",     # Betting/Spam
-    ".rodeo",     # Betting/Spam
-    ".surf",      # Niche spam
-    ".garden",    # Niche spam
-    ".house",     # Real estate spam
-    ".casa",      # Real estate spam
-    ".christmas", # Seasonal scams
-    ".gift",      # Gift card scams
-    ".guitars",   # Niche spam
-    ".audio",     # Piracy/Spam
-    ".hiphop",    # Niche spam
-    ".juegos",    # Gaming/Gambling (Spanish)
-    ".luxe",      # Luxury goods scams
-    ".voto",      # Niche spam
-    ".adult",     # Pornography/Malvertising
-    ".porn",      # Pornography/Malvertising
-    ".sex",       # Pornography/Malvertising
-    ".sexy",      # Pornography/Malvertising
-    ".xxx",       # Pornography/Malvertising
-    ".webcam",    # Cam sites/Malware
-    ".tube",      # Pornography/Piracy
-    ".gent",      # Niche spam
-    ".work",      # Employment scams
-    ".rest",      # Niche spam
-    ".bar",       # Niche spam
-    ".kred",      # Crypto/Scam
-    ".live",      # Piracy/Streaming/Cam sites
-    ".buzz",      # Clickbait/Ad farms
-    ".fit",       # Diet pills/Health scams
-    ".shop",      # Shopping scams (High volume)
-    ".site",      # Cheap spam/Malware
-    ".zone",      # Cheap spam
-    ".monster",   # Malware/Spam
-    ".ooo",       # Cheap spam
-    ".rocks",     # Cheap spam
-    ".vip",       # Gambling/Scams
-    ".xyz",       # The #1 Spam TLD (Also Web3/Crypto)
-    ".club",      # Cheap spam
-    ".online",    # Cheap spam (High volume)
-    ".icu",       # "I See You" - High malware/Phishing
-    ".wang",      # Chinese spam
-    ".host",      # Hosting spam
-    ".space",     # Cheap spam
-    ".website",   # Cheap spam
-
-    # --- The "Freenom" Gang (Historically High Abuse) ---
-    ".tk",        # Tokelau (Legacy Abuse)
-    ".ml",        # Mali (Legacy Abuse)
-    ".ga",        # Gabon (Legacy Abuse)
-    ".cf",        # Central African Republic (Legacy Abuse)
-    ".gq",        # Equatorial Guinea (Legacy Abuse)
-
-    # --- Geopolitical / Sanctioned Regions ---
-    ".cn",        # China (High Scanning/Attacks)
-    ".ru",        # Russia (Malware/C2/Ransomware)
-    ".su",        # Soviet Union (Carding/Botnets)
-    ".ir",        # Iran (Sanctioned)
-    ".kp",        # North Korea (Sanctioned)
-    ".by",        # Belarus (Cyber Threat Actor)
-    ".pk",        # Pakistan (Spam volume)
+    # --- High Threat / Malware Vectors ---
+    ".zip",      # Phishing: confusion with file extensions
+    ".mov",      # Phishing: confusion with file extensions
+    ".xyz",      # #1 Malware/Burner domain (Whitelist legitimate dev sites manually)
+    ".top",      # #2 Malware/C2 host
+    ".gdn",      # "Global Domain Name" - Pure spam
+    ".win",      # Scam landing pages
+    ".loan",     # Predatory financial scams
+    ".bid",      # Auction scams
+    ".stream",   # Illegal streaming/malvertising
+    ".tk",       # Tokelau - Legacy abuse
+    ".ml",       # Mali - Legacy abuse
+    ".ga",       # Gabon - Legacy abuse
+    ".cf",       # CAR - Legacy abuse
+    ".gq",       # Eq. Guinea - Legacy abuse
+    ".cn",       # China - High attack volume
+    ".ru",       # Russia - High malware volume
+    ".sbs",      # "Side by Side" - #1 SMS Phishing (Smishing) vector in 2025
+    ".cfd",      # "Clothing/Design" - 99% fake shops/scams
+    ".bond",     # Crypto/Investment scams
+    ".es",       # Spain - High phishing volume in 2025
     ".xn--11b4c3d",     # IDN Spam / Phishing
     ".xn--1ck2e1b",     # IDN Spam / Phishing
     ".xn--1qqw23a",     # IDN Spam (Chinese)
@@ -347,7 +221,8 @@ class Config:
             "policy_name": "Block Ads, Trackers and Telemetry", # <--- UPDATED NAME
             "filename": "HaGeZi_Normal.txt",
             "urls": [
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
             ]
         },
         {
@@ -366,8 +241,8 @@ class Config:
             "policy_name": "Threat Intelligence Feed",
             "filename": "TIF_Mini.txt",
             "urls": [
-                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.medium-onlydomains.txt",
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
+                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.medium-onlydomains.txt",
             ]
         }
     ]
