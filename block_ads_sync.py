@@ -38,28 +38,75 @@ class Config:
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
 
     # --- JUNK TLD FILTER ---
-    BLOCKED_TLDS = (
-    # --- High Threat / Malware Vectors ---
-    ".zip",      # Phishing: confusion with file extensions
-    ".mov",      # Phishing: confusion with file extensions
-    ".xyz",      # #1 Malware/Burner domain (Whitelist legitimate dev sites manually)
-    ".top",      # #2 Malware/C2 host
-    ".gdn",      # "Global Domain Name" - Pure spam
-    ".win",      # Scam landing pages
-    ".loan",     # Predatory financial scams
+    BLOCKED_TLDS = {
+    # --- 1. The "Cheap & Nasty" (High Abuse / Low Legitimacy) ---
+    ".xyz",      # #1 Abuse domain (Note: Whitelist legitimate dev sites)
+    ".top",      # #2 Abuse domain
+    ".bazar",    # Marketplace scams
     ".bid",      # Auction scams
-    ".stream",   # Illegal streaming/malvertising
-    ".tk",       # Tokelau - Legacy abuse
-    ".ml",       # Mali - Legacy abuse
-    ".ga",       # Gabon - Legacy abuse
-    ".cf",       # CAR - Legacy abuse
-    ".gq",       # Eq. Guinea - Legacy abuse
-    ".cn",       # China - High attack volume
-    ".ru",       # Russia - High malware volume
-    ".sbs",      # "Side by Side" - #1 SMS Phishing (Smishing) vector in 2025
-    ".cfd",      # "Clothing/Design" - 99% fake shops/scams
-    ".bond",     # Crypto/Investment scams
-    ".es",       # Spain - High phishing volume in 2025
+    ".bond",     # Investment/Crypto scams
+    ".cfd",      # "Contracts For Difference" - High financial scam rate
+    ".click",    # Phishing "Call to Action" links
+    ".cyou",     # "See You" - Cheap spam vector
+    ".gdn",      # "Global Domain Name" - Pure spam
+    ".icu",      # "I See You" - Historically high abuse
+    ".loan",     # Predatory loan scams
+    ".monster",  # Malware distribution
+    ".mov",      # File extension confusion (Phishing)
+    ".sbs",      # "Side by Side" - #1 SMS Phishing vector
+    ".stream",   # Illegal streaming / Malvertising
+    ".win",      # "You won a prize" scams
+    ".zip",      # File extension confusion (Phishing)
+    ".biz",      # Legacy spam / "Get Rich Quick" schemes
+    ".best",     # Review scams
+    ".buzz",     # Ad-farm / SEO spam
+    ".fun",      # Cheap scam domain
+    ".host",     # Fake hosting/support
+    ".wang",     # High volume Chinese spam
+    ".rest",     # Compromised sites
+    ".bar",      # Compromised sites
+    ".download", # Malware / Adware
+    ".cam",      # Sextortion / Malware
+    ".flash",    # Fake updates
+    ".men",      # Cheap Spam
+    ".party",    # Cheap Spam
+    ".ooo",      # Cheap Spam
+    ".country",  # Cheap Spam
+    ".kim",      # Cheap Spam
+
+    # --- 2. Gambling & Vice (High Risk) ---
+    ".bet",      # Gambling scams
+    ".poker",    # Gambling scams
+    ".casino",   # Gambling scams
+    ".lotto",    # Lottery scams
+    ".bingo",    # Gambling scams
+    ".racing",   # Gambling spam
+    ".cricket",  # Gambling spam
+
+    # --- 3. Niche / Low Value (Safe to Block) ---
+    ".beer",     # Very niche / unused
+    ".makeup",   # Affiliate spam
+    ".quests",   # Niche / low value
+    ".yachts",   # Niche / low value
+    ".date",     # Dating bot/scams
+    ".faith",    # Religious scams
+    ".review",   # Fake product reviews
+    ".trade",    # Fake trading platforms
+    ".accountant", # Fake financial services
+        
+    # --- 4. Risky Country Codes (High Threat / Sanctioned) ---
+     ".cn",       # China (High volume attacks)
+     ".ru",       # Russia (High malware volume)
+    ".su",       # Soviet Union (Cybercrime haven)
+    ".ir",       # Iran (Sanctioned / Threat)
+    ".pk",       # Pakistan (Phishing hosting)
+    ".ng",       # Nigeria (Legacy scam vector)
+    ".tk",       # Tokelau (Legacy abuse)
+    ".ml",       # Mali (Legacy abuse)
+    ".ga",       # Gabon (Legacy abuse)
+    ".cf",       # Central African Republic (Legacy abuse)
+    ".gq",       # Equatorial Guinea (Legacy abuse)
+    ".es",       # Spain (Warning: High Phishing, but legitimate country code)
     ".xn--11b4c3d",     # IDN Spam / Phishing
     ".xn--1ck2e1b",     # IDN Spam / Phishing
     ".xn--1qqw23a",     # IDN Spam (Chinese)
@@ -231,7 +278,7 @@ class Config:
             "policy_name": "Block Security Risks",
             "filename": "HaGeZi_Security.txt",
             "urls": [
-                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
             ]
         },
@@ -241,8 +288,8 @@ class Config:
             "policy_name": "Threat Intelligence Feed",
             "filename": "TIF_Mini.txt",
             "urls": [
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
-                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.medium-onlydomains.txt",
+                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.medium-onlydomains.txt",
             ]
         }
     ]
