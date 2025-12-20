@@ -104,7 +104,7 @@ BLOCKED_TLDS = (
     ".men",        # Statistically one of the highest "malicious-to-legit" ratios
     ".party",      # Another "cheap" TLD used for botnet command-and-control
     ".yokohama"    # A regional TLD that is heavily used for international spam
-    )
+)
 
     # --- DEFINITION OF FEEDS ---
     FEED_CONFIGS = [
