@@ -51,11 +51,11 @@ class Config:
     ".icu",      # High abuse history
     ".loan",     # Predatory scams
     ".monster",  # Malware distribution
-    ".mov",      # File extension phishing
+    ".mov",      # File extension phishing (Confuses users)
     ".sbs",      # SMS Phishing vector
     ".stream",   # Malvertising
     ".win",      # "You won" scams
-    ".zip",      # File extension phishing
+    ".zip",      # File extension phishing (Confuses users)
     ".biz",      # Legacy spam
     ".best",     # Review scams
     ".buzz",     # SEO spam
@@ -79,15 +79,12 @@ class Config:
     ".skin",     # Affiliate/Phishing
     ".guru",     # Tech support scams
     ".vip",      # Generic spam
-    ".pro",      # High abuse score
     ".mobi",     # Malware/Spam hub
     ".ink",      # High malicious registration
     ".surf",     # Malvertising
     ".quest",    # High threat rate
     ".uno",      # Cheap spam
     ".space",    # SEO/Affiliate spam
-    ".rocks",    # Niche spam
-    ".link",     # High phishing volume
     ".xin",      # High malicious score
     ".qpon",     # Coupon/Phishing
     ".pizza",    # High abuse score
@@ -96,7 +93,6 @@ class Config:
     ".pictures", # High abuse score
     ".town",     # High abuse score
     ".tokyo",    # High abuse score
-    ".page",     # Threat actor favorite
     ".date",     # Bot/Scam hub
     ".faith",    # Scam hub
     ".review",   # Fake reviews
@@ -126,33 +122,18 @@ class Config:
     ".makeup",   # Affiliate spam
     ".quests",   # Low value
     ".yachts",   # Low value
-    ".realtor",  # High phishing rate
 
-    # --- 4. Risky Country Codes (High Threat / Sanctioned) ---
-    ".cn",       # China
-    ".ru",       # Russia
-    ".su",       # Soviet Union (Cybercrime)
-    ".ir",       # Iran (Sanctioned)
-    ".pk",       # Pakistan (Phishing)
-    ".ng",       # Nigeria (Scams)
-    ".tk",       # Tokelau (Abuse)
-    ".ml",       # Mali (Abuse)
-    ".ga",       # Gabon (Abuse)
-    ".cf",       # Central African Rep (Abuse)
-    ".gq",       # Equatorial Guinea (Abuse)
+    # --- 4. Risky Country Codes (Specific Cybercrime Havens Only) ---
+    # Kept only the ones with near-zero legitimate use for an average US user
+    ".su",       # Soviet Union (Pure cybercrime)
+    ".tk",       # Tokelau (Legacy abuse)
+    ".ml",       # Mali (Legacy abuse)
+    ".ga",       # Gabon (Legacy abuse)
+    ".cf",       # Central African Rep (Legacy abuse)
+    ".gq",       # Equatorial Guinea (Legacy abuse)
     ".kp",       # North Korea (Threat actors)
-    ".by",       # Belarus (Cybercrime)
-    ".vn",       # Vietnam (Ad-fraud)
-    ".ro",       # Romania (Phishing/Carding)
-    ".cc",       # Cocos Islands (Bulk abuse)
     ".pw",       # Palau (Bulk abuse)
     ".ws",       # Samoa (Phishing)
-    ".ph",       # Philippines (Phishing)
-    ".my",       # Malaysia (Malicious hub)
-    ".cm",       # Cameroon (Typosquatting)
-    ".la",       # Laos (High abuse)
-    ".ee",       # Estonia (High cybercrime hosting)
-    ".kg",       # Kyrgyzstan (Abuse)
     
     ".xn--11b4c3d",     # IDN Spam / Phishing
     ".xn--1ck2e1b",     # IDN Spam / Phishing
@@ -315,8 +296,8 @@ class Config:
             "policy_name": "Block Ads, Trackers and Telemetry", # <--- UPDATED NAME
             "filename": "HaGeZi_Normal.txt",
             "urls": [
-                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
             ]
         },
         {
@@ -325,7 +306,7 @@ class Config:
             "policy_name": "Block Security Risks",
             "filename": "HaGeZi_Security.txt",
             "urls": [
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
+                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
             ]
         },
@@ -335,8 +316,8 @@ class Config:
             "policy_name": "Threat Intelligence Feed",
             "filename": "TIF_Mini.txt",
             "urls": [
-                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.medium-onlydomains.txt",
+                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
+                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.medium-onlydomains.txt",
             ]
         }
     ]
