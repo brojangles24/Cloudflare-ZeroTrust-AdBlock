@@ -38,6 +38,7 @@ class Config:
 
 # --- HIGH-RISK CONSERVATIVE BLOCKED TLDs (Optimized Set) ---
 # Focus: Maximum security, minimum false positives.
+"""
 BLOCKED_TLDS = {
     # 1. Critical Security (High Mimicry/Crime)
     ".zip", ".su", ".kp", ".pw", ".stream",
@@ -48,6 +49,7 @@ BLOCKED_TLDS = {
     # 4. Malicious Redirects
     ".bid", ".loan", ".win", ".download", ".click"
 }
+"""
 
 # --- DEFINITION OF FEEDS ---
 # Using HaGeZi Light for the Ad Feed as requested.
