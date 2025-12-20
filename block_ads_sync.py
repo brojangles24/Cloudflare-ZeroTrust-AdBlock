@@ -38,7 +38,7 @@ class Config:
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
 
     # --- JUNK TLD FILTER ---
-    BLOCKED_TLDS = {
+    BLOCKED_TLDS = (
     # --- 1. The "Cheap & Nasty" (High Abuse / Low Legitimacy) ---
     ".xyz",      # #1 Abuse domain (Note: Whitelist legitimate dev sites)
     ".top",      # #2 Abuse domain
