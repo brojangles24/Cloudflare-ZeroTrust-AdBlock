@@ -50,39 +50,36 @@ BLOCKED_TLDS = (
     ".bid", ".loan", ".win", ".download", ".click"
 )
 
-    # --- DEFINITION OF FEEDS ---
-    FEED_CONFIGS = [
-        {
-            "name": "Ad Block Feed",
-            "prefix": "Block ads",
-            "policy_name": "Block Ads, Trackers and Telemetry",
-            "filename": "HaGeZi_Normal.txt",
-            "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"]
-        },
-        {
-            "name": "Security Feed",
-            "prefix": "Block Security",
-            "policy_name": "Block Security Risks",
-            "filename": "HaGeZi_Security.txt",
-            "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"]
-        },
-        {
-            "name": "Threat Intel Feed",
-            "prefix": "TIF Mini",
-            "policy_name": "Threat Intelligence Feed",
-            "filename": "TIF_Mini.txt",
-            "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt"]
-        }
-    ]
+# --- DEFINITION OF FEEDS ---
+FEED_CONFIGS = [
+    {
+        "name": "Ad Block Feed",
+        "prefix": "Block ads",
+        "policy_name": "Block Ads, Trackers and Telemetry",
+        "filename": "HaGeZi_Normal.txt",
+        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"]
+    },
+    {
+        "name": "Security Feed",
+        "prefix": "Block Security",
+        "policy_name": "Block Security Risks",
+        "filename": "HaGeZi_Security.txt",
+        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"]
+    },
+    {
+        "name": "Threat Intel Feed",
+        "prefix": "TIF Mini",
+        "policy_name": "Threat Intelligence Feed",
+        "filename": "TIF_Mini.txt",
+        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt"]
+    }
+]
 
-    @classmethod
-    def validate(cls):
-        if not cls.API_TOKEN:
-            raise RuntimeError("API_TOKEN environment variable is not set.")
-        if not cls.ACCOUNT_ID:
-            raise RuntimeError("ACCOUNT_ID environment variable is not set.")
-
-CFG = Config()
+def validate_config():
+    if not Config.API_TOKEN:
+        raise RuntimeError("API_TOKEN environment variable is not set.")
+    if not Config.ACCOUNT_ID:
+        raise RuntimeError("ACCOUNT_ID environment variable is not set.")
 
 # --- 3. Helper Functions ---
 INVALID_CHARS_PATTERN = re.compile(r'[<>&;\"\'/=\s]')
@@ -165,7 +162,7 @@ def fetch_domains(feed_config):
                 line = line.strip()
                 if not line or line.startswith(('#', '!', '//')): continue
                 candidate = line.split()[-1].lower()
-                if candidate.endswith(CFG.BLOCKED_TLDS):
+                if candidate.endswith(BLOCKED_TLDS):
                     tld_filtered += 1
                     continue
                 if '.' in candidate and not INVALID_CHARS_PATTERN.search(candidate):
@@ -186,18 +183,17 @@ def save_and_sync(cf, feed, domains, force=False):
     out.write_text(new_data, encoding='utf-8')
     if not domains: return False
 
-    # Sync to Cloudflare
     all_lists = cf.get_lists().get('result') or []
     prefix = feed['prefix']
     existing = [l for l in all_lists if prefix in l.get('name', '')]
     used_ids = []
     excess = [l['id'] for l in existing]
 
-    for i, chunk in enumerate(chunked_iterable(sorted(domains), CFG.MAX_LIST_SIZE)):
+    for i, chunk in enumerate(chunked_iterable(sorted(domains), Config.MAX_LIST_SIZE)):
         items = domains_to_cf_items(chunk)
         if excess:
             lid = excess.pop(0)
-            old = cf.get_list_items(lid, CFG.MAX_LIST_SIZE).get('result') or []
+            old = cf.get_list_items(lid, Config.MAX_LIST_SIZE).get('result') or []
             rem = [item['value'] for item in old if item.get('value')]
             cf.update_list(lid, items, rem)
             used_ids.append(lid)
@@ -205,7 +201,6 @@ def save_and_sync(cf, feed, domains, force=False):
             res = cf.create_list(f"{prefix} - {i+1:03d}", items)
             used_ids.append(res['result']['id'])
 
-    # Update Rule
     rules = cf.get_rules().get('result') or []
     rid = next((r['id'] for r in rules if r.get('name') == feed['policy_name']), None)
     clauses = [{"any": {"in": {"lhs": {"splat": "dns.domains"}, "rhs": f"${lid}"}}} for lid in used_ids]
@@ -218,8 +213,8 @@ def save_and_sync(cf, feed, domains, force=False):
     return True
 
 def git_push(files):
-    run_command(["git", "config", "--global", "user.email", f"{CFG.GITHUB_ACTOR_ID}+{CFG.GITHUB_ACTOR}@users.noreply.github.com"])
-    run_command(["git", "config", "--global", "user.name", f"{CFG.GITHUB_ACTOR}[bot]"])
+    run_command(["git", "config", "--global", "user.email", f"{Config.GITHUB_ACTOR_ID}+{Config.GITHUB_ACTOR}@users.noreply.github.com"])
+    run_command(["git", "config", "--global", "user.name", f"{Config.GITHUB_ACTOR}[bot]"])
     changed = []
     for f in files:
         try: 
@@ -229,7 +224,7 @@ def git_push(files):
             changed.append(f)
     if changed:
         run_command(["git", "commit", "-m", f"Update blocklists: {', '.join(changed)}"])
-        run_command(["git", "push", "origin", CFG.TARGET_BRANCH])
+        run_command(["git", "push", "origin", Config.TARGET_BRANCH])
 
 # --- 6. Main ---
 def main():
@@ -239,32 +234,28 @@ def main():
     args = parser.parse_args()
 
     try:
-        CFG.validate()
-        with CloudflareAPI(CFG.ACCOUNT_ID, CFG.API_TOKEN, CFG.MAX_RETRIES) as cf:
+        validate_config()
+        with CloudflareAPI(Config.ACCOUNT_ID, Config.API_TOKEN, Config.MAX_RETRIES) as cf:
             if args.delete:
-                # Simple cleanup logic
                 rules = cf.get_rules().get('result') or []
                 lists = cf.get_lists().get('result') or []
-                for f in CFG.FEED_CONFIGS:
+                for f in FEED_CONFIGS:
                     rid = next((r['id'] for r in rules if r['name'] == f['policy_name']), None)
                     if rid: cf.delete_rule(rid)
                     for l in [ls for ls in lists if f['prefix'] in ls['name']]: cf.delete_list(l['id'])
                 return
 
-            # Fetch
-            datasets = {f['name']: fetch_domains(f) for f in CFG.FEED_CONFIGS}
+            datasets = {f['name']: fetch_domains(f) for f in FEED_CONFIGS}
             
-            # Deduplicate
             logger.info("--- 🧠 Starting Deduplication ---")
             ad, sec, tif = "Ad Block Feed", "Security Feed", "Threat Intel Feed"
             if ad in datasets and sec in datasets: datasets[sec] -= datasets[ad]
             if ad in datasets and tif in datasets: datasets[tif] -= datasets[ad]
             if sec in datasets and tif in datasets: datasets[tif] -= datasets[sec]
 
-            # Sync
             logger.info("--- ☁️ Starting Cloudflare Sync ---")
             changed = []
-            for f in CFG.FEED_CONFIGS:
+            for f in FEED_CONFIGS:
                 if save_and_sync(cf, f, datasets[f['name']], args.force):
                     changed.append(f['filename'])
 
