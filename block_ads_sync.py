@@ -37,57 +37,40 @@ class Config:
     GITHUB_ACTOR: str = os.environ.get("GITHUB_ACTOR", "github-actions[bot]")
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
 
-    # --- JUNK TLD FILTER ---
-# --- 50 CONSERVATIVE BLOCKED TLDs ---
-# Targeted at high-abuse/low-utility extensions to minimize "breaking" legitimate sites.
-BLOCKED_TLDS = (
-    # 1. File & Security Risks
-    ".zip", ".mov", ".su", ".kp", ".tk", ".ml", ".ga", ".cf", ".gq", ".pw",
-    
-    # 2. High-Abuse Bulk Spam Havens
-    ".top", ".icu", ".gdn", ".xin", ".bond", ".sbs", ".cfd", ".quest", ".motorcycles", ".ooo",
-    
-    # 3. Retail, "Deals," & Financial Scams
-    ".win", ".bid", ".loan", ".qpon", ".cheap", ".deals", ".forsale", ".bargains", ".jewelry", ".accountant",
-    
-    # 4. Malicious Infrastructure & Redirects
-    ".download", ".flash", ".click", ".surf", ".stream", ".monster", ".bar", ".rest", ".boats", ".yachts",
-    
-    # 5. Niche / Low-Utility Abuse Cases
-    ".faith", ".degree", ".rip", ".webcam", ".pink", ".country", ".mom", ".men", ".party", ".yokohama",
-)
+    # --- 50 CONSERVATIVE BLOCKED TLDs ---
+    BLOCKED_TLDS = (
+        ".zip", ".mov", ".su", ".kp", ".tk", ".ml", ".ga", ".cf", ".gq", ".pw",
+        ".top", ".icu", ".gdn", ".xin", ".bond", ".sbs", ".cfd", ".quest", ".motorcycles", ".ooo",
+        ".win", ".bid", ".loan", ".qpon", ".cheap", ".deals", ".forsale", ".bargains", ".jewelry", ".accountant",
+        ".download", ".flash", ".click", ".surf", ".stream", ".monster", ".bar", ".rest", ".boats", ".yachts",
+        ".faith", ".degree", ".rip", ".webcam", ".pink", ".country", ".mom", ".men", ".party", ".yokohama"
+    )
 
-# --- DEFINITION OF FEEDS ---
-# Indentation corrected to be flush with the left margin
-FEED_CONFIGS = [
-    {
-        "name": "Ad Block Feed",
-        "prefix": "Block ads", # Kept prefix same to avoid re-uploading all lists
-        "policy_name": "Block Ads, Trackers and Telemetry",
-        "filename": "HaGeZi_Normal.txt",
-        "urls": [
-            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-        ]
-    },
-    {
-        "name": "Security Feed",
-        "prefix": "Block Security",
-        "policy_name": "Block Security Risks",
-        "filename": "HaGeZi_Security.txt",
-        "urls": [
-            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
-        ]
-    },
-    {
-        "name": "Threat Intel Feed",
-        "prefix": "TIF Mini",
-        "policy_name": "Threat Intelligence Feed",
-        "filename": "TIF_Mini.txt",
-        "urls": [
-            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
-        ]
-    }
-]
+    # --- DEFINITION OF FEEDS ---
+    FEED_CONFIGS = [
+        {
+            "name": "Ad Block Feed",
+            "prefix": "Block ads",
+            "policy_name": "Block Ads, Trackers and Telemetry",
+            "filename": "HaGeZi_Normal.txt",
+            "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"]
+        },
+        {
+            "name": "Security Feed",
+            "prefix": "Block Security",
+            "policy_name": "Block Security Risks",
+            "filename": "HaGeZi_Security.txt",
+            "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"]
+        },
+        {
+            "name": "Threat Intel Feed",
+            "prefix": "TIF Mini",
+            "policy_name": "Threat Intelligence Feed",
+            "filename": "TIF_Mini.txt",
+            "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt"]
+        }
+    ]
+
     @classmethod
     def validate(cls):
         if not cls.API_TOKEN:
@@ -95,6 +78,7 @@ FEED_CONFIGS = [
         if not cls.ACCOUNT_ID:
             raise ScriptExit("ACCOUNT_ID environment variable is not set.", critical=True)
 
+# Initialize Config instance
 CFG = Config()
 
 # --- 2. Helper Functions & Exceptions ---
@@ -112,7 +96,6 @@ def domains_to_cf_items(domains):
     return [{"value": domain} for domain in domains if domain]
 
 def chunked_iterable(iterable, size):
-    """Yield successive chunks from iterable."""
     it = iter(iterable)
     while True:
         chunk = list(islice(it, size))
@@ -121,15 +104,12 @@ def chunked_iterable(iterable, size):
         yield chunk
 
 def run_command(command):
-    """Run a shell command. Raises RuntimeError with the actual error output if it fails."""
     command_str = ' '.join(command)
-    logger.debug(f"Running command: {command_str}")
     try:
         result = run(command, check=True, capture_output=True, text=True, encoding='utf-8')
         return result.stdout
     except CalledProcessError as e:
         error_msg = f"Command failed: {command_str}\nSTDERR: {e.stderr}\nSTDOUT: {e.stdout}"
-        logger.debug(error_msg)
         raise RuntimeError(error_msg)
 
 def download_list(url, file_path):
@@ -175,15 +155,9 @@ class CloudflareAPI:
                 if status_code >= 500 or status_code == 429:
                     retries += 1
                     sleep_time = retries * 2
-                    logger.warning(f"Cloudflare API Error ({status_code}). Retrying {retries}/{self.max_retries} in {sleep_time}s...")
+                    logger.warning(f"Cloudflare API Error ({status_code}). Retrying...")
                     time.sleep(sleep_time)
-                    if retries > self.max_retries:
-                        logger.error(f"Max retries exceeded for {method} {url}")
-                        raise RuntimeError(f"Cloudflare API failed after retries: {e}")
                 else:
-                    if status_code == 400:
-                         raise e
-                    logger.error(f"Cloudflare Client Error: {e}")
                     raise RuntimeError(f"Cloudflare API failed: {e}")
 
     def get_lists(self): return self._request("GET", "lists")
@@ -200,7 +174,6 @@ class CloudflareAPI:
     def update_rule(self, rule_id, payload): return self._request("PUT", f"rules/{rule_id}", json=payload)
     def delete_rule(self, rule_id): return self._request("DELETE", f"rules/{rule_id}")
 
-
 # --- 4. Workflow Functions ---
 
 def fetch_domains(feed_config):
@@ -210,7 +183,6 @@ def fetch_domains(feed_config):
     unique_domains = set()
     tld_filtered_count = 0
 
-    logger.info(f"Downloading {len(list_urls)} lists...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         future_to_url = {
             executor.submit(download_list, url, temp_dir / f"list_{i}.txt"): url
@@ -225,7 +197,6 @@ def fetch_domains(feed_config):
                     line = line.strip()
                     if not line or line.startswith('#'): continue
                     parts = line.split()
-                    if not parts: continue
                     candidate = parts[-1].lower() 
                     
                     if candidate.endswith(CFG.BLOCKED_TLDS):
@@ -240,65 +211,46 @@ def fetch_domains(feed_config):
 
     shutil.rmtree(temp_dir)
     logger.info(f"   [TLD Filter] Removed {tld_filtered_count} junk domains.")
-    logger.info(f"   [Net Result] Fetched {len(unique_domains)} unique domains.")
     return unique_domains
 
 def save_and_sync(cf_client, feed_config, domain_set, force_update=False):
     output_path = Path(feed_config['filename'])
-    
     new_content = '\n'.join(sorted(domain_set)) + '\n'
     
     if output_path.exists() and not force_update:
-        current_content = output_path.read_text(encoding='utf-8')
-        if current_content == new_content:
-            logger.info(f"✅ [No Changes] {feed_config['name']} matches local file. Skipping Cloudflare sync.")
+        if output_path.read_text(encoding='utf-8') == new_content:
+            logger.info(f"✅ [No Changes] {feed_config['name']} up to date.")
             return True 
 
-    logger.info(f"💾 Saving {len(domain_set)} domains to {output_path}...")
     output_path.write_text(new_content, encoding='utf-8')
-    
     prefix = feed_config['prefix']
     policy_name = feed_config['policy_name']
-    total_lines = len(domain_set)
 
-    if total_lines == 0:
-        logger.warning(f"Feed {feed_config['name']} is empty. Skipping Sync.")
+    if not domain_set:
         return False
 
-    total_lists_needed = (total_lines + CFG.MAX_LIST_SIZE - 1) // CFG.MAX_LIST_SIZE
-    
     all_current_lists = cf_client.get_lists().get('result') or []
     current_policies = cf_client.get_rules().get('result') or []
-
     current_lists_with_prefix = [l for l in all_current_lists if prefix in l.get('name', '')]
-    other_lists_count = len(all_current_lists) - len(current_lists_with_prefix)
-    
-    if total_lists_needed > CFG.MAX_LISTS - other_lists_count:
-        logger.error(f"Not enough capacity! Needed: {total_lists_needed}, Available: {CFG.MAX_LISTS - other_lists_count}")
-        return False
 
     used_list_ids = []
     excess_list_ids = [l['id'] for l in current_lists_with_prefix]
 
-    sorted_domains = sorted(domain_set)
-    for i, domains_chunk in enumerate(chunked_iterable(sorted_domains, CFG.MAX_LIST_SIZE)):
+    for i, domains_chunk in enumerate(chunked_iterable(sorted(domain_set), CFG.MAX_LIST_SIZE)):
         list_name = f"{prefix} - {i + 1:03d}"
         items_json = domains_to_cf_items(domains_chunk)
         
         if excess_list_ids:
             list_id = excess_list_ids.pop(0)
-            logger.info(f"Updating list {list_id} ({list_name})...")
             old_items = cf_client.get_list_items(list_id, CFG.MAX_LIST_SIZE).get('result') or []
             remove_items = [item['value'] for item in old_items if item.get('value')]
             cf_client.update_list(list_id, append_items=items_json, remove_items=remove_items)
             used_list_ids.append(list_id)
         else:
-            logger.info(f"Creating new list: {list_name}...")
             result = cf_client.create_list(list_name, items_json)
             used_list_ids.append(result['result']['id'])
     
     policy_id = next((p['id'] for p in current_policies if p.get('name') == policy_name), None)
-    
     or_clauses = [{"any": {"in": {"lhs": {"splat": "dns.domains"}, "rhs": f"${lid}"}}} for lid in used_list_ids]
     expression_json = {"or": or_clauses} if len(or_clauses) > 1 else (or_clauses[0] if or_clauses else {"not": {"eq": {"lhs": "dns.domains", "rhs": "null"}}})
 
@@ -307,193 +259,93 @@ def save_and_sync(cf_client, feed_config, domain_set, force_update=False):
         "conditions": [{"type": "traffic", "expression": expression_json}],
         "action": "block",
         "enabled": True,
-        "description": f"Managed by script: {feed_config['name']}",
-        "rule_settings": {"block_page_enabled": False},
         "filters": ["dns"]
     }
     
     if policy_id:
-        existing_policy = next((p for p in current_policies if p.get('id') == policy_id), {})
-        existing_conditions = existing_policy.get('conditions') or []
-        
-        needs_update = bool(excess_list_ids)
-        if not needs_update and existing_conditions:
-             if existing_conditions[0].get('expression') != expression_json:
-                 needs_update = True
-
-        if needs_update:
-            logger.info(f"Updating policy '{policy_name}'...")
-            cf_client.update_rule(policy_id, policy_payload)
-        else:
-            logger.info(f"Policy '{policy_name}' up to date.")
+        cf_client.update_rule(policy_id, policy_payload)
     else:
-        logger.info(f"Creating policy '{policy_name}'...")
         cf_client.create_rule(policy_payload)
         
     for list_id in excess_list_ids:
-        logger.info(f"Deleting excess list {list_id}...")
-        try:
-            cf_client.delete_list(list_id)
-        except Exception as e:
-            err_str = str(e)
-            if "400" in err_str or "7003" in err_str or "7000" in err_str:
-                logger.warning(f"Skipping delete for {list_id}: List appears to be already deleted or in use.")
-            else:
-                logger.warning(f"Failed to delete {list_id}: {e}")
+        cf_client.delete_list(list_id)
 
     return True
 
 def cleanup_resources(cf_client):
-    logger.info("--- ⚠️ CLEANUP MODE: DELETING RESOURCES ⚠️ ---")
     current_policies = cf_client.get_rules().get('result') or []
     all_current_lists = cf_client.get_lists().get('result') or []
 
     for feed in CFG.FEED_CONFIGS:
-        logger.info(f"Cleaning up resources for: {feed['name']}")
         prefix = feed['prefix']
         policy_name = feed['policy_name']
-
-        policy_id = next((p['id'] for p in current_policies if p.get('name') == policy_name), None)
-        if policy_id:
-            logger.info(f"Deleting Policy: {policy_name} ({policy_id})...")
-            try:
-                cf_client.delete_rule(policy_id)
-            except Exception as e:
-                logger.error(f"Failed to delete policy {policy_id}: {e}")
-
-        lists_to_delete = [l for l in all_current_lists if prefix in l.get('name', '')]
-        for lst in lists_to_delete:
-            logger.info(f"Deleting List: {lst['name']} ({lst['id']})...")
-            try:
-                cf_client.delete_list(lst['id'])
-            except Exception as e:
-                logger.error(f"Failed to delete list {lst['id']}: {e}")
-    logger.info("--- Cleanup Complete ---")
+        p_id = next((p['id'] for p in current_policies if p.get('name') == policy_name), None)
+        if p_id: cf_client.delete_rule(p_id)
+        for lst in [l for l in all_current_lists if prefix in l.get('name', '')]:
+            cf_client.delete_list(lst['id'])
 
 def git_configure():
-    git_user_name = f"{CFG.GITHUB_ACTOR}[bot]"
-    git_user_email = f"{CFG.GITHUB_ACTOR_ID}+{CFG.GITHUB_ACTOR}@users.noreply.github.com"
-    run_command(["git", "config", "--global", "user.email", git_user_email])
-    run_command(["git", "config", "--global", "user.name", git_user_name])
+    run_command(["git", "config", "--global", "user.email", f"{CFG.GITHUB_ACTOR_ID}+{CFG.GITHUB_ACTOR}@users.noreply.github.com"])
+    run_command(["git", "config", "--global", "user.name", f"{CFG.GITHUB_ACTOR}[bot]"])
 
 def discard_local_changes(file_path):
-    logger.info(f"Discarding local changes to {file_path}...")
-    try:
-        run_command(["git", "checkout", "--", str(file_path)])
-    except RuntimeError:
-        try:
-            os.remove(file_path)
-        except OSError:
-            pass
+    try: run_command(["git", "checkout", "--", str(file_path)])
+    except: 
+        if os.path.exists(file_path): os.remove(file_path)
 
 def git_commit_and_push(changed_files):
-    logger.info("--- Git Commit & Push ---")
-    if not changed_files: return
-    
     files_to_commit = []
     for f in changed_files:
         try:
             run_command(["git", "diff", "--exit-code", f])
-            logger.info(f"File {f} matches repo. Skipping add.")
-        except RuntimeError:
-            logger.info(f"File {f} has changes. Staging.")
+        except:
             run_command(["git", "add", f])
             files_to_commit.append(f)
 
-    if not files_to_commit:
-        logger.info("No files actually changed. Skipping commit.")
-        return
-
-    try:
+    if files_to_commit:
         run_command(["git", "commit", "-m", f"Update blocklists: {', '.join(files_to_commit)}"])
-    except RuntimeError as e:
-        if "nothing to commit" in str(e) or "no changes added to commit" in str(e):
-            logger.info("Git reported nothing to commit.")
-            return
-        logger.error(f"Git commit failed with: {e}")
-        raise
-    
-    if run(["git", "remote", "get-url", "origin"], check=False, capture_output=True).returncode == 0:
-        logger.info(f"Pushing to {CFG.TARGET_BRANCH}...")
         run_command(["git", "push", "origin", CFG.TARGET_BRANCH])
 
 # --- 5. Main Execution ---
 def main():
-    parser = argparse.ArgumentParser(description="Cloudflare Gateway Blocklist Manager")
-    parser.add_argument("--delete", action="store_true", help="Delete all lists and policies defined in config")
-    parser.add_argument("--force", action="store_true", help="Force update even if files haven't changed")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--delete", action="store_true")
+    parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
     try:
-        logger.info("--- 0. Initializing ---")
         CFG.validate()
-        
         with CloudflareAPI(CFG.ACCOUNT_ID, CFG.API_TOKEN, CFG.MAX_RETRIES) as cf_client:
-            
             if args.delete:
                 cleanup_resources(cf_client)
                 return
 
-            is_git_repo = Path(".git").exists()
-            if is_git_repo:
-                try:
-                    run_command(["git", "fetch", "origin", CFG.TARGET_BRANCH])
-                    run_command(["git", "checkout", CFG.TARGET_BRANCH])
-                    run_command(["git", "reset", "--hard", f"origin/{CFG.TARGET_BRANCH}"])
-                    git_configure()
-                except Exception as e:
-                    logger.warning(f"Git init warning: {e}")
+            if Path(".git").exists():
+                git_configure()
 
-            feed_datasets = {}
+            feed_datasets = {feed['name']: fetch_domains(feed) for feed in CFG.FEED_CONFIGS}
+
+            # Deduplication logic
+            ad, sec, tif = "Ad Block Feed", "Security Feed", "Threat Intel Feed"
+            if ad in feed_datasets and sec in feed_datasets:
+                feed_datasets[sec] -= feed_datasets[ad]
+            if ad in feed_datasets and tif in feed_datasets:
+                feed_datasets[tif] -= feed_datasets[ad]
+            if sec in feed_datasets and tif in feed_datasets:
+                feed_datasets[tif] -= feed_datasets[sec]
+
+            changed_files = []
             for feed in CFG.FEED_CONFIGS:
-                feed_datasets[feed['name']] = fetch_domains(feed)
+                if save_and_sync(cf_client, feed, feed_datasets[feed['name']], force_update=args.force):
+                    changed_files.append(feed['filename'])
 
-            # --- SMART DEDUPLICATION ---
-            ad_name = "Ad Block Feed"
-            security_name = "Security Feed"
-            tif_name = "Threat Intel Feed"
-
-            if ad_name in feed_datasets and security_name in feed_datasets:
-                overlap = feed_datasets[ad_name].intersection(feed_datasets[security_name])
-                if overlap:
-                    logger.info(f"🔍 Found {len(overlap)} overlaps between Ads & Security.")
-                    feed_datasets[security_name] -= overlap
-
-            if ad_name in feed_datasets and tif_name in feed_datasets:
-                overlap = feed_datasets[ad_name].intersection(feed_datasets[tif_name])
-                if overlap:
-                    logger.info(f"🔍 Found {len(overlap)} overlaps between Ads & TIF.")
-                    feed_datasets[tif_name] -= overlap
-
-            if security_name in feed_datasets and tif_name in feed_datasets:
-                overlap = feed_datasets[security_name].intersection(feed_datasets[tif_name])
-                if overlap:
-                    logger.info(f"🔍 Found {len(overlap)} overlaps between Security & TIF.")
-                    feed_datasets[tif_name] -= overlap
-
-            changed_files_list = []
-            for feed in CFG.FEED_CONFIGS:
-                try:
-                    dataset = feed_datasets[feed['name']]
-                    sync_success = save_and_sync(cf_client, feed, dataset, force_update=args.force)
-                    if sync_success:
-                        changed_files_list.append(feed['filename'])
-                except Exception as e:
-                    logger.error(f"Failed to process feed '{feed['name']}': {e}", exc_info=True)
-                    if is_git_repo:
-                        discard_local_changes(feed['filename'])
-
-            if is_git_repo and changed_files_list:
-                git_commit_and_push(changed_files_list)
+            if Path(".git").exists() and changed_files:
+                git_commit_and_push(changed_files)
 
         logger.info("✅ Execution complete!")
 
-    except ScriptExit as e:
-        if e.silent: sys.exit(0)
-        logger.error(f"Error: {e}")
-        sys.exit(1)
     except Exception as e:
-        logger.critical(f"Fatal error: {e}", exc_info=True)
+        logger.critical(f"Fatal error: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
