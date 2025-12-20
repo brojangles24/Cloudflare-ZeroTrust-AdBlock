@@ -38,108 +38,56 @@ class Config:
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
 
     # --- JUNK TLD FILTER ---
+# --- 50 CONSERVATIVE BLOCKED TLDs ---
+# Targeted at high-abuse/low-utility extensions to minimize "breaking" legitimate sites.
 BLOCKED_TLDS = (
-    # --- 1. File Extension Spoofing (Critical Security Risk) ---
-    ".zip",        # Mimics ZIP files; used for delivery of malware
-    ".mov",        # Mimics video files; used in phishing lures
-
-    # --- 2. High-Abuse National/Legacy Codes (Cybercrime Havens) ---
-    ".su",         # Soviet Union: Dominated by C2 servers and bulletproof hosting
-    ".kp",         # North Korea: Almost exclusively state-sponsored threat activity
-    ".tk",         # Tokelau: Legacy haven for free-domain phishing
-    ".ml",         # Mali: High-abuse legacy domain
-    ".ga",         # Gabon: High-abuse legacy domain
-    ".cf",         # Central African Republic: High-abuse legacy domain
-    ".gq",         # Equatorial Guinea: High-abuse legacy domain
-    ".pw",         # Palau: Marketed as "Professional Web," but used for bulk spam
-
-    # --- 3. The "Cheap & Nasty" (Consistently Top-Ranked for Abuse) ---
-    ".top",        # #1 most abused TLD globally in 2025
-    ".icu",        # "I See You" - Massively used for botnet registrations
-    ".gdn",        # Global Domain Name - Almost entirely spam traffic
-    ".xin",        # Frequently used for malicious registrations
-    ".bond",       # High growth in phishing and crypto-scams
-    ".sbs",        # "Side by Side" - Common vector for SMS/Smishing campaigns
-    ".cfd",        # Frequently mimics financial/trading platforms
-    ".quest",      # High threat-to-legitimacy ratio
-    ".motorcycles",# Ranked by Cloudflare in 2025 as having the #1 highest malicious email rate
-
-    # --- 4. Scam-Specific Lures (Highly Niche) ---
-    ".win",        # "You won" prize/survey scams
-    ".bid",        # Auction and "Clearance" scams
-    ".loan",       # Predatory lending and financial phishing
-    ".faith",      # Religious/Charity-themed financial scams
-    ".accountant", # Targeted financial/tax phishing
-    ".degree",     # Diploma mills and fake certification sites
-    ".rip",        # Obituary and "death-hoax" scams
-    ".qpon",       # Coupon/Retail phishing
-    ".webcam",     # Strong correlation with sextortion and "adult" malware
-
-    # --- 5. Obscure / Bot-Heavy (Low Human Utility) ---
-    ".monster",    # Malware distribution hub
-    ".bar",        # High percentage of compromised/parked domains
-    ".rest",       # Frequently used for hosting redirectors
-    ".boats",      # Low-value niche used for SEO spam
-    ".pink",       # High abuse score, zero utility for most users
-    ".yachts",     # Low utility; mostly used for affiliate spam
-    ".country"     # High abuse score
-
-    # --- 6. The "Fake Store" & Scam Extensions ---
-    ".cheap",      # Almost exclusively used for "too good to be true" retail scams
-    ".deals",      # High volume of affiliate spam and fake coupon sites
-    ".forsale",    # Domain squatting and "parked" page scams
-    ".bargains",   # Low legitimacy; used for SEO-optimized spam
-    ".jewelry",    # Surprisingly high abuse rate for luxury phishing
-
-    # --- 7. Obscure / Low-Volume Tech Scams ---
-    ".download",   # Primarily used for hosting malware or "fake update" executables
-    ".flash",      # Legacy name now used for fake software update popups
-    ".click",      # Purely used as a "Call to Action" for phishing links
-    ".surf",       # High correlation with malvertising and redirects
-    ".stream",     # Despite the name, it is rarely used by real services (unlike .live)
-
-    # --- 8. Weird / Low-Utility Extensions ---
-    ".ooo",        # A "junk" TLD with very high bot registration rates
-    ".mom",        # Often used for aggressive marketing and supplement scams
-    ".men",        # Statistically one of the highest "malicious-to-legit" ratios
-    ".party",      # Another "cheap" TLD used for botnet command-and-control
-    ".yokohama"    # A regional TLD that is heavily used for international spam
+    # 1. File & Security Risks
+    ".zip", ".mov", ".su", ".kp", ".tk", ".ml", ".ga", ".cf", ".gq", ".pw",
+    
+    # 2. High-Abuse Bulk Spam Havens
+    ".top", ".icu", ".gdn", ".xin", ".bond", ".sbs", ".cfd", ".quest", ".motorcycles", ".ooo",
+    
+    # 3. Retail, "Deals," & Financial Scams
+    ".win", ".bid", ".loan", ".qpon", ".cheap", ".deals", ".forsale", ".bargains", ".jewelry", ".accountant",
+    
+    # 4. Malicious Infrastructure & Redirects
+    ".download", ".flash", ".click", ".surf", ".stream", ".monster", ".bar", ".rest", ".boats", ".yachts",
+    
+    # 5. Niche / Low-Utility Abuse Cases
+    ".faith", ".degree", ".rip", ".webcam", ".pink", ".country", ".mom", ".men", ".party", ".yokohama",
 )
 
-    # --- DEFINITION OF FEEDS ---
-    FEED_CONFIGS = [
-        {
-            "name": "Ad Block Feed",
-            "prefix": "Block ads", # Kept prefix same to avoid re-uploading all lists
-            "policy_name": "Block Ads, Trackers and Telemetry", # <--- UPDATED NAME
-            "filename": "HaGeZi_Normal.txt",
-            "urls": [
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
-            ]
-        },
-        {
-            "name": "Security Feed",
-            "prefix": "Block Security",
-            "policy_name": "Block Security Risks",
-            "filename": "HaGeZi_Security.txt",
-            "urls": [
-                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
-            ]
-        },
-        {
-            "name": "Threat Intel Feed",
-            "prefix": "TIF Mini",
-            "policy_name": "Threat Intelligence Feed",
-            "filename": "TIF_Mini.txt",
-            "urls": [
-                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
-                #"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.medium-onlydomains.txt",
-            ]
-        }
-    ]
-
+# --- DEFINITION OF FEEDS ---
+# Indentation corrected to be flush with the left margin
+FEED_CONFIGS = [
+    {
+        "name": "Ad Block Feed",
+        "prefix": "Block ads", # Kept prefix same to avoid re-uploading all lists
+        "policy_name": "Block Ads, Trackers and Telemetry",
+        "filename": "HaGeZi_Normal.txt",
+        "urls": [
+            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+        ]
+    },
+    {
+        "name": "Security Feed",
+        "prefix": "Block Security",
+        "policy_name": "Block Security Risks",
+        "filename": "HaGeZi_Security.txt",
+        "urls": [
+            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
+        ]
+    },
+    {
+        "name": "Threat Intel Feed",
+        "prefix": "TIF Mini",
+        "policy_name": "Threat Intelligence Feed",
+        "filename": "TIF_Mini.txt",
+        "urls": [
+            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
+        ]
+    }
+]
     @classmethod
     def validate(cls):
         if not cls.API_TOKEN:
