@@ -37,19 +37,18 @@ class Config:
     GITHUB_ACTOR: str = os.environ.get("GITHUB_ACTOR", "github-actions[bot]")
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
 
-    # --- 50 CONSERVATIVE BLOCKED TLDs ---
-    BLOCKED_TLDS = (
-        # 1. File & Security Risks
-        ".zip", ".mov", ".su", ".kp", ".tk", ".ml", ".ga", ".cf", ".gq", ".pw",
-        # 2. High-Abuse Bulk Spam Havens
-        ".top", ".icu", ".gdn", ".xin", ".bond", ".sbs", ".cfd", ".quest", ".motorcycles", ".ooo",
-        # 3. Retail, "Deals," & Financial Scams
-        ".win", ".bid", ".loan", ".qpon", ".cheap", ".deals", ".forsale", ".bargains", ".jewelry", ".accountant",
-        # 4. Malicious Infrastructure & Redirects
-        ".download", ".flash", ".click", ".surf", ".stream", ".monster", ".bar", ".rest", ".boats", ".yachts",
-        # 5. Niche / Low-Utility Abuse Cases
-        ".faith", ".degree", ".rip", ".webcam", ".pink", ".country", ".mom", ".men", ".party", ".yokohama"
-    )
+# --- HIGH-RISK CONSERVATIVE BLOCKED TLDs ---
+# Focus: Maximum security with minimum false positives.
+BLOCKED_TLDS = (
+    # 1. Critical Security Risks (High Mimicry & Crime)
+    ".zip", ".su", ".kp", ".pw", ".stream",
+    # 2. The "Freenom" Five (High-Volume Phishing)
+    ".tk", ".ml", ".ga", ".cf", ".gq",
+    # 3. Bulk Spam & Botnet Infrastructure
+    ".top", ".icu", ".monster", ".ooo", ".gdn", ".xin", ".sbs",
+    # 4. Predatory & Malicious Redirects
+    ".bid", ".loan", ".win", ".download", ".click"
+)
 
     # --- DEFINITION OF FEEDS ---
     FEED_CONFIGS = [
