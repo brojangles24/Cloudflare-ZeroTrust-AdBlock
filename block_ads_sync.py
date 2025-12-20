@@ -40,8 +40,7 @@ class Config:
     # --- JUNK TLD FILTER ---
     BLOCKED_TLDS = (
     # --- 1. The "Cheap & Nasty" (High Abuse / Low Legitimacy) ---
-    ".xyz",      # #1 Abuse domain
-    ".top",      # #2 Abuse domain
+    ".top",      # #1 most abused TLD
     ".bazar",    # Marketplace scams
     ".bid",      # Auction scams
     ".bond",     # Investment/Crypto scams
@@ -80,6 +79,38 @@ class Config:
     ".skin",     # Affiliate/Phishing
     ".guru",     # Tech support scams
     ".vip",      # Generic spam
+    ".pro",      # High abuse score
+    ".mobi",     # Malware/Spam hub
+    ".ink",      # High malicious registration
+    ".surf",     # Malvertising
+    ".quest",    # High threat rate
+    ".uno",      # Cheap spam
+    ".space",    # SEO/Affiliate spam
+    ".rocks",    # Niche spam
+    ".link",     # High phishing volume
+    ".xin",      # High malicious score
+    ".qpon",     # Coupon/Phishing
+    ".pizza",    # High abuse score
+    ".pink",     # High abuse score
+    ".boats",    # High abuse score
+    ".pictures", # High abuse score
+    ".town",     # High abuse score
+    ".tokyo",    # High abuse score
+    ".page",     # Threat actor favorite
+    ".date",     # Bot/Scam hub
+    ".faith",    # Scam hub
+    ".review",   # Fake reviews
+    ".trade",    # Fake trading
+    ".accountant", # Fake finance
+    ".degree",   # Diploma mills
+    ".mom",      # Aggressive marketing
+    ".fit",      # Supplement scams
+    ".beauty",   # Affiliate spam
+    ".hair",     # Affiliate spam
+    ".science",  # High abuse score
+    ".cricket",  # High abuse score
+    ".webcam",   # Malware/Sextortion
+    ".yokohama", # Niche/Spam
 
     # --- 2. Gambling & Vice (High Risk) ---
     ".bet",      # Gambling scams
@@ -88,22 +119,15 @@ class Config:
     ".lotto",    # Lottery scams
     ".bingo",    # Gambling scams
     ".racing",   # Gambling spam
-    ".cricket",  # Gambling spam
+    ".gay",      # High malware delivery rate
 
     # --- 3. Niche / Low Value (Safe to Block) ---
     ".beer",     # Low utility
     ".makeup",   # Affiliate spam
     ".quests",   # Low value
     ".yachts",   # Low value
-    ".date",     # Dating bots
-    ".faith",    # Religious scams
-    ".review",   # Fake reviews
-    ".trade",    # Fake trading
-    ".accountant", # Fake financial services
-    ".degree",   # Diploma mills
-    ".mom",      # Aggressive marketing
-    ".fit",      # Supplement scams
-        
+    ".realtor",  # High phishing rate
+
     # --- 4. Risky Country Codes (High Threat / Sanctioned) ---
     ".cn",       # China
     ".ru",       # Russia
@@ -121,7 +145,15 @@ class Config:
     ".vn",       # Vietnam (Ad-fraud)
     ".ro",       # Romania (Phishing/Carding)
     ".cc",       # Cocos Islands (Bulk abuse)
-    ".es",       # Spain (High phishing rate)
+    ".pw",       # Palau (Bulk abuse)
+    ".ws",       # Samoa (Phishing)
+    ".ph",       # Philippines (Phishing)
+    ".my",       # Malaysia (Malicious hub)
+    ".cm",       # Cameroon (Typosquatting)
+    ".la",       # Laos (High abuse)
+    ".ee",       # Estonia (High cybercrime hosting)
+    ".kg",       # Kyrgyzstan (Abuse)
+    
     ".xn--11b4c3d",     # IDN Spam / Phishing
     ".xn--1ck2e1b",     # IDN Spam / Phishing
     ".xn--1qqw23a",     # IDN Spam (Chinese)
