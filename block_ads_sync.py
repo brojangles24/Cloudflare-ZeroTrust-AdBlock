@@ -40,39 +40,46 @@ class Config:
     # --- JUNK TLD FILTER ---
     BLOCKED_TLDS = (
     # --- 1. The "Cheap & Nasty" (High Abuse / Low Legitimacy) ---
-    ".xyz",      # #1 Abuse domain (Note: Whitelist legitimate dev sites)
+    ".xyz",      # #1 Abuse domain
     ".top",      # #2 Abuse domain
     ".bazar",    # Marketplace scams
     ".bid",      # Auction scams
     ".bond",     # Investment/Crypto scams
-    ".cfd",      # "Contracts For Difference" - High financial scam rate
-    ".click",    # Phishing "Call to Action" links
-    ".cyou",     # "See You" - Cheap spam vector
-    ".gdn",      # "Global Domain Name" - Pure spam
-    ".icu",      # "I See You" - Historically high abuse
-    ".loan",     # Predatory loan scams
+    ".cfd",      # Financial scams
+    ".click",    # Phishing CTA
+    ".cyou",     # Cheap spam vector
+    ".gdn",      # Global Domain Name - Pure spam
+    ".icu",      # High abuse history
+    ".loan",     # Predatory scams
     ".monster",  # Malware distribution
-    ".mov",      # File extension confusion (Phishing)
-    ".sbs",      # "Side by Side" - #1 SMS Phishing vector
-    ".stream",   # Illegal streaming / Malvertising
-    ".win",      # "You won a prize" scams
-    ".zip",      # File extension confusion (Phishing)
-    ".biz",      # Legacy spam / "Get Rich Quick" schemes
+    ".mov",      # File extension phishing
+    ".sbs",      # SMS Phishing vector
+    ".stream",   # Malvertising
+    ".win",      # "You won" scams
+    ".zip",      # File extension phishing
+    ".biz",      # Legacy spam
     ".best",     # Review scams
-    ".buzz",     # Ad-farm / SEO spam
+    ".buzz",     # SEO spam
     ".fun",      # Cheap scam domain
-    ".host",     # Fake hosting/support
-    ".wang",     # High volume Chinese spam
+    ".host",     # Fake support
+    ".wang",     # Chinese spam
     ".rest",     # Compromised sites
     ".bar",      # Compromised sites
-    ".download", # Malware / Adware
-    ".cam",      # Sextortion / Malware
+    ".download", # Malware/Adware
+    ".cam",      # Sextortion/Malware
     ".flash",    # Fake updates
-    ".men",      # Cheap Spam
-    ".party",    # Cheap Spam
-    ".ooo",      # Cheap Spam
-    ".country",  # Cheap Spam
-    ".kim",      # Cheap Spam
+    ".men",      # Cheap spam
+    ".party",    # Cheap spam
+    ".ooo",      # Cheap spam
+    ".country",  # Cheap spam
+    ".kim",      # Cheap spam
+    ".work",     # Phishing/Fake jobs
+    ".live",     # Tech support scams
+    ".casa",     # Botnet/IoT malware
+    ".rip",      # Obituary scams
+    ".skin",     # Affiliate/Phishing
+    ".guru",     # Tech support scams
+    ".vip",      # Generic spam
 
     # --- 2. Gambling & Vice (High Risk) ---
     ".bet",      # Gambling scams
@@ -84,29 +91,37 @@ class Config:
     ".cricket",  # Gambling spam
 
     # --- 3. Niche / Low Value (Safe to Block) ---
-    ".beer",     # Very niche / unused
+    ".beer",     # Low utility
     ".makeup",   # Affiliate spam
-    ".quests",   # Niche / low value
-    ".yachts",   # Niche / low value
-    ".date",     # Dating bot/scams
+    ".quests",   # Low value
+    ".yachts",   # Low value
+    ".date",     # Dating bots
     ".faith",    # Religious scams
-    ".review",   # Fake product reviews
-    ".trade",    # Fake trading platforms
+    ".review",   # Fake reviews
+    ".trade",    # Fake trading
     ".accountant", # Fake financial services
+    ".degree",   # Diploma mills
+    ".mom",      # Aggressive marketing
+    ".fit",      # Supplement scams
         
     # --- 4. Risky Country Codes (High Threat / Sanctioned) ---
-     ".cn",       # China (High volume attacks)
-     ".ru",       # Russia (High malware volume)
-    ".su",       # Soviet Union (Cybercrime haven)
-    ".ir",       # Iran (Sanctioned / Threat)
-    ".pk",       # Pakistan (Phishing hosting)
-    ".ng",       # Nigeria (Legacy scam vector)
-    ".tk",       # Tokelau (Legacy abuse)
-    ".ml",       # Mali (Legacy abuse)
-    ".ga",       # Gabon (Legacy abuse)
-    ".cf",       # Central African Republic (Legacy abuse)
-    ".gq",       # Equatorial Guinea (Legacy abuse)
-    ".es",       # Spain (Warning: High Phishing, but legitimate country code)
+    ".cn",       # China
+    ".ru",       # Russia
+    ".su",       # Soviet Union (Cybercrime)
+    ".ir",       # Iran (Sanctioned)
+    ".pk",       # Pakistan (Phishing)
+    ".ng",       # Nigeria (Scams)
+    ".tk",       # Tokelau (Abuse)
+    ".ml",       # Mali (Abuse)
+    ".ga",       # Gabon (Abuse)
+    ".cf",       # Central African Rep (Abuse)
+    ".gq",       # Equatorial Guinea (Abuse)
+    ".kp",       # North Korea (Threat actors)
+    ".by",       # Belarus (Cybercrime)
+    ".vn",       # Vietnam (Ad-fraud)
+    ".ro",       # Romania (Phishing/Carding)
+    ".cc",       # Cocos Islands (Bulk abuse)
+    ".es",       # Spain (High phishing rate)
     ".xn--11b4c3d",     # IDN Spam / Phishing
     ".xn--1ck2e1b",     # IDN Spam / Phishing
     ".xn--1qqw23a",     # IDN Spam (Chinese)
