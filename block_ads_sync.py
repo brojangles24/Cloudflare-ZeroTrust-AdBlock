@@ -36,21 +36,7 @@ class Config:
     GITHUB_ACTOR: str = os.environ.get("GITHUB_ACTOR", "github-actions[bot]")
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
 
-# --- HIGH-RISK CONSERVATIVE BLOCKED TLDs (Optimized Set) ---
-# Focus: Maximum security, minimum false positives.
-BLOCKED_TLDS = {'''
-    # 1. Critical Security (High Mimicry/Crime)
-    ".zip", ".su", ".kp", ".pw", ".stream",
-    # 2. Freenom/Phishing
-    ".tk", ".ml", ".ga", ".cf", ".gq",
-    # 3. Spam/Botnet
-    ".top", ".icu", ".monster", ".ooo", ".gdn", ".xin", ".sbs",
-    # 4. Malicious Redirects
-    ".bid", ".loan", ".win", ".download", ".click"'''
-}
-
 # --- DEFINITION OF FEEDS ---
-# Using HaGeZi Light for the Ad Feed as requested.
 FEED_CONFIGS = [
     {
         "name": "Ad Block Feed",
@@ -58,13 +44,6 @@ FEED_CONFIGS = [
         "policy_name": "Block Ads, Trackers and Telemetry",
         "filename": "HaGeZi_Normal.txt",
         "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"]
-    },
-    {
-        "name": "Security Feed",
-        "prefix": "Block Security",
-        "policy_name": "Block Security Risks",
-        "filename": "HaGeZi_Security.txt",
-        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"]
     },
     {
         "name": "Threat Intel Feed",
@@ -151,9 +130,7 @@ def fetch_domains(feed_config):
     logger.info(f"--- Fetching: {feed_config['name']} ---")
     temp_dir = Path(tempfile.mkdtemp())
     unique_domains = set()
-    tld_filtered = 0
 
-    # Parallel download
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exec:
         {exec.submit(download_list, url, temp_dir/f"l_{i}.txt"): url for i, url in enumerate(feed_config['urls'])}
 
@@ -163,24 +140,15 @@ def fetch_domains(feed_config):
                 line = line.strip()
                 if not line or line.startswith(('#', '!', '//')): continue
                 
-                # Fast parse
                 parts = line.split()
                 if not parts: continue
                 candidate = parts[-1].lower()
                 
-                # Optimized TLD check (O(1) Lookup)
-                if '.' in candidate:
-                    ext = "." + candidate.rsplit('.', 1)[-1]
-                    if ext in BLOCKED_TLDS:
-                        tld_filtered += 1
-                        continue
-
                 if '.' in candidate and not INVALID_CHARS_PATTERN.search(candidate):
                     if candidate not in COMMON_JUNK_DOMAINS:
                         unique_domains.add(candidate)
                         
     shutil.rmtree(temp_dir)
-    logger.info(f"   [TLD Filter] Removed {tld_filtered} domains.")
     logger.info(f"   [Success] Gathered {len(unique_domains)} domains.")
     return unique_domains
 
@@ -188,7 +156,6 @@ def save_and_sync(cf, feed, domains, force=False):
     out = Path(feed['filename'])
     new_data = '\n'.join(sorted(domains)) + '\n'
     
-    # Check if local file matches to avoid unnecessary API calls
     if out.exists() and not force and out.read_text(encoding='utf-8') == new_data:
         logger.info(f"✅ [No Changes] {feed['name']} matches local. Skipping CF.")
         return True
@@ -196,7 +163,6 @@ def save_and_sync(cf, feed, domains, force=False):
     out.write_text(new_data, encoding='utf-8')
     if not domains: return False
 
-    # Sync to Cloudflare
     logger.info(f"⚡ Syncing {feed['name']} to Cloudflare...")
     all_lists = cf.get_lists().get('result') or []
     prefix = feed['prefix']
@@ -204,12 +170,10 @@ def save_and_sync(cf, feed, domains, force=False):
     used_ids = []
     excess = [l['id'] for l in existing]
 
-    # Batch update lists
     for i, chunk in enumerate(chunked_iterable(sorted(domains), Config.MAX_LIST_SIZE)):
         items = domains_to_cf_items(chunk)
         if excess:
             lid = excess.pop(0)
-            # Fetch existing items to calculate diff (minimize bandwidth)
             old = cf.get_list_items(lid, Config.MAX_LIST_SIZE).get('result') or []
             rem = [item['value'] for item in old if item.get('value')]
             cf.update_list(lid, items, rem)
@@ -218,7 +182,6 @@ def save_and_sync(cf, feed, domains, force=False):
             res = cf.create_list(f"{prefix} - {i+1:03d}", items)
             used_ids.append(res['result']['id'])
 
-    # Update/Create Rule
     rules = cf.get_rules().get('result') or []
     rid = next((r['id'] for r in rules if r.get('name') == feed['policy_name']), None)
     clauses = [{"any": {"in": {"lhs": {"splat": "dns.domains"}, "rhs": f"${lid}"}}} for lid in used_ids]
@@ -228,7 +191,6 @@ def save_and_sync(cf, feed, domains, force=False):
     if rid: cf.update_rule(rid, payload)
     else: cf.create_rule(payload)
     
-    # Clean up unused lists
     for lid in excess: cf.delete_list(lid)
     return True
 
@@ -256,7 +218,6 @@ def main():
     try:
         validate_config()
         with CloudflareAPI(Config.ACCOUNT_ID, Config.API_TOKEN, Config.MAX_RETRIES) as cf:
-            # Handle Delete Mode
             if args.delete:
                 logger.warning("🗑️ Deleting all lists and rules...")
                 rules = cf.get_rules().get('result') or []
@@ -267,27 +228,20 @@ def main():
                     for l in [ls for ls in lists if f['prefix'] in ls['name']]: cf.delete_list(l['id'])
                 return
 
-            # Parallel Fetch
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exec:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exec:
                 future_to_name = {exec.submit(fetch_domains, f): f['name'] for f in FEED_CONFIGS}
                 datasets = {future_to_name[future]: future.result() for future in concurrent.futures.as_completed(future_to_name)}
             
             logger.info("--- 🧠 Starting Deduplication ---")
-            ad, sec, tif = "Ad Block Feed", "Security Feed", "Threat Intel Feed"
+            ad, tif = "Ad Block Feed", "Threat Intel Feed"
             
-            # Prioritize Security over Ads (Security lists are smaller/critical)
-            if ad in datasets and sec in datasets: 
-                datasets[sec] -= datasets[ad]
-            # TIF is most specific, remove overlaps from others
+            # TIF is prioritized; remove TIF domains from the Ad list to save space
             if ad in datasets and tif in datasets: 
-                datasets[tif] -= datasets[ad]
-            if sec in datasets and tif in datasets: 
-                datasets[tif] -= datasets[sec]
+                datasets[ad] -= datasets[tif]
 
             logger.info("--- ☁️ Starting Cloudflare Sync ---")
             changed_files = []
             
-            # Sequential Sync (Safer for API Rate Limits on Free Tier)
             for f in FEED_CONFIGS:
                 if save_and_sync(cf, f, datasets[f['name']], args.force):
                     changed_files.append(f['filename'])
