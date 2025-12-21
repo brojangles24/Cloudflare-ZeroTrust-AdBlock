@@ -51,6 +51,20 @@ FEED_CONFIGS = [
         "policy_name": "Threat Intelligence Feed",
         "filename": "TIF_Mini.txt",
         "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt"]
+    },
+    {
+        "name": "Badware Hoster Feed",
+        "prefix": "Badware Hoster",
+        "policy_name": "Badware Hoster Blocklist",
+        "filename": "HaGeZi_Hoster.txt",
+        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"]
+    },
+    {
+        "name": "Fake Sites Feed",
+        "prefix": "Fake Sites",
+        "policy_name": "Fake Sites Blocklist",
+        "filename": "HaGeZi_Fake.txt",
+        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"]
     }
 ]
 
@@ -63,6 +77,9 @@ def validate_config():
 # --- 3. Helper Functions ---
 INVALID_CHARS_PATTERN = re.compile(r'[<>&;\"\'/=\s]')
 COMMON_JUNK_DOMAINS = {'localhost', '127.0.0.1', '0.0.0.0', '::1', 'broadcasthost'}
+
+# TLDs to exclude because they are handled by a Regex Rule
+EXCLUDED_TLDS_REGEX = re.compile(r'(?i)\.(?:bid|cf|click|download|ga|gdn|gq|icu|loan|men|ml|monster|ooo|party|pw|stream|su|tk|top|win|zip)$')
 
 def domains_to_cf_items(domains):
     return [{"value": domain} for domain in domains if domain]
@@ -144,9 +161,11 @@ def fetch_domains(feed_config):
                 if not parts: continue
                 candidate = parts[-1].lower()
                 
+                # Check for validity and excluded TLDs
                 if '.' in candidate and not INVALID_CHARS_PATTERN.search(candidate):
                     if candidate not in COMMON_JUNK_DOMAINS:
-                        unique_domains.add(candidate)
+                        if not EXCLUDED_TLDS_REGEX.search(candidate):
+                            unique_domains.add(candidate)
                         
     shutil.rmtree(temp_dir)
     logger.info(f"   [Success] Gathered {len(unique_domains)} domains.")
@@ -233,11 +252,13 @@ def main():
                 datasets = {future_to_name[future]: future.result() for future in concurrent.futures.as_completed(future_to_name)}
             
             logger.info("--- 🧠 Starting Deduplication ---")
-            ad, tif = "Ad Block Feed", "Threat Intel Feed"
             
-            # TIF is prioritized; remove TIF domains from the Ad list to save space
-            if ad in datasets and tif in datasets: 
-                datasets[ad] -= datasets[tif]
+            # Remove TIF domains from all other lists to save space (TIF is highest priority usually)
+            tif_name = "Threat Intel Feed"
+            if tif_name in datasets:
+                for name, domains in datasets.items():
+                    if name != tif_name:
+                        datasets[name] -= datasets[tif_name]
 
             logger.info("--- ☁️ Starting Cloudflare Sync ---")
             changed_files = []
