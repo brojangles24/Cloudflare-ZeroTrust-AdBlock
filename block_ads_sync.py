@@ -8,6 +8,7 @@ import json
 import logging
 import argparse
 import time
+from datetime import datetime
 from pathlib import Path
 from subprocess import run, CalledProcessError
 from itertools import islice
@@ -147,7 +148,6 @@ def fetch_domains(feed_config):
     temp_dir = Path(tempfile.mkdtemp())
     unique_domains = set()
     
-    # Stats counters
     stats = {
         "raw_lines": 0,
         "valid_domains": 0,
@@ -186,12 +186,11 @@ def save_and_sync(cf, feed, domains, force=False):
     new_data = '\n'.join(sorted(domains)) + '\n'
     
     if out.exists() and not force and out.read_text(encoding='utf-8') == new_data:
-        return False # No changes
+        return False
 
     out.write_text(new_data, encoding='utf-8')
-    if not domains: return True # Changed but empty
+    if not domains: return True
 
-    # Sync Logic
     all_lists = cf.get_lists().get('result') or []
     prefix = feed['prefix']
     existing = [l for l in all_lists if prefix in l.get('name', '')]
@@ -233,34 +232,49 @@ def git_push(files):
             run_command(["git", "add", f])
             changed.append(f)
     if changed:
-        run_command(["git", "commit", "-m", f"Update blocklists: {', '.join(changed)}"])
+        run_command(["git", "commit", "-m", f"Update blocklists & stats: {', '.join(changed)}"])
         run_command(["git", "push", "origin", Config.TARGET_BRANCH])
 
-def print_summary(feed_stats):
+def write_markdown_stats(feed_stats, filename="STATS.md"):
+    """Generates a Markdown file with the statistics table."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    total_raw = sum(d['raw_lines'] for d in feed_stats.values())
+    total_excluded = sum(d['excluded_tld'] for d in feed_stats.values())
+    total_final = sum(d['valid_domains'] for d in feed_stats.values())
+    
+    md_lines = [
+        f"# 🛡️ Blocklist Sync Statistics",
+        f"*Last updated: {now}*",
+        "",
+        "| Feed Name | Raw Lines | TLD Excluded | Final Count | Time (s) |",
+        "|:---|---:|---:|---:|---:|",
+    ]
+    
+    for name, data in feed_stats.items():
+        excl_pct = (data['excluded_tld'] / data['raw_lines'] * 100) if data['raw_lines'] > 0 else 0.0
+        md_lines.append(
+            f"| **{name}** | {data['raw_lines']:,} | {data['excluded_tld']:,} ({excl_pct:.1f}%) | {data['valid_domains']:,} | {data['time_taken']:.2f} |"
+        )
+        
+    md_lines.append(f"| **TOTALS** | **{total_raw:,}** | **{total_excluded:,}** | **{total_final:,}** | |")
+    
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write("\n".join(md_lines))
+    
+    return filename
+
+def print_console_summary(feed_stats):
+    """Prints the stats to the console logs."""
     print("\n" + "="*85)
     print(f"{'🔎 EXECUTION SUMMARY':^85}")
     print("="*85)
-    
-    # Headers
     print(f"{'FEED NAME':<25} | {'RAW LINES':>10} | {'TLD EXCLUDED':>12} | {'FINAL COUNT':>12} | {'TIME':>8}")
     print("-" * 25 + "-+-" + "-" * 10 + "-+-" + "-" * 12 + "-+-" + "-" * 12 + "-+-" + "-" * 8)
     
-    total_raw = 0
-    total_excluded = 0
-    total_final = 0
-    
     for name, data in feed_stats.items():
-        total_raw += data['raw_lines']
-        total_excluded += data['excluded_tld']
-        total_final += data['valid_domains']
-        
-        # Calculate exclusion percentage
         excl_pct = (data['excluded_tld'] / data['raw_lines'] * 100) if data['raw_lines'] > 0 else 0.0
-        
         print(f"{name:<25} | {data['raw_lines']:>10,} | {data['excluded_tld']:>6,} ({excl_pct:04.1f}%) | {data['valid_domains']:>12,} | {data['time_taken']:>7.2f}s")
-        
-    print("-" * 85)
-    print(f"{'TOTALS':<25} | {total_raw:>10,} | {total_excluded:>12,} | {total_final:>12,} |")
     print("="*85 + "\n")
 
 # --- 6. Main Execution ---
@@ -272,7 +286,7 @@ def main():
 
     try:
         validate_config()
-        feed_stats = {} # Store stats here
+        feed_stats = {} 
 
         with CloudflareAPI(Config.ACCOUNT_ID, Config.API_TOKEN, Config.MAX_RETRIES) as cf:
             if args.delete:
@@ -301,10 +315,7 @@ def main():
             if tif_name in datasets:
                 for name, domains in datasets.items():
                     if name != tif_name:
-                        # Update stats to reflect deduplication
-                        initial_len = len(domains)
                         datasets[name] -= datasets[tif_name]
-                        # We update the 'valid_domains' count in stats to show the FINAL sync count
                         feed_stats[name]['valid_domains'] = len(datasets[name])
 
             # Sync Step
@@ -316,11 +327,15 @@ def main():
                 if save_and_sync(cf, f, datasets[f['name']], args.force):
                     changed_files.append(f['filename'])
 
+            # Generate Stats File
+            stats_file = write_markdown_stats(feed_stats)
+            changed_files.append(stats_file)
+
+            # Git Push
             if Path(".git").exists() and changed_files:
                 git_push(changed_files)
         
-        # Print the fancy table
-        print_summary(feed_stats)
+        print_console_summary(feed_stats)
         logger.info("✅ Execution complete!")
 
     except Exception as e:
