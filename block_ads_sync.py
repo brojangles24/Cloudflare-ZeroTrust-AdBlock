@@ -44,7 +44,7 @@ FEED_CONFIGS = [
         "prefix": "Block ads",
         "policy_name": "Block Ads, Trackers and Telemetry",
         "filename": "HaGeZi_Normal.txt",
-        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"]
+        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"]
     },
     {
         "name": "Threat Intel Feed",
@@ -152,6 +152,7 @@ def fetch_domains(feed_config):
         "raw_lines": 0,
         "valid_domains": 0,
         "excluded_tld": 0,
+        "dedup_count": 0,
         "time_taken": 0.0
     }
 
@@ -236,28 +237,29 @@ def git_push(files):
         run_command(["git", "push", "origin", Config.TARGET_BRANCH])
 
 def write_markdown_stats(feed_stats, filename="STATS.md"):
-    """Generates a Markdown file with the statistics table."""
+    """Generates a Markdown file with the statistics table including overlap."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     total_raw = sum(d['raw_lines'] for d in feed_stats.values())
     total_excluded = sum(d['excluded_tld'] for d in feed_stats.values())
+    total_dedup = sum(d['dedup_count'] for d in feed_stats.values())
     total_final = sum(d['valid_domains'] for d in feed_stats.values())
     
     md_lines = [
         f"# 🛡️ Blocklist Sync Statistics",
         f"*Last updated: {now}*",
         "",
-        "| Feed Name | Raw Lines | TLD Excluded | Final Count | Time (s) |",
-        "|:---|---:|---:|---:|---:|",
+        "| Feed Name | Raw Lines | TLD Excluded | Overlap (TIF) | Final Count | Time (s) |",
+        "|:---|---:|---:|---:|---:|---:|",
     ]
     
     for name, data in feed_stats.items():
         excl_pct = (data['excluded_tld'] / data['raw_lines'] * 100) if data['raw_lines'] > 0 else 0.0
         md_lines.append(
-            f"| **{name}** | {data['raw_lines']:,} | {data['excluded_tld']:,} ({excl_pct:.1f}%) | {data['valid_domains']:,} | {data['time_taken']:.2f} |"
+            f"| **{name}** | {data['raw_lines']:,} | {data['excluded_tld']:,} ({excl_pct:.1f}%) | {data['dedup_count']:,} | {data['valid_domains']:,} | {data['time_taken']:.2f} |"
         )
         
-    md_lines.append(f"| **TOTALS** | **{total_raw:,}** | **{total_excluded:,}** | **{total_final:,}** | |")
+    md_lines.append(f"| **TOTALS** | **{total_raw:,}** | **{total_excluded:,}** | **{total_dedup:,}** | **{total_final:,}** | |")
     
     with open(filename, 'w', encoding='utf-8') as f:
         f.write("\n".join(md_lines))
@@ -266,16 +268,16 @@ def write_markdown_stats(feed_stats, filename="STATS.md"):
 
 def print_console_summary(feed_stats):
     """Prints the stats to the console logs."""
-    print("\n" + "="*85)
-    print(f"{'🔎 EXECUTION SUMMARY':^85}")
-    print("="*85)
-    print(f"{'FEED NAME':<25} | {'RAW LINES':>10} | {'TLD EXCLUDED':>12} | {'FINAL COUNT':>12} | {'TIME':>8}")
-    print("-" * 25 + "-+-" + "-" * 10 + "-+-" + "-" * 12 + "-+-" + "-" * 12 + "-+-" + "-" * 8)
+    print("\n" + "="*105)
+    print(f"{'🔎 EXECUTION SUMMARY':^105}")
+    print("="*105)
+    print(f"{'FEED NAME':<25} | {'RAW LINES':>10} | {'TLD EXCLUDED':>14} | {'OVERLAP (TIF)':>14} | {'FINAL COUNT':>12} | {'TIME':>8}")
+    print("-" * 25 + "-+-" + "-" * 10 + "-+-" + "-" * 14 + "-+-" + "-" * 14 + "-+-" + "-" * 12 + "-+-" + "-" * 8)
     
     for name, data in feed_stats.items():
         excl_pct = (data['excluded_tld'] / data['raw_lines'] * 100) if data['raw_lines'] > 0 else 0.0
-        print(f"{name:<25} | {data['raw_lines']:>10,} | {data['excluded_tld']:>6,} ({excl_pct:04.1f}%) | {data['valid_domains']:>12,} | {data['time_taken']:>7.2f}s")
-    print("="*85 + "\n")
+        print(f"{name:<25} | {data['raw_lines']:>10,} | {data['excluded_tld']:>8,} ({excl_pct:04.1f}%) | {data['dedup_count']:>14,} | {data['valid_domains']:>12,} | {data['time_taken']:>7.2f}s")
+    print("="*105 + "\n")
 
 # --- 6. Main Execution ---
 def main():
@@ -315,8 +317,13 @@ def main():
             if tif_name in datasets:
                 for name, domains in datasets.items():
                     if name != tif_name:
+                        before_count = len(domains)
                         datasets[name] -= datasets[tif_name]
-                        feed_stats[name]['valid_domains'] = len(datasets[name])
+                        after_count = len(domains)
+                        
+                        # Update stats with dedup count and final count
+                        feed_stats[name]['dedup_count'] = before_count - after_count
+                        feed_stats[name]['valid_domains'] = after_count
 
             # Sync Step
             logger.info("--- ☁️ Starting Cloudflare Sync ---")
