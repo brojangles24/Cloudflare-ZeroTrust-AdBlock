@@ -17,7 +17,7 @@ import requests
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    datefmt='%H:%M:%S'
 )
 logger = logging.getLogger(__name__)
 
@@ -68,18 +68,16 @@ FEED_CONFIGS = [
     }
 ]
 
+# --- 3. Helper Functions ---
+INVALID_CHARS_PATTERN = re.compile(r'[<>&;\"\'/=\s]')
+COMMON_JUNK_DOMAINS = {'localhost', '127.0.0.1', '0.0.0.0', '::1', 'broadcasthost'}
+EXCLUDED_TLDS_REGEX = re.compile(r'(?i)\.(?:bid|cf|click|download|ga|gdn|gq|icu|loan|men|ml|monster|ooo|party|pw|stream|su|tk|top|win|zip)$')
+
 def validate_config():
     if not Config.API_TOKEN:
         raise RuntimeError("API_TOKEN environment variable is not set.")
     if not Config.ACCOUNT_ID:
         raise RuntimeError("ACCOUNT_ID environment variable is not set.")
-
-# --- 3. Helper Functions ---
-INVALID_CHARS_PATTERN = re.compile(r'[<>&;\"\'/=\s]')
-COMMON_JUNK_DOMAINS = {'localhost', '127.0.0.1', '0.0.0.0', '::1', 'broadcasthost'}
-
-# TLDs to exclude because they are handled by a Regex Rule
-EXCLUDED_TLDS_REGEX = re.compile(r'(?i)\.(?:bid|cf|click|download|ga|gdn|gq|icu|loan|men|ml|monster|ooo|party|pw|stream|su|tk|top|win|zip)$')
 
 def domains_to_cf_items(domains):
     return [{"value": domain} for domain in domains if domain]
@@ -144,9 +142,18 @@ class CloudflareAPI:
 
 # --- 5. Workflow Functions ---
 def fetch_domains(feed_config):
+    start_time = time.time()
     logger.info(f"--- Fetching: {feed_config['name']} ---")
     temp_dir = Path(tempfile.mkdtemp())
     unique_domains = set()
+    
+    # Stats counters
+    stats = {
+        "raw_lines": 0,
+        "valid_domains": 0,
+        "excluded_tld": 0,
+        "time_taken": 0.0
+    }
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exec:
         {exec.submit(download_list, url, temp_dir/f"l_{i}.txt"): url for i, url in enumerate(feed_config['urls'])}
@@ -157,32 +164,34 @@ def fetch_domains(feed_config):
                 line = line.strip()
                 if not line or line.startswith(('#', '!', '//')): continue
                 
+                stats["raw_lines"] += 1
                 parts = line.split()
                 if not parts: continue
                 candidate = parts[-1].lower()
                 
-                # Check for validity and excluded TLDs
                 if '.' in candidate and not INVALID_CHARS_PATTERN.search(candidate):
                     if candidate not in COMMON_JUNK_DOMAINS:
-                        if not EXCLUDED_TLDS_REGEX.search(candidate):
+                        if EXCLUDED_TLDS_REGEX.search(candidate):
+                            stats["excluded_tld"] += 1
+                        else:
                             unique_domains.add(candidate)
                         
     shutil.rmtree(temp_dir)
-    logger.info(f"   [Success] Gathered {len(unique_domains)} domains.")
-    return unique_domains
+    stats["valid_domains"] = len(unique_domains)
+    stats["time_taken"] = time.time() - start_time
+    return unique_domains, stats
 
 def save_and_sync(cf, feed, domains, force=False):
     out = Path(feed['filename'])
     new_data = '\n'.join(sorted(domains)) + '\n'
     
     if out.exists() and not force and out.read_text(encoding='utf-8') == new_data:
-        logger.info(f"✅ [No Changes] {feed['name']} matches local. Skipping CF.")
-        return True
+        return False # No changes
 
     out.write_text(new_data, encoding='utf-8')
-    if not domains: return False
+    if not domains: return True # Changed but empty
 
-    logger.info(f"⚡ Syncing {feed['name']} to Cloudflare...")
+    # Sync Logic
     all_lists = cf.get_lists().get('result') or []
     prefix = feed['prefix']
     existing = [l for l in all_lists if prefix in l.get('name', '')]
@@ -227,6 +236,33 @@ def git_push(files):
         run_command(["git", "commit", "-m", f"Update blocklists: {', '.join(changed)}"])
         run_command(["git", "push", "origin", Config.TARGET_BRANCH])
 
+def print_summary(feed_stats):
+    print("\n" + "="*85)
+    print(f"{'🔎 EXECUTION SUMMARY':^85}")
+    print("="*85)
+    
+    # Headers
+    print(f"{'FEED NAME':<25} | {'RAW LINES':>10} | {'TLD EXCLUDED':>12} | {'FINAL COUNT':>12} | {'TIME':>8}")
+    print("-" * 25 + "-+-" + "-" * 10 + "-+-" + "-" * 12 + "-+-" + "-" * 12 + "-+-" + "-" * 8)
+    
+    total_raw = 0
+    total_excluded = 0
+    total_final = 0
+    
+    for name, data in feed_stats.items():
+        total_raw += data['raw_lines']
+        total_excluded += data['excluded_tld']
+        total_final += data['valid_domains']
+        
+        # Calculate exclusion percentage
+        excl_pct = (data['excluded_tld'] / data['raw_lines'] * 100) if data['raw_lines'] > 0 else 0.0
+        
+        print(f"{name:<25} | {data['raw_lines']:>10,} | {data['excluded_tld']:>6,} ({excl_pct:04.1f}%) | {data['valid_domains']:>12,} | {data['time_taken']:>7.2f}s")
+        
+    print("-" * 85)
+    print(f"{'TOTALS':<25} | {total_raw:>10,} | {total_excluded:>12,} | {total_final:>12,} |")
+    print("="*85 + "\n")
+
 # --- 6. Main Execution ---
 def main():
     parser = argparse.ArgumentParser()
@@ -236,6 +272,8 @@ def main():
 
     try:
         validate_config()
+        feed_stats = {} # Store stats here
+
         with CloudflareAPI(Config.ACCOUNT_ID, Config.API_TOKEN, Config.MAX_RETRIES) as cf:
             if args.delete:
                 logger.warning("🗑️ Deleting all lists and rules...")
@@ -247,30 +285,44 @@ def main():
                     for l in [ls for ls in lists if f['prefix'] in ls['name']]: cf.delete_list(l['id'])
                 return
 
+            # Fetch Step
+            datasets = {}
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exec:
                 future_to_name = {exec.submit(fetch_domains, f): f['name'] for f in FEED_CONFIGS}
-                datasets = {future_to_name[future]: future.result() for future in concurrent.futures.as_completed(future_to_name)}
+                for future in concurrent.futures.as_completed(future_to_name):
+                    name = future_to_name[future]
+                    domains, stats = future.result()
+                    datasets[name] = domains
+                    feed_stats[name] = stats
             
+            # Deduplication Step
             logger.info("--- 🧠 Starting Deduplication ---")
-            
-            # Remove TIF domains from all other lists to save space (TIF is highest priority usually)
             tif_name = "Threat Intel Feed"
             if tif_name in datasets:
                 for name, domains in datasets.items():
                     if name != tif_name:
+                        # Update stats to reflect deduplication
+                        initial_len = len(domains)
                         datasets[name] -= datasets[tif_name]
+                        # We update the 'valid_domains' count in stats to show the FINAL sync count
+                        feed_stats[name]['valid_domains'] = len(datasets[name])
 
+            # Sync Step
             logger.info("--- ☁️ Starting Cloudflare Sync ---")
             changed_files = []
             
             for f in FEED_CONFIGS:
+                logger.info(f"⚡ Processing {f['name']}...")
                 if save_and_sync(cf, f, datasets[f['name']], args.force):
                     changed_files.append(f['filename'])
 
             if Path(".git").exists() and changed_files:
                 git_push(changed_files)
-
+        
+        # Print the fancy table
+        print_summary(feed_stats)
         logger.info("✅ Execution complete!")
+
     except Exception as e:
         logger.critical(f"Fatal: {e}")
         sys.exit(1)
