@@ -8,10 +8,12 @@ import json
 import logging
 import argparse
 import time
+import math
 from datetime import datetime
 from pathlib import Path
 from subprocess import run, CalledProcessError
 from itertools import islice
+from collections import Counter
 import requests
 
 # --- 1. Logging Configuration ---
@@ -102,6 +104,33 @@ def download_list(url, file_path):
     response.raise_for_status()
     file_path.write_bytes(response.content)
 
+def get_nerd_metrics(domains):
+    """Calculates useless but cool stats about the domain list."""
+    stats = {
+        "longest_domain": "",
+        "max_entropy_domain": "",
+        "max_entropy": 0.0,
+        "keyword_counts": Counter()
+    }
+    
+    token_pattern = re.compile(r'[a-z]{4,}') 
+    
+    for d in domains:
+        if len(d) > len(stats['longest_domain']):
+            stats['longest_domain'] = d
+            
+        # Shannon Entropy (DGA Detection)
+        prob = [float(d.count(c)) / len(d) for c in dict.fromkeys(list(d))]
+        entropy = - sum([p * math.log(p) / math.log(2.0) for p in prob])
+        
+        if entropy > stats['max_entropy']:
+            stats['max_entropy'] = entropy
+            stats['max_entropy_domain'] = d
+
+        stats['keyword_counts'].update(token_pattern.findall(d))
+
+    return stats
+
 # --- 4. Cloudflare API Client ---
 class CloudflareAPI:
     def __init__(self, account_id, api_token, max_retries):
@@ -147,13 +176,11 @@ def fetch_domains(feed_config):
     logger.info(f"--- Fetching: {feed_config['name']} ---")
     temp_dir = Path(tempfile.mkdtemp())
     unique_domains = set()
+    tld_counter = Counter()
     
     stats = {
-        "raw_lines": 0,
-        "valid_domains": 0,
-        "excluded_tld": 0,
-        "dedup_count": 0,
-        "time_taken": 0.0
+        "raw_lines": 0, "valid_domains": 0, "excluded_tld": 0,
+        "dedup_count": 0, "time_taken": 0.0, "tlds": Counter()
     }
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as exec:
@@ -172,14 +199,17 @@ def fetch_domains(feed_config):
                 
                 if '.' in candidate and not INVALID_CHARS_PATTERN.search(candidate):
                     if candidate not in COMMON_JUNK_DOMAINS:
+                        tld = candidate.split('.')[-1]
                         if EXCLUDED_TLDS_REGEX.search(candidate):
                             stats["excluded_tld"] += 1
                         else:
                             unique_domains.add(candidate)
+                            tld_counter[tld] += 1
                         
     shutil.rmtree(temp_dir)
     stats["valid_domains"] = len(unique_domains)
     stats["time_taken"] = time.time() - start_time
+    stats["tlds"] = tld_counter
     return unique_domains, stats
 
 def save_and_sync(cf, feed, domains, force=False):
@@ -237,9 +267,7 @@ def git_push(files):
         run_command(["git", "push", "origin", Config.TARGET_BRANCH])
 
 def write_markdown_stats(feed_stats, filename="STATS.md"):
-    """Generates a Markdown file with the statistics table including overlap."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
     total_raw = sum(d['raw_lines'] for d in feed_stats.values())
     total_excluded = sum(d['excluded_tld'] for d in feed_stats.values())
     total_dedup = sum(d['dedup_count'] for d in feed_stats.values())
@@ -260,24 +288,96 @@ def write_markdown_stats(feed_stats, filename="STATS.md"):
         )
         
     md_lines.append(f"| **TOTALS** | **{total_raw:,}** | **{total_excluded:,}** | **{total_dedup:,}** | **{total_final:,}** | |")
-    
     with open(filename, 'w', encoding='utf-8') as f:
         f.write("\n".join(md_lines))
-    
     return filename
 
-def print_console_summary(feed_stats):
-    """Prints the stats to the console logs."""
-    print("\n" + "="*105)
-    print(f"{'🔎 EXECUTION SUMMARY':^105}")
-    print("="*105)
-    print(f"{'FEED NAME':<25} | {'RAW LINES':>10} | {'TLD EXCLUDED':>14} | {'OVERLAP (TIF)':>14} | {'FINAL COUNT':>12} | {'TIME':>8}")
-    print("-" * 25 + "-+-" + "-" * 10 + "-+-" + "-" * 14 + "-+-" + "-" * 14 + "-+-" + "-" * 12 + "-+-" + "-" * 8)
+def print_console_summary(feed_stats, datasets):
+    """Prints a high-fidelity dashboard with TLD analytics, velocity metrics, and Nerd Stats."""
+    RST, BOLD, DIM = "\033[0m", "\033[1m", "\033[2m"
+    CYAN, GREEN, YELLOW, RED, MAGENTA, BLUE = "\033[36m", "\033[32m", "\033[33m", "\033[31m", "\033[35m", "\033[34m"
+
+    # Aggregates
+    t_raw = sum(d['raw_lines'] for d in feed_stats.values())
+    t_final = sum(d['valid_domains'] for d in feed_stats.values())
+    t_time = sum(d['time_taken'] for d in feed_stats.values())
     
+    # Global TLD Analysis
+    global_tlds = Counter()
+    for d in feed_stats.values():
+        global_tlds.update(d.get('tlds', Counter()))
+    top_tlds = global_tlds.most_common(5)
+
+    # Derived Metrics
+    velocity = int(t_raw / t_time) if t_time > 0 else 0
+    junk_ratio = ((t_raw - t_final) / t_raw * 100) if t_raw > 0 else 0
+    
+    # Calculate Nerd Metrics
+    all_domains = set().union(*datasets.values())
+    nerd_stats = get_nerd_metrics(all_domains)
+
+    # Layout Config
+    w = {"name": 22, "raw": 10, "excl": 16, "ovrl": 12, "final": 10, "time": 8}
+    def border(c, l, r, i): return f"{DIM}{l}{i.join([c * w[k] for k in w])}{r}{RST}"
+
+    # --- MAIN TABLE ---
+    print("\n" + border("═", "╔", "╗", "╦"))
+    headers = [f"{'FEED SOURCE':<{w['name']}}", f"{'RAW':>{w['raw']}}", f"{'TLD EXCL':>{w['excl']}}", 
+               f"{'OVERLAP':>{w['ovrl']}}", f"{'FINAL':>{w['final']}}", f"{'TIME':>{w['time']}}"]
+    print(f"{BOLD}║ {CYAN}{f'{RST}{BOLD}║{CYAN} '.join(headers)}{RST}{BOLD} ║{RST}")
+    print(border("═", "╠", "╣", "╬"))
+
     for name, data in feed_stats.items():
         excl_pct = (data['excluded_tld'] / data['raw_lines'] * 100) if data['raw_lines'] > 0 else 0.0
-        print(f"{name:<25} | {data['raw_lines']:>10,} | {data['excluded_tld']:>8,} ({excl_pct:04.1f}%) | {data['dedup_count']:>14,} | {data['valid_domains']:>12,} | {data['time_taken']:>7.2f}s")
-    print("="*105 + "\n")
+        row = [
+            f"{name:<{w['name']}}", f"{data['raw_lines']:>{w['raw']},}",
+            f"{YELLOW}{data['excluded_tld']:>{w['excl']-8},} ({excl_pct:02.0f}%){RST}",
+            f"{RED}{data['dedup_count']:>{w['ovrl']},}{RST}",
+            f"{GREEN}{data['valid_domains']:>{w['final']},}{RST}", f"{data['time_taken']:>{w['time']-1}.2f}s"
+        ]
+        print(f"{BOLD}║{RST} {f' {DIM}│{RST} '.join(row)} {BOLD}║{RST}")
+    print(border("═", "╚", "╝", "╩"))
+
+    # --- DEEP DIVE PANEL ---
+    print(f"\n{BOLD}🔍 NETWORK INTELLIGENCE:{RST}")
+    
+    # 1. TLD Distribution
+    print(f"   {CYAN}Top Blocked TLDs:{RST}")
+    max_tld_len = max(len(t[0]) for t in top_tlds) if top_tlds else 0
+    for tld, count in top_tlds:
+        bar_len = int((count / top_tlds[0][1]) * 20)
+        bar = "█" * bar_len
+        print(f"   • {tld:<{max_tld_len}} : {MAGENTA}{bar:<20}{RST} {count:,}")
+
+    # 2. Performance Stats
+    print(f"\n   {CYAN}Performance Metrics:{RST}")
+    print(f"   • {BOLD}Processing Speed :{RST} {velocity:,} domains/sec")
+    print(f"   • {BOLD}Junk Ratio       :{RST} {junk_ratio:.1f}% (Waste removed)")
+    print(f"   • {BOLD}Total Efficiency :{RST} {GREEN}100%{RST} (Ready for Cloudflare)")
+
+    # --- NERD CORNER ---
+    print(f"\n   {BOLD}🤓 NERD CORNER:{RST}")
+    
+    # Entropy
+    ent_val = nerd_stats['max_entropy']
+    ent_color = RED if ent_val > 4.5 else GREEN
+    print(f"   • {BOLD}Highest Entropy :{RST} {ent_color}{nerd_stats['max_entropy_domain']}{RST}")
+    print(f"     └─ Score: {ent_val:.2f} bits (Likely a botnet/DGA)")
+
+    # Longest Domain
+    long_dom = nerd_stats['longest_domain']
+    # Truncate for display if massive
+    display_dom = (long_dom[:50] + '...') if len(long_dom) > 50 else long_dom
+    print(f"   • {BOLD}Longest Domain  :{RST} {BLUE}{display_dom}{RST}")
+    print(f"     └─ Length: {len(long_dom)} chars")
+
+    # Vibe Check (Keywords)
+    print(f"   • {BOLD}The Vibe Check  :{RST} (Most frequent tokens)")
+    top_kwd = nerd_stats['keyword_counts'].most_common(3)
+    for word, count in top_kwd:
+        print(f"     [{YELLOW}{word}{RST}] found {count:,} times")
+
+    print("\n" + "="*95 + "\n")
 
 # --- 6. Main Execution ---
 def main():
@@ -321,7 +421,6 @@ def main():
                         datasets[name] -= datasets[tif_name]
                         after_count = len(domains)
                         
-                        # Update stats with dedup count and final count
                         feed_stats[name]['dedup_count'] = before_count - after_count
                         feed_stats[name]['valid_domains'] = after_count
 
@@ -342,7 +441,8 @@ def main():
             if Path(".git").exists() and changed_files:
                 git_push(changed_files)
         
-        print_console_summary(feed_stats)
+        # PRINT THE COOL STATS
+        print_console_summary(feed_stats, datasets)
         logger.info("✅ Execution complete!")
 
     except Exception as e:
