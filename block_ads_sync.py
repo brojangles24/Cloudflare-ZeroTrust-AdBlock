@@ -29,12 +29,10 @@ class Config:
     API_TOKEN: str = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID: str = os.environ.get("ACCOUNT_ID", "")
     
-    # Global Limits
     MAX_LIST_SIZE: int = 1000
     MAX_LISTS: int = 300 
     MAX_RETRIES: int = 5
     
-    # Git Configuration
     TARGET_BRANCH: str = os.environ.get("GITHUB_REF_NAME") or os.environ.get("TARGET_BRANCH") or "main" 
     GITHUB_ACTOR: str = os.environ.get("GITHUB_ACTOR", "github-actions[bot]")
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
@@ -46,7 +44,7 @@ FEED_CONFIGS = [
         "prefix": "Block ads",
         "policy_name": "Block Ads, Trackers and Telemetry",
         "filename": "HaGeZi_Normal.txt",
-        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"]
+        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt"]
     },
     {
         "name": "Threat Intel Feed",
@@ -54,27 +52,12 @@ FEED_CONFIGS = [
         "policy_name": "Threat Intelligence Feed",
         "filename": "TIF_Mini.txt",
         "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt"]
-    },
-    {
-        "name": "Badware Hoster Feed",
-        "prefix": "Badware Hoster",
-        "policy_name": "Badware Hoster Blocklist",
-        "filename": "HaGeZi_Hoster.txt",
-        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"]
-    },
-    {
-        "name": "Fake Sites Feed",
-        "prefix": "Fake Sites",
-        "policy_name": "Fake Sites Blocklist",
-        "filename": "HaGeZi_Fake.txt",
-        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"]
     }
 ]
 
 # --- 3. Helper Functions ---
 INVALID_CHARS_PATTERN = re.compile(r'[<>&;\"\'/=\s]')
 COMMON_JUNK_DOMAINS = {'localhost', '127.0.0.1', '0.0.0.0', '::1', 'broadcasthost'}
-EXCLUDED_TLDS_REGEX = re.compile(r'(?i)\.(?:bid|cf|click|download|ga|gdn|gq|icu|loan|men|ml|monster|ooo|party|pw|stream|su|tk|top|win|zip)$')
 
 def validate_config():
     if not Config.API_TOKEN:
@@ -105,7 +88,6 @@ def download_list(url, file_path):
     file_path.write_bytes(response.content)
 
 def get_nerd_metrics(domains):
-    """Calculates useless but cool stats about the domain list."""
     stats = {
         "longest_domain": "",
         "max_entropy_domain": "",
@@ -119,7 +101,6 @@ def get_nerd_metrics(domains):
         if len(d) > len(stats['longest_domain']):
             stats['longest_domain'] = d
             
-        # Shannon Entropy (DGA Detection)
         prob = [float(d.count(c)) / len(d) for c in dict.fromkeys(list(d))]
         entropy = - sum([p * math.log(p) / math.log(2.0) for p in prob])
         
@@ -200,11 +181,8 @@ def fetch_domains(feed_config):
                 if '.' in candidate and not INVALID_CHARS_PATTERN.search(candidate):
                     if candidate not in COMMON_JUNK_DOMAINS:
                         tld = candidate.split('.')[-1]
-                        if EXCLUDED_TLDS_REGEX.search(candidate):
-                            stats["excluded_tld"] += 1
-                        else:
-                            unique_domains.add(candidate)
-                            tld_counter[tld] += 1
+                        unique_domains.add(candidate)
+                        tld_counter[tld] += 1
                         
     shutil.rmtree(temp_dir)
     stats["valid_domains"] = len(unique_domains)
@@ -293,34 +271,27 @@ def write_markdown_stats(feed_stats, filename="STATS.md"):
     return filename
 
 def print_console_summary(feed_stats, datasets):
-    """Prints a high-fidelity dashboard with TLD analytics, velocity metrics, and Nerd Stats."""
     RST, BOLD, DIM = "\033[0m", "\033[1m", "\033[2m"
     CYAN, GREEN, YELLOW, RED, MAGENTA, BLUE = "\033[36m", "\033[32m", "\033[33m", "\033[31m", "\033[35m", "\033[34m"
 
-    # Aggregates
     t_raw = sum(d['raw_lines'] for d in feed_stats.values())
     t_final = sum(d['valid_domains'] for d in feed_stats.values())
     t_time = sum(d['time_taken'] for d in feed_stats.values())
     
-    # Global TLD Analysis
     global_tlds = Counter()
     for d in feed_stats.values():
         global_tlds.update(d.get('tlds', Counter()))
     top_tlds = global_tlds.most_common(5)
 
-    # Derived Metrics
     velocity = int(t_raw / t_time) if t_time > 0 else 0
     junk_ratio = ((t_raw - t_final) / t_raw * 100) if t_raw > 0 else 0
     
-    # Calculate Nerd Metrics
     all_domains = set().union(*datasets.values())
     nerd_stats = get_nerd_metrics(all_domains)
 
-    # Layout Config
     w = {"name": 22, "raw": 10, "excl": 16, "ovrl": 12, "final": 10, "time": 8}
     def border(c, l, r, i): return f"{DIM}{l}{i.join([c * w[k] for k in w])}{r}{RST}"
 
-    # --- MAIN TABLE ---
     print("\n" + border("═", "╔", "╗", "╦"))
     headers = [f"{'FEED SOURCE':<{w['name']}}", f"{'RAW':>{w['raw']}}", f"{'TLD EXCL':>{w['excl']}}", 
                f"{'OVERLAP':>{w['ovrl']}}", f"{'FINAL':>{w['final']}}", f"{'TIME':>{w['time']}}"]
@@ -338,40 +309,30 @@ def print_console_summary(feed_stats, datasets):
         print(f"{BOLD}║{RST} {f' {DIM}│{RST} '.join(row)} {BOLD}║{RST}")
     print(border("═", "╚", "╝", "╩"))
 
-    # --- DEEP DIVE PANEL ---
     print(f"\n{BOLD}🔍 NETWORK INTELLIGENCE:{RST}")
-    
-    # 1. TLD Distribution
     print(f"   {CYAN}Top Blocked TLDs:{RST}")
     max_tld_len = max(len(t[0]) for t in top_tlds) if top_tlds else 0
     for tld, count in top_tlds:
-        bar_len = int((count / top_tlds[0][1]) * 20)
+        bar_len = int((count / (top_tlds[0][1] if top_tlds else 1)) * 20)
         bar = "█" * bar_len
         print(f"   • {tld:<{max_tld_len}} : {MAGENTA}{bar:<20}{RST} {count:,}")
 
-    # 2. Performance Stats
     print(f"\n   {CYAN}Performance Metrics:{RST}")
     print(f"   • {BOLD}Processing Speed :{RST} {velocity:,} domains/sec")
-    print(f"   • {BOLD}Junk Ratio       :{RST} {junk_ratio:.1f}% (Waste removed)")
+    print(f"   • {BOLD}Junk Ratio        :{RST} {junk_ratio:.1f}% (Waste removed)")
     print(f"   • {BOLD}Total Efficiency :{RST} {GREEN}100%{RST} (Ready for Cloudflare)")
 
-    # --- NERD CORNER ---
     print(f"\n   {BOLD}🤓 NERD CORNER:{RST}")
-    
-    # Entropy
     ent_val = nerd_stats['max_entropy']
     ent_color = RED if ent_val > 4.5 else GREEN
     print(f"   • {BOLD}Highest Entropy :{RST} {ent_color}{nerd_stats['max_entropy_domain']}{RST}")
     print(f"     └─ Score: {ent_val:.2f} bits (Likely a botnet/DGA)")
 
-    # Longest Domain
     long_dom = nerd_stats['longest_domain']
-    # Truncate for display if massive
     display_dom = (long_dom[:50] + '...') if len(long_dom) > 50 else long_dom
     print(f"   • {BOLD}Longest Domain  :{RST} {BLUE}{display_dom}{RST}")
     print(f"     └─ Length: {len(long_dom)} chars")
 
-    # Vibe Check (Keywords)
     print(f"   • {BOLD}The Vibe Check  :{RST} (Most frequent tokens)")
     top_kwd = nerd_stats['keyword_counts'].most_common(3)
     for word, count in top_kwd:
@@ -401,7 +362,6 @@ def main():
                     for l in [ls for ls in lists if f['prefix'] in ls['name']]: cf.delete_list(l['id'])
                 return
 
-            # Fetch Step
             datasets = {}
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as exec:
                 future_to_name = {exec.submit(fetch_domains, f): f['name'] for f in FEED_CONFIGS}
@@ -411,7 +371,6 @@ def main():
                     datasets[name] = domains
                     feed_stats[name] = stats
             
-            # Deduplication Step
             logger.info("--- 🧠 Starting Deduplication ---")
             tif_name = "Threat Intel Feed"
             if tif_name in datasets:
@@ -420,28 +379,22 @@ def main():
                         before_count = len(domains)
                         datasets[name] -= datasets[tif_name]
                         after_count = len(domains)
-                        
                         feed_stats[name]['dedup_count'] = before_count - after_count
                         feed_stats[name]['valid_domains'] = after_count
 
-            # Sync Step
             logger.info("--- ☁️ Starting Cloudflare Sync ---")
             changed_files = []
-            
             for f in FEED_CONFIGS:
                 logger.info(f"⚡ Processing {f['name']}...")
                 if save_and_sync(cf, f, datasets[f['name']], args.force):
                     changed_files.append(f['filename'])
 
-            # Generate Stats File
             stats_file = write_markdown_stats(feed_stats)
             changed_files.append(stats_file)
 
-            # Git Push
             if Path(".git").exists() and changed_files:
                 git_push(changed_files)
         
-        # PRINT THE COOL STATS
         print_console_summary(feed_stats, datasets)
         logger.info("✅ Execution complete!")
 
