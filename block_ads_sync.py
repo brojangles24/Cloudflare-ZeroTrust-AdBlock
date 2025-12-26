@@ -44,7 +44,7 @@ FEED_CONFIGS = [
         "prefix": "Block ads",
         "policy_name": "Block Ads, Trackers and Telemetry",
         "filename": "HaGeZi_Normal.txt",
-        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt"]
+        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"]
     },
     {
         "name": "Threat Intel Feed",
