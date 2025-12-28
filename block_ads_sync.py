@@ -45,7 +45,7 @@ FEED_CONFIGS = [
         "policy_name": "Block Ads, Trackers and Telemetry",
         "filename": "HaGeZi_Pro.txt",
         "urls": [
-            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt", # Hagezi Pro
+            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt", # Hagezi Normal
             "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt", # Hagezi Fake
             "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt" # Hagezi Badware Hoster
         ]
@@ -62,7 +62,7 @@ FEED_CONFIGS = [
 # --- 3. Helper Functions ---
 INVALID_CHARS_PATTERN = re.compile(r'[<>&;\"\'/=\s]')
 # Your provided TLD exclusion regex
-EXCLUDED_TLD_PATTERN = re.compile(r'\.(?:bid|cf|click|download|ga|gdn|gq|icu|loan|men|ml|monster|ooo|party|pw|stream|su|tk|top|win|zip)$', re.IGNORECASE)
+EXCLUDED_TLD_PATTERN = re.compile('''r'\.(?:bid|cf|click|download|ga|gdn|gq|icu|loan|men|ml|monster|ooo|party|pw|stream|su|tk|top|win|zip)$', re.IGNORECASE''')
 COMMON_JUNK_DOMAINS = {'localhost', '127.0.0.1', '0.0.0.0', '::1', 'broadcasthost'}
 
 def validate_config():
