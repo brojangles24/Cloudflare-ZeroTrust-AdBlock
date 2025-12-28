@@ -43,8 +43,12 @@ FEED_CONFIGS = [
         "name": "Ad Block Feed",
         "prefix": "Block ads",
         "policy_name": "Block Ads, Trackers and Telemetry",
-        "filename": "HaGeZi_Normal.txt",
-        "urls": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"]
+        "filename": "HaGeZi_Pro.txt",
+        "urls": [
+            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt", # Hagezi Pro
+            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt", # Hagezi Fake
+            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt" # Hagezi Badware Hoster
+        ]
     },
     {
         "name": "Threat Intel Feed",
@@ -57,6 +61,8 @@ FEED_CONFIGS = [
 
 # --- 3. Helper Functions ---
 INVALID_CHARS_PATTERN = re.compile(r'[<>&;\"\'/=\s]')
+# Your provided TLD exclusion regex
+EXCLUDED_TLD_PATTERN = re.compile(r'\.(?:bid|cf|click|download|ga|gdn|gq|icu|loan|men|ml|monster|ooo|party|pw|stream|su|tk|top|win|zip)$', re.IGNORECASE)
 COMMON_JUNK_DOMAINS = {'localhost', '127.0.0.1', '0.0.0.0', '::1', 'broadcasthost'}
 
 def validate_config():
@@ -180,6 +186,10 @@ def fetch_domains(feed_config):
                 
                 if '.' in candidate and not INVALID_CHARS_PATTERN.search(candidate):
                     if candidate not in COMMON_JUNK_DOMAINS:
+                        if EXCLUDED_TLD_PATTERN.search(candidate):
+                            stats["excluded_tld"] += 1
+                            continue
+                            
                         tld = candidate.split('.')[-1]
                         unique_domains.add(candidate)
                         tld_counter[tld] += 1
@@ -319,7 +329,7 @@ def print_console_summary(feed_stats, datasets):
 
     print(f"\n   {CYAN}Performance Metrics:{RST}")
     print(f"   • {BOLD}Processing Speed :{RST} {velocity:,} domains/sec")
-    print(f"   • {BOLD}Junk Ratio        :{RST} {junk_ratio:.1f}% (Waste removed)")
+    print(f"   • {BOLD}Junk Ratio         :{RST} {junk_ratio:.1f}% (Waste removed)")
     print(f"   • {BOLD}Total Efficiency :{RST} {GREEN}100%{RST} (Ready for Cloudflare)")
 
     print(f"\n   {BOLD}🤓 NERD CORNER:{RST}")
