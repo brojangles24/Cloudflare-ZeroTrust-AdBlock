@@ -1,8 +1,8 @@
 # 🛡️ Blocklist Sync Statistics
-*Last updated: 2025-12-29 02:36:04*
+*Last updated: 2025-12-29 04:14:42*
 
 | Feed Name | Raw Lines | TLD Excluded | Overlap (TIF) | Final Count | Time (s) |
 |:---|---:|---:|---:|---:|---:|
-| **Ad Block Feed** | 141,654 | 0 (0.0%) | 21,683 | 119,836 | 0.58 |
-| **Threat Intel Feed** | 116,236 | 0 (0.0%) | 0 | 116,236 | 0.76 |
+| **Threat Intel Feed** | 116,236 | 0 (0.0%) | 0 | 116,236 | 0.29 |
+| **Ad Block Feed** | 141,654 | 0 (0.0%) | 21,683 | 119,836 | 0.90 |
 | **TOTALS** | **257,890** | **0** | **21,683** | **236,072** | |
