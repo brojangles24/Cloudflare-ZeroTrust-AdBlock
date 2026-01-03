@@ -1,25 +1,21 @@
 import os
 import sys
-import tempfile
-import shutil
 import re
-import concurrent.futures
+import time
 import logging
 import argparse
-import time
-import math
+import requests
 from datetime import datetime
 from pathlib import Path
 from subprocess import run, CalledProcessError
 from itertools import islice
 from collections import Counter
-import requests
 
 # --- 1. Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
 logger = logging.getLogger(__name__)
 
-# --- 2. Configuration Class ---
+# --- 2. Configuration & Filters ---
 class Config:
     API_TOKEN: str = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID: str = os.environ.get("ACCOUNT_ID", "")
@@ -29,12 +25,25 @@ class Config:
     GITHUB_ACTOR: str = os.environ.get("GITHUB_ACTOR", "github-actions[bot]")
     GITHUB_ACTOR_ID: str = os.environ.get("GITHUB_ACTOR_ID", "41898282")
 
-# --- UNIFIED FEED CONFIG ---
+# Top 50 Dangerous TLDs + Punycode exclusion
+DANGEROUS_TLDS = {
+    'zip', 'mov', 'top', 'gdn', 'bid', 'icu', 'bar', 'rest', 'buzz', 'gq', 
+    'tk', 'ml', 'cf', 'ga', 'fit', 'surf', 'live', 'amsterdam', 'country', 
+    'kim', 'onion', 'science', 'work', 'ninja', 'today', 'xyz', 'monster', 
+    'click', 'link', 'best', 'casa', 'diet', 'help', 'party', 'press', 
+    'rocks', 'space', 'website', 'win', 'beauty', 'hair', 'skin', 'quest', 
+    'degree', 'uno', 'cam', 'loan', 'stream', 'trade', 'accountant'
+}
+
+# Regex for Cloudflare Gateway (Blocks these TLDs and any domain containing xn--)
+TLD_REGEX = rf"^.*(\.{'|'.join(DANGEROUS_TLDS)})$|xn--"
+
 FEED_CONFIGS = [
     {
         "name": "Precision Protection",
         "prefix": "Block-Unified",
         "policy_name": "Main Block Policy",
+        "regex_policy_name": "Pattern Block Policy (TLD/Punycode)",
         "filename": "blocklist.txt",
         "urls": [
             "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/domains.wildcards",
@@ -119,12 +128,19 @@ def fetch_domains(feed_config):
             stats["raw_lines"] += 1
             
             candidate = line.split()[-1].lower()
-            if candidate.startswith('*.'): candidate = candidate[2:] # Cloudflare fix
+            if candidate.startswith('*.'): candidate = candidate[2:]
+            
+            # Punycode and TLD Filtering
+            parts = candidate.split('.')
+            tld = parts[-1] if len(parts) > 1 else ""
+            
+            if "xn--" in candidate: continue
+            if tld in DANGEROUS_TLDS: continue
             
             if '.' in candidate and not INVALID_CHARS_PATTERN.search(candidate):
                 if candidate not in COMMON_JUNK_DOMAINS:
                     unique_domains.add(candidate)
-                    stats["tlds"][candidate.split('.')[-1]] += 1
+                    stats["tlds"][tld] += 1
                         
     stats["valid_domains"] = len(unique_domains)
     stats["time_taken"] = time.time() - start_time
@@ -134,13 +150,15 @@ def save_and_sync(cf, feed, domains, force=False):
     out = Path(feed['filename'])
     new_data = '\n'.join(sorted(domains)) + '\n'
     if out.exists() and not force and out.read_text(encoding='utf-8') == new_data:
-        return False
+        # Still check if rules need updating even if files haven't changed
+        pass 
 
     out.write_text(new_data, encoding='utf-8')
     all_lists = cf.get_lists().get('result') or []
     existing = [l for l in all_lists if feed['prefix'] in l.get('name', '')]
     used_ids, excess = [], [l['id'] for l in existing]
 
+    # Sync Lists
     for i, chunk in enumerate(chunked_iterable(sorted(domains), Config.MAX_LIST_SIZE)):
         items = domains_to_cf_items(chunk)
         if excess:
@@ -153,14 +171,31 @@ def save_and_sync(cf, feed, domains, force=False):
             res = cf.create_list(f"{feed['prefix']} - {i+1:03d}", items)
             used_ids.append(res['result']['id'])
 
+    # Rules Logic
     rules = cf.get_rules().get('result') or []
+    
+    # 1. Main List Rule
     rid = next((r['id'] for r in rules if r.get('name') == feed['policy_name']), None)
     clauses = [{"any": {"in": {"lhs": {"splat": "dns.domains"}, "rhs": f"${lid}"}}} for lid in used_ids]
-    expr = {"or": clauses} if len(clauses) > 1 else clauses[0]
-    payload = {"name": feed['policy_name'], "conditions": [{"type": "traffic", "expression": expr}], "action": "block", "enabled": True, "filters": ["dns"]}
+    expr = {"or": clauses} if len(clauses) > 1 else (clauses[0] if clauses else None)
     
-    if rid: cf.update_rule(rid, payload)
-    else: cf.create_rule(payload)
+    if expr:
+        payload = {"name": feed['policy_name'], "conditions": [{"type": "traffic", "expression": expr}], "action": "block", "enabled": True, "filters": ["dns"]}
+        if rid: cf.update_rule(rid, payload)
+        else: cf.create_rule(payload)
+
+    # 2. Regex Pattern Rule (Dangerous TLDs & Punycode)
+    regex_rid = next((r['id'] for r in rules if r.get('name') == feed['regex_policy_name']), None)
+    regex_payload = {
+        "name": feed['regex_policy_name'],
+        "conditions": [{"type": "traffic", "expression": {"matches": {"lhs": "dns.domains", "rhs": TLD_REGEX}}}],
+        "action": "block",
+        "enabled": True,
+        "filters": ["dns"]
+    }
+    if regex_rid: cf.update_rule(regex_rid, regex_payload)
+    else: cf.create_rule(regex_payload)
+
     for lid in excess: cf.delete_list(lid)
     return True
 
@@ -191,8 +226,13 @@ def main():
                 rules = cf.get_rules().get('result') or []
                 lists = cf.get_lists().get('result') or []
                 for f in FEED_CONFIGS:
+                    # Delete list rule
                     rid = next((r['id'] for r in rules if r['name'] == f['policy_name']), None)
                     if rid: cf.delete_rule(rid)
+                    # Delete regex rule
+                    rrid = next((r['id'] for r in rules if r['name'] == f['regex_policy_name']), None)
+                    if rrid: cf.delete_rule(rrid)
+                    # Delete lists
                     for l in [ls for ls in lists if f['prefix'] in ls['name']]: cf.delete_list(l['id'])
                 return
 
