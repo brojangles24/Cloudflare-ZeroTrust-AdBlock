@@ -2,8 +2,8 @@ name: Cloudflare Gateway Sync
 
 on:
   # 1. Automatic: Run every day at 04:00 UTC
-  schedule:
-    - cron: '0 * * * *'
+  #schedule:
+    #- cron: '0 * * * *'
 
   # 2. Manual: Trigger with options
   workflow_dispatch:
