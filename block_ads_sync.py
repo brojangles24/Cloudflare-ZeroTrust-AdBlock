@@ -27,18 +27,16 @@ MASTER_CONFIG = {
     "policy_name": "AT4 Global Block",
     "filename": "aggregate_blocklist.txt",
     "banned_tlds": [
-    # --- CRITICAL: High-Risk Phishing & File-Extension Spoofing ---
-    "zip", "mov", "top", "icu", "win", "xin", "bond", "sbs", "cfd",
-
-    # --- ZOMBIE/ABUSE: Heavily used for Cybercrime & Botnets ---
-    "su", "pw", "tk", "ml", "ga", "cf", "gq", "cc", "buzz", "monster",
-
-    # --- PENNY SPAM: Extremely cheap domains used for "Burner" sites ---
-    "bid", "click", "gdn", "ooo", "onl", "work", "date", "dating",
-
-    # --- SCAM/SHADY: High concentration of predatory services ---
-    "bet", "poker", "bingo", "casino", "loan", "loans", "qpon", "coupons"
-],
+    "zip", "mov", "top", "su", "sbs", "cfd", "icu", "win", "xin", "bond",
+    "click", "monster", "buzz", "quest", "gdn", "online", "site", "website",
+    "tk", "ml", "ga", "cf", "gq", "pw", "cc", "xyz", "live", "vip",
+    "bet", "poker", "bingo", "casino", "loan", "loans", "credit", "money", 
+    "cash", "bid", "qpon", "coupons", "forex", "trading", "claims",
+    "motorcycles", "yachts", "boats", "fishing", "yoga", "fashion", "beauty", 
+    "beer", "vodka", "wine", "sexy", "hot", "luxe", "rich", "gold", "best",
+    "cool", "fun", "style", "shop", "shopping", "store", "deals", 
+    "discount", "boutique", "market", "sales", "promo", "today", "world"
+]
     "urls": {
         "HaGeZi Pro": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
         "TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
