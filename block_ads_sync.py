@@ -24,11 +24,11 @@ logger = logging.getLogger(__name__)
 
 MASTER_CONFIG = {
     "name": "AT4 Global", 
-    "prefix": "Block-Unified", 
+    "prefix": "AT4", 
     "policy_name": "AT4 Global Block",
     "filename": "aggregate_blocklist.txt",
     "urls": {
-        "HaGeZi Pro": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
+        "HaGeZi Pro": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
         "TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
         "Fake Hosters": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     }
