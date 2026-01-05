@@ -1,4 +1,3 @@
-
 import os
 import re
 import logging
@@ -27,6 +26,7 @@ MASTER_CONFIG = {
     "prefix": "AT4", 
     "policy_name": "AT4 Global Block",
     "filename": "aggregate_blocklist.txt",
+    "banned_tlds": ["zip", "mov", "top", "su", "sbs", "cfd", "icu"], # Top 5 malicious/banned TLDs
     "urls": {
         "HaGeZi Pro": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
         "TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
@@ -63,10 +63,14 @@ def is_valid_domain(domain):
     if '.' not in domain: return False
     if re.match(r'^\d{1,3}(\.\d{1,3}){3}$', domain): return False
     
-    # 2. Scorched Earth: Block Punycode (xn--)
-    # This remains enabled to prevent IDN homograph phishing attacks.
+    # 2. Punycode Exclusion (xn--)
     if 'xn--' in domain: return False
         
+    # 3. Banned TLD Regex Check (Exact TLD match at end of string)
+    tld_pattern = r'\.(' + '|'.join(MASTER_CONFIG['banned_tlds']) + ')$'
+    if re.search(tld_pattern, domain):
+        return False
+
     return True
 
 def fetch_url(name, url):
@@ -133,7 +137,6 @@ def write_markdown_stats(stats_data, original_unique, final_total):
     
     md.append(f"\n* **Optimized Savings:** {original_unique - final_total:,} redundant subdomains removed.")
     
-    # Alert if near hard cap
     if Config.TOTAL_QUOTA - final_total < 5000:
         md.append("\n⚠️ **CRITICAL QUOTA ALERT:** Less than 5,000 slots remaining.")
     
