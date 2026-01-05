@@ -36,7 +36,7 @@ MASTER_CONFIG = {
     "beer", "vodka", "wine", "sexy", "hot", "luxe", "rich", "gold", "best",
     "cool", "fun", "style", "shop", "shopping", "store", "deals", 
     "discount", "boutique", "market", "sales", "promo", "today", "world"
-]
+],
     "urls": {
         "HaGeZi Pro": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
         "TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
