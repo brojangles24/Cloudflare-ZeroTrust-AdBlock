@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 MASTER_CONFIG = {
     "name": "AT4 Global", 
-    "prefix": "AT4", 
+    "prefix": "Block-Unified", 
     "policy_name": "AT4 Global Block",
     "filename": "aggregate_blocklist.txt",
     "urls": {
