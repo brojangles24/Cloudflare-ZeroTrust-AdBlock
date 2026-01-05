@@ -1,35 +1,28 @@
 name: Cloudflare Gateway Sync
 
 on:
-  # 1. Automatic: Run every day at 04:00 UTC
-  #schedule:
-    #- cron: '0 * * * *'
-
-  # 2. Manual: Trigger with options
+  schedule:
+    - cron: '0 * * * *' # Corrected: Runs at 04:00 UTC daily
   workflow_dispatch:
     inputs:
       force_mode:
-        description: 'Force Update (Ignore local file diffs)'
+        description: 'Force Update'
         type: boolean
         default: false
       delete_mode:
-        description: '⚠️ Cleanup Mode (Delete all lists/relevant policies)'
+        description: 'Cleanup Mode'
         type: boolean
         default: false
 
 jobs:
   run-sync:
     runs-on: ubuntu-latest
-    
-    # REQUIRED: Grants permission to commit and push changes back to the repo
     permissions:
       contents: write
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Fetch full history so git diff/reset works correctly
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -39,27 +32,22 @@ jobs:
       - name: Install Dependencies
         run: pip install requests
 
-      - name: Run Blocklist Manager
+      - name: Run Sync
         env:
-          # You must set these in your Repository Settings > Secrets and Variables > Actions
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
         run: |
-          # Initialize arguments variable
-          SCRIPT_ARGS=""
+          ARGS=""
+          [ "${{ github.event.inputs.force_mode }}" == "true" ] && ARGS="--force"
+          [ "${{ github.event.inputs.delete_mode }}" == "true" ] && ARGS="--delete"
+          python3 block_ads_sync.py $ARGS
 
-          # Check for Manual Inputs
-          if [ "${{ inputs.force_mode }}" == "true" ]; then
-            echo "🔥 Force Mode Active"
-            SCRIPT_ARGS="$SCRIPT_ARGS --force"
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add *.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "Update blocklists [skip ci]"
+            git push
           fi
-
-          if [ "${{ inputs.delete_mode }}" == "true" ]; then
-            echo "⚠️ Delete Mode Active"
-            SCRIPT_ARGS="$SCRIPT_ARGS --delete"
-          fi
-
-          # Execute the script
-          # IMPORTANT: Ensure your python file is named 'block_ads_sync.py' 
-          # or change the name below to match your file.
-          python3 block_ads_sync.py $SCRIPT_ARGS
