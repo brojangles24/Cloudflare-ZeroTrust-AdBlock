@@ -27,19 +27,12 @@ MASTER_CONFIG = {
     "policy_name": "AT4 Global Block",
     "filename": "aggregate_blocklist.txt",
     "banned_tlds": [
-    "zip", "mov", "top", "su", "sbs", "cfd", "icu", "win", "xin", "bond",
-    "click", "monster", "buzz", "quest", "gdn", "online", "site", "website",
-    "tk", "ml", "ga", "cf", "gq", "pw", "cc", "xyz", "live", "vip",
-    "bet", "poker", "bingo", "casino", "loan", "loans", "credit", "money", 
-    "cash", "bid", "qpon", "coupons", "forex", "trading", "claims",
-    "motorcycles", "yachts", "boats", "fishing", "yoga", "fashion", "beauty", 
-    "beer", "vodka", "wine", "sexy", "hot", "luxe", "rich", "gold", "best",
-    "cool", "fun", "style", "shop", "shopping", "store", "deals", 
-    "discount", "boutique", "market", "sales", "promo", "today", "world"
+    "zip", "mov", "su", "top", "xin", "win", "icu", "sbs", 
+    "cfd", "bond", "monster", "buzz", "tk", "ml", "ga", 
+    "cf", "gq", "pw", "cc", "rest", "cam"
 ],
     "urls": {
         "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
-        "1Hosts Lite": "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/domains.wildcards",
         "TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
         "Fake Hosters": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     }
