@@ -31,14 +31,12 @@ MASTER_CONFIG = {
     "cfd", "bond", "monster", "buzz", "tk", "ml", "ga", 
     "cf", "gq", "pw", "cc", "rest", "cam", "kim", "cricket", 
     "science", "work", "party", "review", "country", "motorcycles", 
-    "ooo", "wang", "online", "host", "zw", "stream", 
+    "ooo", "wang", "host", "zw", "stream", 
     "date", "faith", "racing", "li", "ing", "foo", "meme", "bot"
 ],
     "urls": {
         "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
         "1Hosts Lite": "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/domains.wildcards",
-        "TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
-        #"Fake Hosters": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     }
 }
 
