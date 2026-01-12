@@ -29,7 +29,10 @@ MASTER_CONFIG = {
     "banned_tlds": [
     "zip", "mov", "su", "top", "xin", "win", "icu", "sbs", 
     "cfd", "bond", "monster", "buzz", "tk", "ml", "ga", 
-    "cf", "gq", "pw", "cc", "rest", "cam"
+    "cf", "gq", "pw", "cc", "rest", "cam", "kim", "cricket", 
+    "science", "work", "party", "review", "country", "motorcycles", 
+    "ooo", "wang", "online", "host", "zw", "stream", 
+    "date", "faith", "racing", "li", "ing", "foo", "meme", "bot"
 ],
     "urls": {
         "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
