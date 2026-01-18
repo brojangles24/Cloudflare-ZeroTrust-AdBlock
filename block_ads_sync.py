@@ -5,25 +5,27 @@ from pathlib import Path
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-# --- Config ---
+# --- 1. Config ---
 class Config:
     API_TOKEN = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID = os.environ.get("ACCOUNT_ID", "")
     MAX_LIST_SIZE = 1000 
+    MAX_RETRIES = 5
     TOTAL_QUOTA = 300000 
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s', datefmt='%H:%M:%S')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
 logger = logging.getLogger(__name__)
 
 MASTER_CONFIG = {
-    "prefix": "AT4",
-    "policy_name": "AT4_Policy",
-    "filename": "blocklist.txt",
+    "name": "Ads, Tracker, Telemetry, Malware", 
+    "prefix": "Ads, Tracker, Telemetry, Malware", 
+    "policy_name": "Ads, Tracker, Telemetry, Malware",
+    "filename": "aggregate_blocklist.txt",
     "banned_tlds": {
-        "top", "xin", "bond", "cfd", "sbs", "icu", "win", "help", "cyou", "monster", 
-        "click", "quest", "buzz", "ink", "fyi", "su", "motorcycles", "gay", "pw", 
-        "gdn", "loan", "men", "party", "review", "webcam", "hair", "fun", "cam", 
-        "stream", "bid", "zip", "mov", "xyz", "cn", "cc"
+        "top", "xin", "bond", "cfd", "sbs", "icu", "win", "help", "cyou", 
+        "monster", "click", "quest", "buzz", "ink", "fyi", "su", "motorcycles", 
+        "gay", "pw", "gdn", "loan", "men", "party", "review", "webcam", 
+        "hair", "fun", "cam", "stream", "bid", "zip", "mov", "xyz", "cn", "cc"
     },
     "urls": {
         #"HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
@@ -35,87 +37,184 @@ MASTER_CONFIG = {
     }
 }
 
+# --- 2. API Client ---
 class CloudflareAPI:
     def __init__(self):
         self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{Config.ACCOUNT_ID}/gateway"
         self.headers = {"Authorization": f"Bearer {Config.API_TOKEN}", "Content-Type": "application/json"}
         self.session = requests.Session()
-        self.session.mount("https://", HTTPAdapter(max_retries=Retry(total=5, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])))
+        retries = Retry(total=Config.MAX_RETRIES, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+        self.session.mount("https://", HTTPAdapter(max_retries=retries))
 
-    def req(self, method, ep, **kwargs):
-        r = self.session.request(method, f"{self.base_url}/{ep}", headers=self.headers, **kwargs)
-        r.raise_for_status()
-        return r.json()
+    def _request(self, method, endpoint, **kwargs):
+        resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, **kwargs)
+        resp.raise_for_status()
+        return resp.json()
 
-def fetch_and_filter(name, url):
-    excluded_counts = Counter()
+    def get_lists(self): return self._request("GET", "lists").get('result') or []
+    def update_list(self, lid, name, items): return self._request("PUT", f"lists/{lid}", json={"name": name, "items": items})
+    def create_list(self, name, items): return self._request("POST", "lists", json={"name": name, "type": "DOMAIN", "items": items})
+    def delete_list(self, lid): return self._request("DELETE", f"lists/{lid}")
+    def get_rules(self): return self._request("GET", "rules").get('result') or []
+    def create_rule(self, data): return self._request("POST", "rules", json=data)
+    def update_rule(self, rid, data): return self._request("PUT", f"rules/{rid}", json=data)
+    def delete_rule(self, rid): return self._request("DELETE", f"rules/{rid}")
+
+# --- 3. Processing Logic ---
+def is_valid_domain(domain, ex_counts):
+    # 1. Basics: Must have a dot, no IP addresses, no Punycode
+    if '.' not in domain or 'xn--' in domain or re.match(r'^\d{1,3}(\.\d{1,3}){3}$', domain):
+        return False
+        
+    # 2. Banned TLD Check
+    tld = domain.rsplit('.', 1)[-1]
+    if tld in MASTER_CONFIG['banned_tlds']:
+        ex_counts[tld] += 1
+        return False
+
+    return True
+
+def fetch_url(name, url):
+    logger.info(f"Fetching: {name}")
+    ex_counts = Counter()
     valid_domains = set()
+    raw_count = 0
     try:
-        r = requests.get(url, timeout=30)
-        r.raise_for_status()
-        for line in r.text.splitlines():
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        for line in resp.text.splitlines():
             line = line.strip()
             if not line or line.startswith(('#', '!', '//')): continue
-            
+            raw_count += 1
             domain = line.split()[-1].lower()
-            
-            # Basic validation
-            if '.' not in domain or 'xn--' in domain or re.match(r'^\d{1,3}(\.\d{1,3}){3}$', domain):
-                continue
-                
-            # TLD Exclusion Check
-            tld = domain.rsplit('.', 1)[-1]
-            if tld in MASTER_CONFIG['banned_tlds']:
-                excluded_counts[tld] += 1
-                continue
-            
-            valid_domains.add(domain)
-            
-        return name, valid_domains, excluded_counts
+            if is_valid_domain(domain, ex_counts):
+                valid_domains.add(domain)
+        return name, raw_count, valid_domains, ex_counts
     except Exception as e:
-        logger.error(f"Failed {name}: {e}")
-        return name, set(), Counter()
+        logger.error(f"Error fetching {name}: {e}")
+        return name, 0, set(), Counter()
 
-def optimize(domains):
-    rev = sorted([d[::-1] for d in domains])
-    kept, last = [], ""
-    for d in rev:
-        if not (last and d.startswith(last + ".")):
-            kept.append(d)
-            last = d
-    return [d[::-1] for d in kept]
+def optimize_domains(domains):
+    logger.info("Performing Tree-Based Deduplication...")
+    reversed_domains = sorted([d[::-1] for d in domains])
+    optimized, last_kept = [], None
+    for d in reversed_domains:
+        if last_kept and d.startswith(last_kept + "."):
+            continue
+        optimized.append(d)
+        last_kept = d
+    return [d[::-1] for d in optimized]
 
+# --- 4. Sync Mechanism ---
+def sync_at4(cf, domains, force):
+    # 1. Update/Create the TLD Block Rule (Regex)
+    tld_regex = r'\.(' + '|'.join(MASTER_CONFIG['banned_tlds']) + ')$'
+    tld_rule_name = "Block High-Risk TLDs (Regex)"
+    
+    rules = cf.get_rules()
+    tld_rid = next((r['id'] for r in rules if r['name'] == tld_rule_name), None)
+    
+    tld_payload = {
+        "name": tld_rule_name,
+        "action": "block",
+        "enabled": True,
+        "filters": ["dns"],
+        "traffic": f'any(dns.fqdn matches r#"{tld_regex}"#)'
+    }
+    
+    if tld_rid: cf.update_rule(tld_rid, tld_payload)
+    else: cf.create_rule(tld_payload)
+
+    # 2. Check for changes
+    out = Path(MASTER_CONFIG['filename'])
+    new_content = '\n'.join(sorted(domains))
+    if out.exists() and not force and out.read_text().strip() == new_content.strip():
+        logger.info("No changes detected. Skipping Sync.")
+        return
+    out.write_text(new_content)
+
+    # 3. Sync Lists
+    lists = cf.get_lists()
+    existing = sorted([l for l in lists if MASTER_CONFIG['prefix'] in l['name']], key=lambda x: x['name'])
+    
+    sorted_domains = sorted(list(domains))
+    chunks = [sorted_domains[i:i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
+    used_ids = []
+
+    logger.info(f"Syncing {len(chunks)} chunks to Cloudflare...")
+
+    for idx, chunk in enumerate(chunks):
+        list_name = f"{MASTER_CONFIG['prefix']} {idx+1:03d}"
+        items = [{"value": d} for d in chunk]
+        if idx < len(existing):
+            lid = existing[idx]['id']
+            cf.update_list(lid, list_name, items)
+            used_ids.append(lid)
+        else:
+            res = cf.create_list(list_name, items)
+            used_ids.append(res['result']['id'])
+
+    # 4. Update Policy Rule
+    rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
+    clauses = [f'any(dns.domains[*] in ${lid})' for lid in used_ids]
+    payload = {
+        "name": MASTER_CONFIG['policy_name'], 
+        "action": "block", 
+        "enabled": True, 
+        "filters": ["dns"], 
+        "traffic": " or ".join(clauses)
+    }
+    
+    if rid: cf.update_rule(rid, payload)
+    else: cf.create_rule(payload)
+    
+    # 5. Cleanup
+    if len(existing) > len(chunks):
+        for old_list in existing[len(chunks):]:
+            cf.delete_list(old_list['id'])
+    logger.info("Sync Complete.")
+
+# --- 5. Main ---
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--delete", action="store_true")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     
     cf = CloudflareAPI()
-    all_domains = set()
-    global_exclusions = Counter()
+
+    if args.delete:
+        rules, lists = cf.get_rules(), cf.get_lists()
+        rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
+        if rid: cf.delete_rule(rid)
+        tld_rid = next((r['id'] for r in rules if r['name'] == "Block High-Risk TLDs (Regex)"), None)
+        if tld_rid: cf.delete_rule(tld_rid)
+        for l in [ls for ls in lists if MASTER_CONFIG['prefix'] in ls['name']]: cf.delete_list(l['id'])
+        return
+
+    all_unique = set()
+    global_ex = Counter()
     
-    with concurrent.futures.ThreadPoolExecutor() as ex:
-        futures = [ex.submit(fetch_and_filter, n, u) for n, u in MASTER_CONFIG['urls'].items()]
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = {executor.submit(fetch_url, name, url): name for name, url in MASTER_CONFIG['urls'].items()}
         for future in concurrent.futures.as_completed(futures):
-            name, domains, exclusions = future.result()
-            all_domains.update(domains)
-            global_exclusions.update(exclusions)
+            name, raw, valid_domains, ex_counts = future.result()
+            all_unique.update(valid_domains)
+            global_ex.update(ex_counts)
 
-    # Report Exclusions
-    total_excluded = sum(global_exclusions.values())
-    logger.info("--- TLD EXCLUSION REPORT ---")
-    for tld, count in global_exclusions.most_common(10):
-        logger.info(f".{tld}: {count:,} domains removed")
-    logger.info(f"TOTAL DOMAINS EXCLUDED: {total_excluded:,}")
-    logger.info("----------------------------")
+    # Exclusion Reporting
+    total_excluded = sum(global_ex.values())
+    logger.info(f"TLD EXCLUSIONS: {total_excluded:,} domains removed.")
+    for tld, count in global_ex.most_common(5):
+        logger.info(f"  .{tld}: {count:,}")
 
-    final = optimize(list(all_domains))
+    optimized_list = optimize_domains(all_unique)
     
-    if len(final) <= Config.TOTAL_QUOTA:
-        # Syncing logic from previous version goes here
-        logger.info(f"Final domain count for Cloudflare: {len(final):,}")
-    else:
-        logger.error(f"Quota exceeded: {len(final):,} > {Config.TOTAL_QUOTA}")
+    if len(optimized_list) > Config.TOTAL_QUOTA:
+        logger.error(f"OVER QUOTA: {len(optimized_list):,}. Script aborted.")
+        return
+
+    sync_at4(cf, optimized_list, args.force)
 
 if __name__ == "__main__":
     main()
