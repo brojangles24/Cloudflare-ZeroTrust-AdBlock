@@ -1,236 +1,117 @@
-import os
-import re
-import logging
-import argparse
-import requests
-import concurrent.futures
+import os, re, logging, argparse, requests, concurrent.futures
 from datetime import datetime
 from pathlib import Path
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-# --- 1. Config ---
+# --- Config ---
 class Config:
     API_TOKEN = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID = os.environ.get("ACCOUNT_ID", "")
     MAX_LIST_SIZE = 1000 
-    MAX_RETRIES = 5
-    # Cloudflare Zero Trust Free Limit
     TOTAL_QUOTA = 300000 
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s', datefmt='%H:%M:%S')
 logger = logging.getLogger(__name__)
 
 MASTER_CONFIG = {
-    "name": "Ads, Tracker, Telemetry, Malware", 
-    "prefix": "Ads, Tracker, Telemetry, Malware", 
-    "policy_name": "Ads, Tracker, Telemetry, Malware",
-    "filename": "aggregate_blocklist.txt",
-    "banned_tlds": [
-    "top", "xin", "bond", "cfd", "sbs", "icu", "win", "help", "cyou", 
-    "monster", "click", "quest", "buzz", "ink", "fyi", "su", "motorcycles", 
-    "gay", "pw", "gdn", "loan", "men", "party", "review", "webcam", 
-    "hair", "fun", "cam", "stream", "bid", "zip", "mov", "xyz", "cn", "cc",
-],
+    "prefix": "AT4",
+    "policy_name": "AT4_Policy",
+    "filename": "blocklist.txt",
+    "banned_tlds": {
+        "top", "xin", "bond", "cfd", "sbs", "icu", "win", "help", "cyou", "monster", 
+        "click", "quest", "buzz", "ink", "fyi", "su", "motorcycles", "gay", "pw", 
+        "gdn", "loan", "men", "party", "review", "webcam", "hair", "fun", "cam", 
+        "stream", "bid", "zip", "mov", "xyz", "cn", "cc"
+    },
     "urls": {
         "HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
         "TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
-        "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     }
 }
 
-# --- 2. API Client ---
 class CloudflareAPI:
     def __init__(self):
         self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{Config.ACCOUNT_ID}/gateway"
         self.headers = {"Authorization": f"Bearer {Config.API_TOKEN}", "Content-Type": "application/json"}
         self.session = requests.Session()
-        retries = Retry(total=Config.MAX_RETRIES, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
-        self.session.mount("https://", HTTPAdapter(max_retries=retries))
+        self.session.mount("https://", HTTPAdapter(max_retries=Retry(total=5, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])))
 
-    def _request(self, method, endpoint, **kwargs):
-        resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, **kwargs)
-        resp.raise_for_status()
-        return resp.json()
+    def req(self, method, ep, **kwargs):
+        r = self.session.request(method, f"{self.base_url}/{ep}", headers=self.headers, **kwargs)
+        r.raise_for_status()
+        return r.json()
 
-    def get_lists(self): return self._request("GET", "lists").get('result') or []
-    def update_list(self, lid, name, items): return self._request("PUT", f"lists/{lid}", json={"name": name, "items": items})
-    def create_list(self, name, items): return self._request("POST", "lists", json={"name": name, "type": "DOMAIN", "items": items})
-    def delete_list(self, lid): return self._request("DELETE", f"lists/{lid}")
-    def get_rules(self): return self._request("GET", "rules").get('result') or []
-    def create_rule(self, data): return self._request("POST", "rules", json=data)
-    def update_rule(self, rid, data): return self._request("PUT", f"rules/{rid}", json=data)
-    def delete_rule(self, rid): return self._request("DELETE", f"rules/{rid}")
-
-# --- 3. Logic ---
-def is_valid_domain(domain):
-    # 1. Basics: Must have a dot, no IP addresses
-    if '.' not in domain: return False
-    if re.match(r'^\d{1,3}(\.\d{1,3}){3}$', domain): return False
-    
-    # 2. Punycode Exclusion (xn--)
-    if 'xn--' in domain: return False
-        
-    # 3. Banned TLD Regex Check (Exact TLD match at end of string)
-    # This prevents domains from these TLDs from taking up list space
-    tld_pattern = r'\.(' + '|'.join(MASTER_CONFIG['banned_tlds']) + ')$'
-    if re.search(tld_pattern, domain):
+def is_valid(domain):
+    if '.' not in domain or 'xn--' in domain or re.match(r'^\d{1,3}(\.\d{1,3}){3}$', domain):
         return False
+    return domain.rsplit('.', 1)[-1] not in MASTER_CONFIG['banned_tlds']
 
-    return True
-
-def fetch_url(name, url):
-    logger.info(f"Fetching: {name}")
+def fetch_and_filter(name, url):
     try:
-        resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-        lines = resp.text.splitlines()
-        valid_domains = set()
-        raw_count = 0
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith(('#', '!', '//')): continue
-            raw_count += 1
-            domain = line.split()[-1].lower()
-            if is_valid_domain(domain):
-                valid_domains.add(domain)
-        return name, raw_count, valid_domains
+        r = requests.get(url, timeout=30)
+        r.raise_for_status()
+        valid = {d for line in r.text.splitlines() if (d := line.strip().split()[-1].lower()) and not line.startswith(('#', '!', '//')) and is_valid(d)}
+        return name, len(valid), valid
     except Exception as e:
-        logger.error(f"Error fetching {name}: {e}")
+        logger.error(f"Failed {name}: {e}")
         return name, 0, set()
 
-def optimize_domains(domains):
-    """Aggressive Subdomain Removal (Blocks parent only)."""
-    logger.info("Performing Tree-Based Deduplication...")
-    reversed_domains = sorted([d[::-1] for d in domains])
-    optimized = []
-    last_kept = None
-    for d in reversed_domains:
-        if last_kept and d.startswith(last_kept + "."):
-            continue
-        optimized.append(d)
-        last_kept = d
-    return [d[::-1] for d in optimized]
+def optimize(domains):
+    rev = sorted([d[::-1] for d in domains])
+    kept, last = [], ""
+    for d in rev:
+        if not (last and d.startswith(last + ".")):
+            kept.append(d)
+            last = d
+    return [d[::-1] for d in kept]
 
-def fetch_and_process():
-    all_unique = set()
-    stats_data = []
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = {executor.submit(fetch_url, name, url): name for name, url in MASTER_CONFIG['urls'].items()}
-        for future in concurrent.futures.as_completed(futures):
-            name, raw_count, valid_domains = future.result()
-            stats_data.append({"name": name, "raw": raw_count, "valid": len(valid_domains)})
-            all_unique.update(valid_domains)
-    
-    original_count = len(all_unique)
-    optimized_list = optimize_domains(all_unique)
-    return optimized_list, stats_data, original_count
-
-def write_markdown_stats(stats_data, original_unique, final_total):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    usage_pct = (final_total / Config.TOTAL_QUOTA) * 100
-    
-    md = [
-        f"# 🛡️ AT4 Global Statistics",
-        f"*Updated: {now}*",
-        f"\n**QUOTA WATCH:** `{final_total:,} / {Config.TOTAL_QUOTA:,} ({usage_pct:.1f}%)`",
-        "",
-        "| Source | Raw | Unique |",
-        "| :--- | :---: | :---: |"
-    ]
-    for s in stats_data:
-        md.append(f"| {s['name']} | {s['raw']:,} | {s['valid']:,} |")
-    
-    md.append(f"\n* **Optimized Savings:** {original_unique - final_total:,} redundant subdomains removed.")
-    
-    if Config.TOTAL_QUOTA - final_total < 5000:
-        md.append("\n⚠️ **CRITICAL QUOTA ALERT:** Less than 5,000 slots remaining.")
-    
-    Path("STATS.md").write_text('\n'.join(md))
-    logger.info(f"FINAL COUNT: {final_total:,} ({usage_pct:.1f}% used)")
-
-def sync_at4(cf, domains, force):
-    # 1. Update/Create the TLD Block Rule (Regex)
-    # This rule blocks the top 50 TLDs entirely so they don't need to be in the lists
+def sync(cf, domains):
+    # 1. TLD Rule
     tld_regex = r'\.(' + '|'.join(MASTER_CONFIG['banned_tlds']) + ')$'
-    tld_rule_name = "Block High-Risk TLDs (Top 50)"
+    rules = cf.req("GET", "rules")['result']
+    tld_payload = {"name": "Banned TLDs", "action": "block", "enabled": True, "filters": ["dns"], "traffic": f'any(dns.fqdn matches r#"{tld_regex}"#)'}
     
-    rules = cf.get_rules()
-    tld_rid = next((r['id'] for r in rules if r['name'] == tld_rule_name), None)
-    
-    tld_payload = {
-        "name": tld_rule_name,
-        "action": "block",
-        "enabled": True,
-        "filters": ["dns"],
-        "traffic": f'any(dns.fqdn matches r#"{tld_regex}"#)'
-    }
-    
-    if tld_rid: cf.update_rule(tld_rid, tld_payload)
-    else: cf.create_rule(tld_payload)
+    tld_rid = next((r['id'] for r in rules if r['name'] == "Banned TLDs"), None)
+    cf.req("PUT" if tld_rid else "POST", f"rules/{tld_rid}" if tld_rid else "rules", json=tld_payload)
 
-    # 2. Sync Lists and Policy
-    out = Path(MASTER_CONFIG['filename'])
-    new_content = '\n'.join(sorted(domains))
-    if out.exists() and not force and out.read_text().strip() == new_content.strip():
-        logger.info("No changes detected. Skipping Sync.")
-        return
-    out.write_text(new_content)
-
-    lists = cf.get_lists()
-    existing = sorted([l for l in lists if MASTER_CONFIG['prefix'] in l['name']], key=lambda x: x['name'])
-    
-    sorted_domains = sorted(list(domains))
-    chunks = [sorted_domains[i:i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
+    # 2. Lists
+    existing = sorted([l for l in cf.req("GET", "lists")['result'] if MASTER_CONFIG['prefix'] in l['name']], key=lambda x: x['name'])
+    chunks = [domains[i:i + Config.MAX_LIST_SIZE] for i in range(0, len(domains), Config.MAX_LIST_SIZE)]
     used_ids = []
 
-    logger.info(f"Syncing {len(chunks)} chunks to Cloudflare...")
-
-    for idx, chunk in enumerate(chunks):
-        list_name = f"{MASTER_CONFIG['prefix']} {idx+1:03d}"
-        items = [{"value": d} for d in chunk]
-        if idx < len(existing):
-            lid = existing[idx]['id']
-            cf.update_list(lid, list_name, items)
-            used_ids.append(lid)
+    for i, chunk in enumerate(chunks):
+        name, items = f"{MASTER_CONFIG['prefix']}_{i:03}", [{"value": d} for d in chunk]
+        if i < len(existing):
+            cf.req("PUT", f"lists/{existing[i]['id']}", json={"name": name, "items": items})
+            used_ids.append(existing[i]['id'])
         else:
-            res = cf.create_list(list_name, items)
-            used_ids.append(res['result']['id'])
+            used_ids.append(cf.req("POST", "lists", json={"name": name, "type": "DOMAIN", "items": items})['result']['id'])
 
-    rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
-    clauses = [f'any(dns.domains[*] in ${lid})' for lid in used_ids]
-    payload = {"name": MASTER_CONFIG['policy_name'], "action": "block", "enabled": True, "filters": ["dns"], "traffic": " or ".join(clauses)}
+    # 3. Policy Rule
+    policy_payload = {"name": MASTER_CONFIG['policy_name'], "action": "block", "enabled": True, "filters": ["dns"], "traffic": " or ".join([f'any(dns.domains[*] in ${lid})' for lid in used_ids])}
+    pol_rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
+    cf.req("PUT" if pol_rid else "POST", f"rules/{pol_rid}" if pol_rid else "rules", json=policy_payload)
     
-    if rid: cf.update_rule(rid, payload)
-    else: cf.create_rule(payload)
-    
+    # Cleanup
     if len(existing) > len(chunks):
-        for old_list in existing[len(chunks):]:
-            cf.delete_list(old_list['id'])
-    logger.info("Sync Complete.")
+        for l in existing[len(chunks):]: cf.req("DELETE", f"lists/{l['id']}")
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--delete", action="store_true")
-    parser.add_argument("--force", action="store_true")
-    args = parser.parse_args()
-    cf = CloudflareAPI()
-
-    if args.delete:
-        rules, lists = cf.get_rules(), cf.get_lists()
-        rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
-        if rid: cf.delete_rule(rid)
-        for l in [ls for ls in lists if MASTER_CONFIG['prefix'] in ls['name']]: cf.delete_list(l['id'])
-        return
-
-    all_domains, stats_data, original_unique = fetch_and_process()
+    args = argparse.ArgumentParser()
+    args.add_argument("--force", action="store_true")
+    cf, all_domains = CloudflareAPI(), set()
     
-    if len(all_domains) > Config.TOTAL_QUOTA:
-        logger.error(f"OVER QUOTA: {len(all_domains):,}. Script aborted.")
-        exit(1)
+    with concurrent.futures.ThreadPoolExecutor() as ex:
+        for _, _, d in [f.result() for f in [ex.submit(fetch_and_filter, n, u) for n, u in MASTER_CONFIG['urls'].items()]]:
+            all_domains.update(d)
 
-    write_markdown_stats(stats_data, original_unique, len(all_domains))
-    sync_at4(cf, all_domains, args.force)
+    final = optimize(list(all_domains))
+    if len(final) <= Config.TOTAL_QUOTA:
+        sync(cf, sorted(final))
+        logger.info(f"Success. Active domains: {len(final)}")
+    else:
+        logger.error("Quota exceeded.")
 
 if __name__ == "__main__":
     main()
