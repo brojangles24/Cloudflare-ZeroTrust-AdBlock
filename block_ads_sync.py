@@ -22,10 +22,6 @@ MASTER_CONFIG = {
     "policy_name": "Ads, Tracker, Telemetry, Malware",
     "filename": "aggregate_blocklist.txt",
     "banned_tlds": {
-        "top", "xin", "bond", "cfd", "sbs", "icu", "win", "help", "cyou", 
-        "monster", "click", "quest", "buzz", "ink", "fyi", "su", "motorcycles", 
-        "gay", "pw", "gdn", "loan", "men", "party", "review", "webcam", 
-        "hair", "fun", "cam", "stream", "bid", "zip", "mov", "xyz", "cn", "cc"
     },
     "urls": {
         #"HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
@@ -33,7 +29,7 @@ MASTER_CONFIG = {
         #"HaGeZi Pro": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
         #"1Hosts Lite": "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/domains.wildcards",
         "TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
-        "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
+        #"HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     }
 }
 
