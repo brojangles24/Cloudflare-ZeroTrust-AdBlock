@@ -15,12 +15,12 @@ class Config:
     ACCOUNT_ID = os.environ.get("ACCOUNT_ID", "")
     MAX_LIST_SIZE = 1000 
     MAX_RETRIES = 5
+    # Cloudflare Zero Trust Free Limit
     TOTAL_QUOTA = 300000 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
 logger = logging.getLogger(__name__)
 
-# Master configuration for sources and lists
 MASTER_CONFIG = {
     "name": "Ads, Tracker, Telemetry, Malware", 
     "prefix": "Ads, Tracker, Telemetry, Malware", 
@@ -58,43 +58,45 @@ class CloudflareAPI:
     def delete_rule(self, rid): return self._request("DELETE", f"rules/{rid}")
 
 # --- 3. Logic ---
-def get_banned_tlds():
-    """Fetches the latest HaGeZi spam TLDs and adds Punycode/custom blocks."""
+
+def get_dynamic_banned_tlds():
+    """Fetches the latest HaGeZi TLD list and adds custom/Punycode blocks."""
     logger.info("Fetching latest TLD blocklist from HaGeZi...")
     try:
         resp = requests.get(MASTER_CONFIG['hagezi_tld_url'], timeout=15)
         resp.raise_for_status()
         
-        # Initialize with Punycode block
+        # Start with Punycode block
         tlds = {r"xn--[a-z0-9-]+"}
         
-        lines = resp.text.splitlines()
-        for line in lines:
+        for line in resp.text.splitlines():
             line = line.strip()
             if line and not line.startswith(('#', '!', '//')):
+                # HaGeZi list is often just the TLD names
                 clean_tld = line.replace("*.", "").replace(".", "")
                 tlds.add(re.escape(clean_tld))
         
         return sorted(list(tlds))
     except Exception as e:
-        logger.error(f"Failed to fetch HaGeZi TLDs: {e}")
-        # Fallback TLDs if fetch fails
-        return ["top", "icu", "click", "bond", "cfd", "sbs", "win", "xn--[a-z0-9-]+"]
+        logger.error(f"Failed to fetch TLDs: {e}. Falling back to basic list.")
+        return ["top", "icu", "click", "zip", "mov", "xn--[a-z0-9-]+"]
 
-def is_valid_domain(domain, tld_pattern):
+def is_valid_domain(domain, tld_regex):
+    # 1. Basics: Must have a dot, no IP addresses
     if '.' not in domain: return False
     if re.match(r'^\d{1,3}(\.\d{1,3}){3}$', domain): return False
     
-    # Punycode check is now handled via the TLD pattern if we choose,
-    # but kept here for general list cleanliness
+    # 2. Punycode Exclusion (xn--) 
+    # (Covered by regex, but explicit check for safety/speed)
     if 'xn--' in domain: return False
-    
-    # Regex check against our dynamic TLD list
-    if re.search(tld_pattern, domain):
+        
+    # 3. Banned TLD Regex Check (Exact TLD match at end of string)
+    if tld_regex.search(domain):
         return False
+
     return True
 
-def fetch_url(name, url, tld_pattern):
+def fetch_url(name, url, tld_regex):
     logger.info(f"Fetching: {name}")
     try:
         resp = requests.get(url, timeout=30)
@@ -107,7 +109,7 @@ def fetch_url(name, url, tld_pattern):
             if not line or line.startswith(('#', '!', '//')): continue
             raw_count += 1
             domain = line.split()[-1].lower()
-            if is_valid_domain(domain, tld_pattern):
+            if is_valid_domain(domain, tld_regex):
                 valid_domains.add(domain)
         return name, raw_count, valid_domains
     except Exception as e:
@@ -115,6 +117,7 @@ def fetch_url(name, url, tld_pattern):
         return name, 0, set()
 
 def optimize_domains(domains):
+    """Aggressive Subdomain Removal (Blocks parent only)."""
     logger.info("Performing Tree-Based Deduplication...")
     reversed_domains = sorted([d[::-1] for d in domains])
     optimized = []
@@ -129,7 +132,9 @@ def optimize_domains(domains):
 def fetch_and_process(banned_tlds):
     all_unique = set()
     stats_data = []
-    tld_pattern = r'\.(' + '|'.join(banned_tlds) + ')$'
+    
+    # Pre-compile the TLD regex once
+    tld_pattern = re.compile(r'\.(' + '|'.join(banned_tlds) + ')$')
     
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = {executor.submit(fetch_url, name, url, tld_pattern): name for name, url in MASTER_CONFIG['urls'].items()}
@@ -145,6 +150,7 @@ def fetch_and_process(banned_tlds):
 def write_markdown_stats(stats_data, original_unique, final_total):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     usage_pct = (final_total / Config.TOTAL_QUOTA) * 100
+    
     md = [
         f"# 🛡️ AT4 Global Statistics",
         f"*Updated: {now}*",
@@ -155,12 +161,18 @@ def write_markdown_stats(stats_data, original_unique, final_total):
     ]
     for s in stats_data:
         md.append(f"| {s['name']} | {s['raw']:,} | {s['valid']:,} |")
+    
     md.append(f"\n* **Optimized Savings:** {original_unique - final_total:,} redundant subdomains removed.")
+    
+    if Config.TOTAL_QUOTA - final_total < 5000:
+        md.append("\n⚠️ **CRITICAL QUOTA ALERT:** Less than 5,000 slots remaining.")
+    
     Path("STATS.md").write_text('\n'.join(md))
+    logger.info(f"FINAL COUNT: {final_total:,} ({usage_pct:.1f}% used)")
 
 def sync_at4(cf, domains, force, banned_tlds):
-    # 1. Update/Create the TLD Block Rule (Regex Policy)
-    tld_regex = r'\.(' + '|'.join(banned_tlds) + ')$'
+    # 1. Update/Create the TLD Block Rule (Regex)
+    tld_regex_str = r'\.(' + '|'.join(banned_tlds) + ')$'
     tld_rule_name = "Block High-Risk TLDs (HaGeZi + xn--)"
     
     rules = cf.get_rules()
@@ -171,17 +183,17 @@ def sync_at4(cf, domains, force, banned_tlds):
         "action": "block",
         "enabled": True,
         "filters": ["dns"],
-        "traffic": f'any(dns.fqdn matches r#"{tld_regex}"#)'
+        "traffic": f'any(dns.fqdn matches r#"{tld_regex_str}"#)'
     }
     
     if tld_rid: cf.update_rule(tld_rid, tld_payload)
     else: cf.create_rule(tld_payload)
 
-    # 2. Sync Domain Lists
+    # 2. Sync Lists and Policy
     out = Path(MASTER_CONFIG['filename'])
     new_content = '\n'.join(sorted(domains))
     if out.exists() and not force and out.read_text().strip() == new_content.strip():
-        logger.info("No domain changes. Skipping Sync.")
+        logger.info("No changes detected. Skipping Sync.")
         return
     out.write_text(new_content)
 
@@ -191,6 +203,8 @@ def sync_at4(cf, domains, force, banned_tlds):
     sorted_domains = sorted(list(domains))
     chunks = [sorted_domains[i:i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
     used_ids = []
+
+    logger.info(f"Syncing {len(chunks)} chunks to Cloudflare...")
 
     for idx, chunk in enumerate(chunks):
         list_name = f"{MASTER_CONFIG['prefix']} {idx+1:03d}"
@@ -203,7 +217,6 @@ def sync_at4(cf, domains, force, banned_tlds):
             res = cf.create_list(list_name, items)
             used_ids.append(res['result']['id'])
 
-    # Update Domain Policy
     rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
     clauses = [f'any(dns.domains[*] in ${lid})' for lid in used_ids]
     payload = {"name": MASTER_CONFIG['policy_name'], "action": "block", "enabled": True, "filters": ["dns"], "traffic": " or ".join(clauses)}
@@ -225,18 +238,21 @@ def main():
 
     if args.delete:
         rules, lists = cf.get_rules(), cf.get_lists()
-        # Clean up rules and lists
-        for rule in [r for r in rules if "Block High-Risk TLDs" in r['name'] or MASTER_CONFIG['policy_name'] in r['name']]:
+        # Clean up both policies and TLD rule
+        for rule in [r for r in rules if r['name'] in [MASTER_CONFIG['policy_name'], "Block High-Risk TLDs (HaGeZi + xn--)"]]:
             cf.delete_rule(rule['id'])
-        for ls in [l for l in lists if MASTER_CONFIG['prefix'] in l['name']]:
-            cf.delete_list(ls['id'])
+        for l in [ls for ls in lists if MASTER_CONFIG['prefix'] in ls['name']]: 
+            cf.delete_list(l['id'])
         return
 
-    banned_tlds = get_banned_tlds()
+    # STEP 1: Get the TLDs FIRST
+    banned_tlds = get_dynamic_banned_tlds()
+
+    # STEP 2: Use them to process the domain lists
     all_domains, stats_data, original_unique = fetch_and_process(banned_tlds)
     
     if len(all_domains) > Config.TOTAL_QUOTA:
-        logger.error(f"OVER QUOTA: {len(all_domains):,}. Script aborted.")
+        logger.error(f"OVER QUOTA: {len(all_domains):,}. Still too many domains.")
         exit(1)
 
     write_markdown_stats(stats_data, original_unique, len(all_domains))
