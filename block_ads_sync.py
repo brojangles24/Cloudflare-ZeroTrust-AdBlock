@@ -66,7 +66,7 @@ def is_valid_domain(domain, ex_counts):
     if '.' not in domain or 'xn--' in domain or re.match(r'^\d{1,3}(\.\d{1,3}){3}$', domain):
         return False
         
-    # 2. Banned TLD Check
+    # 2. Banned TLD Check (Filtered locally to save quota)
     tld = domain.rsplit('.', 1)[-1]
     if tld in MASTER_CONFIG['banned_tlds']:
         ex_counts[tld] += 1
@@ -107,25 +107,7 @@ def optimize_domains(domains):
 
 # --- 4. Sync Mechanism ---
 def sync_at4(cf, domains, force):
-    # 1. Update/Create the TLD Block Rule (Regex)
-    tld_regex = r'\.(' + '|'.join(MASTER_CONFIG['banned_tlds']) + ')$'
-    tld_rule_name = "Block High-Risk TLDs (Regex)"
-    
-    rules = cf.get_rules()
-    tld_rid = next((r['id'] for r in rules if r['name'] == tld_rule_name), None)
-    
-    tld_payload = {
-        "name": tld_rule_name,
-        "action": "block",
-        "enabled": True,
-        "filters": ["dns"],
-        "traffic": f'any(dns.fqdn matches r#"{tld_regex}"#)'
-    }
-    
-    if tld_rid: cf.update_rule(tld_rid, tld_payload)
-    else: cf.create_rule(tld_payload)
-
-    # 2. Check for changes
+    # 1. Check for changes
     out = Path(MASTER_CONFIG['filename'])
     new_content = '\n'.join(sorted(domains))
     if out.exists() and not force and out.read_text().strip() == new_content.strip():
@@ -133,7 +115,7 @@ def sync_at4(cf, domains, force):
         return
     out.write_text(new_content)
 
-    # 3. Sync Lists
+    # 2. Sync Lists
     lists = cf.get_lists()
     existing = sorted([l for l in lists if MASTER_CONFIG['prefix'] in l['name']], key=lambda x: x['name'])
     
@@ -154,7 +136,8 @@ def sync_at4(cf, domains, force):
             res = cf.create_list(list_name, items)
             used_ids.append(res['result']['id'])
 
-    # 4. Update Policy Rule
+    # 3. Update Policy Rule
+    rules = cf.get_rules()
     rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
     clauses = [f'any(dns.domains[*] in ${lid})' for lid in used_ids]
     payload = {
@@ -168,7 +151,7 @@ def sync_at4(cf, domains, force):
     if rid: cf.update_rule(rid, payload)
     else: cf.create_rule(payload)
     
-    # 5. Cleanup
+    # 4. Cleanup
     if len(existing) > len(chunks):
         for old_list in existing[len(chunks):]:
             cf.delete_list(old_list['id'])
@@ -187,8 +170,6 @@ def main():
         rules, lists = cf.get_rules(), cf.get_lists()
         rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
         if rid: cf.delete_rule(rid)
-        tld_rid = next((r['id'] for r in rules if r['name'] == "Block High-Risk TLDs (Regex)"), None)
-        if tld_rid: cf.delete_rule(tld_rid)
         for l in [ls for ls in lists if MASTER_CONFIG['prefix'] in ls['name']]: cf.delete_list(l['id'])
         return
 
@@ -204,8 +185,8 @@ def main():
 
     # Exclusion Reporting
     total_excluded = sum(global_ex.values())
-    logger.info(f"TLD EXCLUSIONS: {total_excluded:,} domains removed.")
-    for tld, count in global_ex.most_common(5):
+    logger.info(f"TLD EXCLUSIONS: {total_excluded:,} domains removed from the final list.")
+    for tld, count in global_ex.most_common(10):
         logger.info(f"  .{tld}: {count:,}")
 
     optimized_list = optimize_domains(all_unique)
