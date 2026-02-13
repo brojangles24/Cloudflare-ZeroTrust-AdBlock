@@ -1,7 +1,7 @@
 # 🛡️ Cloudflare Zero Trust Intelligence Report
-> **Cycle Updated:** `2026-02-13 16:02:14` | **Runtime:** `318.16s`
+> **Last Update:** `2026-02-13 16:08:46` | **Runtime:** `3.17s`
 
-## 📊 Processing Insights
+## 📊 Visual Insights
 ```mermaid
 pie title Domain Sync Lifecycle
     "Active Rules" : 276407
@@ -13,21 +13,19 @@ pie title Domain Sync Lifecycle
 
 ```mermaid
 pie title Top Blocked Keywords
-    "sex (10,546)": 10546
-    "porn (9,958)": 9958
-    "xxx (3,476)": 3476
-    "hentai (689)": 689
-    "milf (495)": 495
-    "fuck (453)": 453
-    "xvideo (270)": 270
-    "bdsm (265)": 265
-    "pussy (232)": 232
-    "horny (228)": 228
+    "porn (10,254)": 10254
+    "sex (9,918)": 9918
+    "xxx (3,272)": 3272
+    "xvideo (700)": 700
+    "hentai (698)": 698
+    "milf (536)": 536
+    "fuck (505)": 505
+    "pussy (253)": 253
 ```
 
 ---
 
-## 📋 Comprehensive Metrics
+## 📋 Summary Metrics
 | Metric | Count | % of Raw |
 | :--- | :--- | :--- |
 | **Total Raw Ingested** | 340,122 | 100% |
@@ -35,41 +33,41 @@ pie title Top Blocked Keywords
 | **TLD Filtered** | - 32,794 | 9.6% |
 | **Duplicate Removal** | - 1,297 | 0.4% |
 | **Subdomain Pruning** | - 1,990 | 0.6% |
-| **Final Active Rules** | **276,407** | **81.3%** |
+| **Final Cloudflare List** | **276,407** | **81.3%** |
 
 ---
 
-## 🚩 Keyword Hit Analytics (Top 10)
+## 🚩 Keyword Analytics (Top 10)
 | Keyword | Hits |
 | :--- | :--- |
-| `sex` | 10,546 |
-| `porn` | 9,958 |
-| `xxx` | 3,476 |
-| `hentai` | 689 |
-| `milf` | 495 |
-| `fuck` | 453 |
-| `xvideo` | 270 |
-| `bdsm` | 265 |
-| `pussy` | 232 |
-| `horny` | 228 |
+| `porn` | 10,254 |
+| `sex` | 9,918 |
+| `xxx` | 3,272 |
+| `xvideo` | 700 |
+| `hentai` | 698 |
+| `milf` | 536 |
+| `fuck` | 505 |
+| `pussy` | 253 |
+| `bdsm` | 247 |
+| `horny` | 230 |
 
 ---
 
-## 🛰️ Provider Quality (Uniqueness)
-| Source | Raw | Valid | Uniqueness |
+## 🛰️ Provider Analytics (Uniqueness)
+| Source | Raw | Valid | Unique |
 | :--- | :--- | :--- | :--- |
 | Hagezi Dynamic DNS | 1,482 | 1,423 | **88.0%** |
-| Hagezi DoH Only | 3,504 | 2,959 | **98.8%** |
+| HaGeZi Fake | 14,157 | 13,950 | **96.4%** |
+| Hagezi Anti-Piracy | 11,735 | 10,542 | **98.1%** |
 | Hagezi Badware Hoster | 1,298 | 1,238 | **92.0%** |
 | Hagezi Safeserach not Supported | 212 | 188 | **98.4%** |
-| Hagezi Anti-Piracy | 11,735 | 10,542 | **98.1%** |
-| HaGeZi Fake | 14,157 | 13,950 | **96.4%** |
 | Hagezi NSFW | 67,316 | 35,492 | **98.9%** |
+| Hagezi DoH Only | 3,504 | 2,959 | **98.8%** |
 | HaGeZi Pro++ | 240,418 | 213,902 | **99.4%** |
 
 ---
 
-## 🛠️ Infrastructure Analytics
+## 🛠️ Infrastructure Stats
 * **Avg Entropy:** `3.441`
 * **Max Domain Length:** `179`
 * **Quota Usage:** `92.14%`
