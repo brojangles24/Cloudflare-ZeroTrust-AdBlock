@@ -2,7 +2,7 @@ name: Cloudflare Gateway Sync
 
 on:
   schedule:
-    - cron: '0 * * * *' # Runs hourly
+    - cron: '0 * * * *' # Hourly
   workflow_dispatch:
     inputs:
       force_mode:
@@ -30,18 +30,17 @@ jobs:
           python-version: '3.11'
 
       - name: Install Dependencies
-        # requests is the only required library
         run: pip install requests
 
       - name: Run Sync
         env:
-          # Ensure these secrets are set in your repo settings
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
         run: |
+          # Building arguments based on inputs
           ARGS=""
-          [ "${{ github.event.inputs.force_mode }}" == "true" ] && ARGS="--force"
-          [ "${{ github.event.inputs.delete_mode }}" == "true" ] && ARGS="--delete"
+          if [ "${{ github.event.inputs.force_mode }}" = "true" ]; then ARGS="$ARGS --force"; fi
+          if [ "${{ github.event.inputs.delete_mode }}" = "true" ]; then ARGS="$ARGS --delete"; fi
           python3 block_ads_sync.py $ARGS
 
       - name: Commit and Push Changes
@@ -50,6 +49,6 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add aggregate_blocklist.txt README_STATS.md
           if ! git diff --cached --quiet; then
-            git commit -m "Update intelligence report and blocklist [skip ci]"
+            git commit -m "Fix f-string syntax and update stats [skip ci]"
             git push
           fi
