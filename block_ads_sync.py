@@ -22,11 +22,18 @@ MASTER_CONFIG = {
     "policy_name": "Ads, Tracker, Telemetry, Malware",
     "filename": "aggregate_blocklist.txt",
     "banned_tlds": {
-        "top", "xyz", "xin", "icu", "sbs", "cfd", "gdn", "monster", "buzz", "bid", "stream", "webcam", 
-        "zip", "mov", "cn", "su", "ru", "pw", "tk", "ml", "ga", "cf", "gq",
+        # --- High-Risk / Spam TLDs ---
+        "top", "xyz", "xin", "icu", "sbs", "cfd", "gdn", "monster", "buzz", "bid", 
+        "stream", "webcam", "zip", "mov", "pw", "tk", "ml", "ga", "cf", "gq",
         "men", "work", "click", "link", "party", "trade", "date", "loan", "win", 
         "faith", "racing", "review", "country", "kim", "cricket", "science",
-        "download", "accountant", "accountants", "rest", "bar", "bzar", "ooo", "bet", "poker", "casino"
+        "download", "ooo",
+
+        # --- Requested Country Blocks ---
+        "by", "cn", "ir", "kp", "ng", "ru", "su", "ss",
+
+        # --- Finance, Gambling & Business ---
+        "accountant", "accountants", "rest", "bar", "bzar", "bet", "poker", "casino"
     },
     "offloaded_keywords": {
         "xxx", "porn", "sex", "fuck", "tits", "pussy", "dick", "cock", 
@@ -45,9 +52,10 @@ MASTER_CONFIG = {
         "Hagezi Anti-Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
         "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
         #"Hagezi Social Media": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
-        "Hagezi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
+        #"Hagezi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
         "Hagezi Badware Hoster": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
-        "Hagezi DoH/VPN": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+        #"Hagezi DoH/VPN": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+        "Hagezi DoH Only": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-onlydomains.txt",
         "Hagezi Safeserach not Supported": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
     }
 }
