@@ -28,7 +28,7 @@ MASTER_CONFIG = {
         "stream", "webcam", "zip", "mov", "pw", "tk", "ml", "ga", "cf", "gq",
         "men", "work", "click", "link", "party", "trade", "date", "loan", "win", 
         "faith", "racing", "review", "country", "kim", "cricket", "science",
-        "download", "ooo", "by", "cn", "ir", "kp", "ng", "ru", "su", "ss",
+        "download", "ooo", "by", "cn", "ir", "kp", "ng", "ru", "su", "ss", "cc",
         "accountant", "accountants", "rest", "bar", "bzar", "bet", "poker", "casino"
     },
     "offloaded_keywords": {
@@ -38,8 +38,8 @@ MASTER_CONFIG = {
         "brazzers", "redtube", "pornhub", "xvideo"
     },
     "urls": {
-        #"HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
-        "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+        "HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
+        #"HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
         #"HaGeZi Pro": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
         #"1Hosts Lite": "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/domains.wildcards",
         #"TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
