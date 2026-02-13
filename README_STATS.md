@@ -1,5 +1,5 @@
 # 🛡️ Cloudflare Zero Trust Intelligence Report
-> **Last Update:** `2026-02-13 16:08:46` | **Runtime:** `3.17s`
+> **Last Update:** `2026-02-13 16:54:50` | **Runtime:** `4.13s`
 
 ## 📊 Visual Insights
 ```mermaid
@@ -13,14 +13,14 @@ pie title Domain Sync Lifecycle
 
 ```mermaid
 pie title Top Blocked Keywords
-    "porn (10,254)": 10254
-    "sex (9,918)": 9918
-    "xxx (3,272)": 3272
-    "xvideo (700)": 700
-    "hentai (698)": 698
-    "milf (536)": 536
-    "fuck (505)": 505
-    "pussy (253)": 253
+    "sex (10,239)": 10239
+    "porn (9,223)": 9223
+    "xxx (3,735)": 3735
+    "xvideo (739)": 739
+    "hentai (677)": 677
+    "milf (559)": 559
+    "fuck (517)": 517
+    "pussy (274)": 274
 ```
 
 ---
@@ -40,30 +40,30 @@ pie title Top Blocked Keywords
 ## 🚩 Keyword Analytics (Top 10)
 | Keyword | Hits |
 | :--- | :--- |
-| `porn` | 10,254 |
-| `sex` | 9,918 |
-| `xxx` | 3,272 |
-| `xvideo` | 700 |
-| `hentai` | 698 |
-| `milf` | 536 |
-| `fuck` | 505 |
-| `pussy` | 253 |
-| `bdsm` | 247 |
-| `horny` | 230 |
+| `sex` | 10,239 |
+| `porn` | 9,223 |
+| `xxx` | 3,735 |
+| `xvideo` | 739 |
+| `hentai` | 677 |
+| `milf` | 559 |
+| `fuck` | 517 |
+| `pussy` | 274 |
+| `bdsm` | 269 |
+| `horny` | 231 |
 
 ---
 
 ## 🛰️ Provider Analytics (Uniqueness)
 | Source | Raw | Valid | Unique |
 | :--- | :--- | :--- | :--- |
-| Hagezi Dynamic DNS | 1,482 | 1,423 | **88.0%** |
 | HaGeZi Fake | 14,157 | 13,950 | **96.4%** |
-| Hagezi Anti-Piracy | 11,735 | 10,542 | **98.1%** |
 | Hagezi Badware Hoster | 1,298 | 1,238 | **92.0%** |
-| Hagezi Safeserach not Supported | 212 | 188 | **98.4%** |
-| Hagezi NSFW | 67,316 | 35,492 | **98.9%** |
+| Hagezi Dynamic DNS | 1,482 | 1,423 | **88.0%** |
 | Hagezi DoH Only | 3,504 | 2,959 | **98.8%** |
+| Hagezi Safeserach not Supported | 212 | 188 | **98.4%** |
 | HaGeZi Pro++ | 240,418 | 213,902 | **99.4%** |
+| Hagezi Anti-Piracy | 11,735 | 10,542 | **98.1%** |
+| Hagezi NSFW | 67,316 | 35,492 | **98.9%** |
 
 ---
 
