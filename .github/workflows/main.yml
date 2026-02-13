@@ -2,7 +2,7 @@ name: Cloudflare Gateway Sync
 
 on:
   schedule:
-    - cron: '0 * * * *' # Corrected: Runs at 04:00 UTC daily
+    - cron: '0 * * * *' # Runs every hour on the hour
   workflow_dispatch:
     inputs:
       force_mode:
@@ -46,8 +46,11 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add *.txt
+          # Explicitly add both the blocklist and the stats file
+          git add aggregate_blocklist.txt README_STATS.md
           if ! git diff --cached --quiet; then
-            git commit -m "Update blocklists [skip ci]"
+            git commit -m "Update blocklists and stats [skip ci]"
             git push
+          else
+            echo "No file changes to commit."
           fi
