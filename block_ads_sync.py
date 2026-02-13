@@ -38,7 +38,7 @@ MASTER_CONFIG = {
         "brazzers", "redtube", "pornhub", "xvideo"
     },
     "urls": {
-        "HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
+        "HaGeZi Ultimate": "https://codeberg.org/hagezi/mirror2/raw/branch/main/dns-blocklists/wildcard/ultimate-onlydomains.txt",
         #"HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
         #"HaGeZi Pro": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
         #"1Hosts Lite": "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/domains.wildcards",
