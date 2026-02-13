@@ -1,5 +1,5 @@
 # 🛡️ Cloudflare Zero Trust Intelligence Report
-> **Generated on:** `2026-02-13 15:39:42`
+> **Generated on:** `2026-02-13 15:49:06`
 
 ## 📊 Fleet Summary
 | Metric | Value |
@@ -15,14 +15,14 @@
 ## 🛰️ Source Effectiveness
 | Provider | Raw Domains | Passed Filter |
 | :--- | :--- | :--- |
-| Hagezi Dynamic DNS | 1,482 | 1,423 |
 | Hagezi DoH Only | 3,504 | 2,959 |
+| Hagezi Dynamic DNS | 1,482 | 1,423 |
 | Hagezi Safeserach not Supported | 212 | 188 |
 | Hagezi Badware Hoster | 1,298 | 1,238 |
-| Hagezi Anti-Piracy | 11,735 | 10,542 |
 | HaGeZi Fake | 14,157 | 13,950 |
-| Hagezi NSFW | 67,316 | 35,492 |
+| Hagezi Anti-Piracy | 11,735 | 10,542 |
 | HaGeZi Pro | 194,807 | 173,508 |
+| Hagezi NSFW | 67,316 | 35,492 |
 
 ---
 
