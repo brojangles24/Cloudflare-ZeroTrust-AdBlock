@@ -17,6 +17,9 @@ class Config:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
 logger = logging.getLogger(__name__)
 
+# Pre-compile IP regex for efficiency
+IP_PATTERN = re.compile(r'^\d{1,3}(\.\d{1,3}){3}$')
+
 MASTER_CONFIG = {
     "name": "Ads, Tracker, Telemetry, Malware", 
     "prefix": "Ads, Tracker, Telemetry, Malware", 
@@ -87,26 +90,21 @@ class CloudflareAPI:
 
 # --- 3. Processing Core ---
 def is_valid_domain(domain, kw_ex, tld_ex, other_ex):
-    # CRITICAL: Clean domain of wildcards and leading dots to prevent 400 Bad Request
     domain = domain.strip().strip('.')
     
-    # Block illegal characters and empty strings
     if not domain or any(c in domain for c in ('*', '/', ':', '[', ']')):
         other_ex["Malformed/Wildcard"] += 1
         return False
 
-    # Standard FQDN and IP Checks
-    if '.' not in domain or 'xn--' in domain or re.match(r'^\d{1,3}(\.\d{1,3}){3}$', domain):
+    if '.' not in domain or 'xn--' in domain or IP_PATTERN.match(domain):
         other_ex["Invalid/IP/IDN"] += 1
         return False
     
-    # 1. Banned TLD Check (including .cc)
     tld = domain.rsplit('.', 1)[-1]
     if tld in MASTER_CONFIG['banned_tlds']:
         tld_ex[tld] += 1
         return False
     
-    # 2. Aggressive Substring Keyword Check
     for kw in MASTER_CONFIG['offloaded_keywords']:
         if kw in domain:
             kw_ex[kw] += 1
@@ -124,7 +122,6 @@ def fetch_url(name, url):
             line = line.strip()
             if not line or line.startswith(('#', '!', '//')): continue
             
-            # Extract domain from hosts format or plain list
             raw_domain = line.split()[-1].lower()
             raw_count += 1
             
@@ -139,7 +136,6 @@ def fetch_url(name, url):
         return name, 0, set(), Counter(), Counter(), Counter()
 
 def optimize_domains(domains):
-    # Tree-based pruning: if example.com is blocked, we don't need cdn.example.com
     reversed_domains = sorted([d[::-1] for d in domains])
     optimized, last_kept = [], None
     for d in reversed_domains:
@@ -202,45 +198,58 @@ pie title Domain Lifecycle Breakdown
     Path(MASTER_CONFIG['stats_filename']).write_text(md_content)
 
 def sync_at4(cf, domains, force):
+    if not domains:
+        logger.error("🚨 Logic Error: Optimized list is empty. Aborting sync.")
+        return 0
+
     out = Path(MASTER_CONFIG['filename'])
     
-    # --- QUOTA GUARD ---
     if len(domains) > Config.TOTAL_QUOTA:
-        logger.warning(f"🚨 QUOTA EXCEEDED! Slicing from {len(domains):,} to {Config.TOTAL_QUOTA:,}")
+        logger.warning(f"🚨 QUOTA EXCEEDED! Slicing to {Config.TOTAL_QUOTA:,}")
         domains = domains[:Config.TOTAL_QUOTA]
 
     sorted_domains = sorted(list(domains))
-    new_content = '\n'.join(sorted_domains)
     chunks = [sorted_domains[i:i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
     
-    out.write_text(new_content)
+    out.write_text('\n'.join(sorted_domains))
+    
     lists = cf.get_lists()
     existing = sorted([l for l in lists if MASTER_CONFIG['prefix'] in l['name']], key=lambda x: x['name'])
     used_ids = []
     
-    # 🔄 Update or Create Lists
+    # 🔄 1. Update or Create Lists
     for idx, chunk in enumerate(chunks):
         items = [{"value": d} for d in chunk]
+        list_name = f"{MASTER_CONFIG['prefix']} {idx+1:03d}"
         if idx < len(existing):
             lid = existing[idx]['id']
-            cf.update_list(lid, f"{MASTER_CONFIG['prefix']} {idx+1:03d}", items)
+            cf.update_list(lid, list_name, items)
             used_ids.append(lid)
         else:
-            res = cf.create_list(f"{MASTER_CONFIG['prefix']} {idx+1:03d}", items)
+            res = cf.create_list(list_name, items)
             used_ids.append(res['result']['id'])
             
-    # 🧹 Cleanup abandoned lists
-    if len(existing) > len(chunks):
-        for i in range(len(chunks), len(existing)):
-            cf.delete_list(existing[i]['id'])
-
-    # 📡 Sync Firewall Rule
+    # 📡 2. Sync Firewall Rule FIRST
+    # CRITICAL: We update the rule to use the new IDs first so old lists are no longer referenced.
     rules = cf.get_rules()
     rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
     clauses = [f'any(dns.domains[*] in ${lid})' for lid in used_ids]
     payload = {"name": MASTER_CONFIG['policy_name'], "action": "block", "enabled": True, "filters": ["dns"], "traffic": " or ".join(clauses)}
+    
     if rid: cf.update_rule(rid, payload)
     else: cf.create_rule(payload)
+    logger.info("📡 Firewall rule successfully updated.")
+
+    # 🧹 3. Cleanup abandoned lists
+    if len(existing) > len(chunks):
+        for i in range(len(chunks), len(existing)):
+            old_id = existing[i]['id']
+            try:
+                cf.delete_list(old_id)
+                logger.info(f"🗑️ Deleted unused list: {old_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to delete unused list {old_id}: {e}")
+
     return len(chunks)
 
 # --- 5. Main Execution ---
@@ -250,7 +259,6 @@ def main():
     all_source_data, total_raw_fetched, total_valid_pool = {}, 0, []
     global_kw_ex, global_tld_ex, global_other_ex = Counter(), Counter(), Counter()
 
-    # Parallel Fetch
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(fetch_url, name, url): name for name, url in MASTER_CONFIG['urls'].items()}
         for future in concurrent.futures.as_completed(futures):
@@ -262,17 +270,14 @@ def main():
             global_tld_ex.update(tld_ex)
             global_other_ex.update(other_ex)
 
-    # Cross-source Uniqueness check
     for name, data in all_source_data.items():
         others = set().union(*(d['set'] for n, d in all_source_data.items() if n != name))
         data['unique_to_source'] = len(data['set'] - others)
 
-    # Deduplicate and Optimize
     unique_set = set(total_valid_pool)
     optimized_list = optimize_domains(unique_set)
     num_chunks = sync_at4(cf, optimized_list, False)
     
-    # Generate Report
     generate_markdown_report({
         'total_raw': total_raw_fetched, 'kw_total': sum(global_kw_ex.values()), 'tld_total': sum(global_tld_ex.values()),
         'duplicates': len(total_valid_pool) - len(unique_set), 'tree_removed': len(unique_set) - len(optimized_list), 
