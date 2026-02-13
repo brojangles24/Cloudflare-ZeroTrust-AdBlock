@@ -1,4 +1,4 @@
-import os, re, logging, argparse, requests, concurrent.futures
+import os, re, logging, argparse, requests, concurrent.futures, time
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -9,7 +9,7 @@ from urllib3.util import Retry
 class Config:
     API_TOKEN = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID = os.environ.get("ACCOUNT_ID", "")
-    MAX_LIST_SIZE = 1000 
+    MAX_LIST_SIZE = 1000  # Stays well within the 300-list limit
     MAX_RETRIES = 5
     TOTAL_QUOTA = 300000 
 
@@ -28,12 +28,11 @@ MASTER_CONFIG = {
         "faith", "racing", "review", "country", "kim", "cricket", "science",
         "download", "accountant", "accountants", "rest", "bar", "bzar", "ooo", "bet", "poker", "casino"
     },
-    # These are EXCLUDED from the list to save quota (handled via separate Regex Rule)
     "offloaded_keywords": {
         "xxx", "porn", "sex", "fuck", "tits", "pussy", "dick", "cock", 
-        "hentai", "milf", "blowjob",
-        "threesome", "bdsm", "gangbang", 
-        "handjob", "deepthroat", "horny", "bukkake", "titfuck"
+        "hentai", "milf", "blowjob", "threesome", "bondage", "bdsm", 
+        "gangbang", "handjob", "deepthroat", "horny", "bukkake", "titfuck",
+        "brazzers", "redtube", "pornhub", "xvideo"
     },
     "urls": {
         #"HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
@@ -71,17 +70,17 @@ class CloudflareAPI:
 
 # --- 3. Processing Logic ---
 def is_valid_domain(domain, ex_counts):
-    # 1. Basics: Must have a dot, no IP addresses, no Punycode
+    # Basic validation
     if '.' not in domain or 'xn--' in domain or re.match(r'^\d{1,3}(\.\d{1,3}){3}$', domain):
         return False
         
-    # 2. Banned TLD Check
+    # TLD filtering
     tld = domain.rsplit('.', 1)[-1]
     if tld in MASTER_CONFIG['banned_tlds']:
         ex_counts[f"TLD: {tld}"] += 1
         return False
 
-    # 3. Keyword Exclusion (Offloaded to Regex)
+    # Keyword filtering
     if any(kw in domain for kw in MASTER_CONFIG['offloaded_keywords']):
         ex_counts["Keyword Offload"] += 1
         return False
@@ -162,9 +161,14 @@ def sync_at4(cf, domains, force):
     if rid: cf.update_rule(rid, payload)
     else: cf.create_rule(payload)
     
+    # Cleanup leftover lists if the new count is smaller
     if len(existing) > len(chunks):
         for old_list in existing[len(chunks):]:
-            cf.delete_list(old_list['id'])
+            try:
+                cf.delete_list(old_list['id'])
+            except:
+                logger.warning(f"Cleanup: List {old_list['id']} is likely still locked.")
+                
     logger.info("Sync Complete.")
 
 # --- 5. Main ---
@@ -177,23 +181,36 @@ def main():
     cf = CloudflareAPI()
 
     if args.delete:
+        logger.info("Starting cleanup process...")
         rules, lists = cf.get_rules(), cf.get_lists()
+        
         rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
-        if rid: cf.delete_rule(rid)
-        for l in [ls for ls in lists if MASTER_CONFIG['prefix'] in ls['name']]: cf.delete_list(l['id'])
+        if rid:
+            logger.info(f"Deleting Rule: {MASTER_CONFIG['policy_name']}")
+            cf.delete_rule(rid)
+            logger.info("Waiting 3 seconds for lock release...")
+            time.sleep(3)
+        
+        target_lists = [ls for ls in lists if MASTER_CONFIG['prefix'] in ls['name']]
+        for l in target_lists:
+            try:
+                logger.info(f"Deleting List: {l['name']}")
+                cf.delete_list(l['id'])
+            except Exception as e:
+                logger.error(f"Error deleting list {l['name']}: {e}")
         return
 
     all_unique = set()
     global_ex = Counter()
     
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = {executor.submit(fetch_url, name, url): name for name, url in MASTER_CONFIG['urls'].items()}
+        futures = {executor.submit(fetch_url, name, url) for name, url in MASTER_CONFIG['urls'].items()}
         for future in concurrent.futures.as_completed(futures):
             _, _, valid_domains, ex_counts = future.result()
             all_unique.update(valid_domains)
             global_ex.update(ex_counts)
 
-    # Reporting
+    # Filtering summary
     total_excluded = sum(global_ex.values())
     logger.info(f"FILTERING REPORT: {total_excluded:,} domains removed.")
     for reason, count in global_ex.most_common(15):
@@ -202,7 +219,7 @@ def main():
     optimized_list = optimize_domains(all_unique)
     
     if len(optimized_list) > Config.TOTAL_QUOTA:
-        logger.error(f"OVER QUOTA: {len(optimized_list):,}. Script aborted.")
+        logger.error(f"CRITICAL: Optimized list size ({len(optimized_list):,}) exceeds quota. Sync aborted.")
         return
 
     sync_at4(cf, optimized_list, args.force)
