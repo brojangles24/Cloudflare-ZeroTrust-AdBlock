@@ -22,7 +22,7 @@ MASTER_CONFIG = {
     "policy_name": "Ads, Tracker, Telemetry, Malware",
     "filename": "aggregate_blocklist.txt",
     "banned_tlds": {
-        "top", "xin", "icu", "sbs", "cfd", "gdn", "monster", "buzz", "bid", "stream", "webcam", 
+        "top", "xyz", "xin", "icu", "sbs", "cfd", "gdn", "monster", "buzz", "bid", "stream", "webcam", 
         "zip", "mov", "cn", "su", "ru", "pw", "tk", "ml", "ga", "cf", "gq",
         "men", "work", "click", "link", "party", "trade", "date", "loan", "win", 
         "faith", "racing", "review", "country", "kim", "cricket", "science",
