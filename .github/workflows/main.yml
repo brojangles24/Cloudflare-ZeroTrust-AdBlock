@@ -2,15 +2,11 @@ name: Cloudflare Gateway Sync
 
 on:
   schedule:
-    - cron: '0 * * * *' # Hourly
+    - cron: '0 * * * *' 
   workflow_dispatch:
     inputs:
       force_mode:
         description: 'Force Update'
-        type: boolean
-        default: false
-      delete_mode:
-        description: 'Cleanup Mode'
         type: boolean
         default: false
 
@@ -36,12 +32,7 @@ jobs:
         env:
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
-        run: |
-          # Building arguments based on inputs
-          ARGS=""
-          if [ "${{ github.event.inputs.force_mode }}" = "true" ]; then ARGS="$ARGS --force"; fi
-          if [ "${{ github.event.inputs.delete_mode }}" = "true" ]; then ARGS="$ARGS --delete"; fi
-          python3 block_ads_sync.py $ARGS
+        run: python3 block_ads_sync.py ${{ github.event.inputs.force_mode == 'true' && '--force' || '' }}
 
       - name: Commit and Push Changes
         run: |
@@ -49,6 +40,6 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add aggregate_blocklist.txt README_STATS.md
           if ! git diff --cached --quiet; then
-            git commit -m "Fix f-string syntax and update stats [skip ci]"
+            git commit -m "Full Intelligence Update [skip ci]"
             git push
           fi
