@@ -86,7 +86,7 @@ class CloudflareAPI:
 def generate_markdown_report(stats):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # Funnel Chart
+    # 1. Mermaid Pie Charts
     funnel_chart = f"""```mermaid
 pie title Domain Sync Lifecycle
     "Active Rules" : {stats['final_size']}
@@ -96,10 +96,11 @@ pie title Domain Sync Lifecycle
     "TLD Filtered" : {stats['tld_total']}
 ```"""
 
-    # Keyword Breakdown Chart
     kw_slices = "\n".join([f'    "{kw} ({count:,})": {count}' for kw, count in stats['kw_ex'].most_common(10)])
     kw_chart = f"```mermaid\npie title Top Blocked Keywords\n{kw_slices}\n```"
 
+    # 2. Pre-generate rows to avoid backslashes inside f-string {}
+    kw_rows = "\n".join([f'| `{kw}` | {count:,} |' for kw, count in stats["kw_ex"].most_common(10)])
     source_rows = "\n".join([f"| {n} | {d['raw']:,} | {d['valid']:,} | **{round((d['unique_to_source']/d['valid'])*100, 1) if d['valid'] > 0 else 0}%** |" 
                              for n, d in stats['sources'].items()])
 
@@ -117,18 +118,18 @@ pie title Domain Sync Lifecycle
 | Metric | Count | % of Raw |
 | :--- | :--- | :--- |
 | **Total Raw Ingested** | {stats['total_raw']:,} | 100% |
-| **Keyword Filtered** | - {stats['kw_total']:,} | {round((stats['kw_total']/stats['total_raw'])*100, 1)}% |
-| **TLD Filtered** | - {stats['tld_total']:,} | {round((stats['tld_total']/stats['total_raw'])*100, 1)}% |
-| **Duplicate Removal** | - {stats['duplicates']:,} | {round((stats['duplicates']/stats['total_raw'])*100, 1)}% |
-| **Subdomain Pruning** | - {stats['tree_removed']:,} | {round((stats['tree_removed']/stats['total_raw'])*100, 1)}% |
-| **Final Active Rules** | **{stats['final_size']:,}** | **{round((stats['final_size']/stats['total_raw'])*100, 1)}%** |
+| **Keyword Filtered** | - {stats['kw_total']:,} | {round((stats['kw_total']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}% |
+| **TLD Filtered** | - {stats['tld_total']:,} | {round((stats['tld_total']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}% |
+| **Duplicate Removal** | - {stats['duplicates']:,} | {round((stats['duplicates']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}% |
+| **Subdomain Pruning** | - {stats['tree_removed']:,} | {round((stats['tree_removed']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}% |
+| **Final Active Rules** | **{stats['final_size']:,}** | **{round((stats['final_size']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}%** |
 
 ---
 
 ## 🚩 Keyword Hit Analytics (Top 10)
 | Keyword | Hits |
 | :--- | :--- |
-{"\n".join([f'| `{kw}` | {count:,} |' for kw, count in stats["kw_ex"].most_common(10)])}
+{kw_rows}
 
 ---
 
@@ -146,7 +147,7 @@ pie title Domain Sync Lifecycle
 """
     Path(MASTER_CONFIG['stats_filename']).write_text(md_content)
 
-# --- 4. Logic & Fetching ---
+# --- 4. Processing Functions ---
 def is_valid_domain(domain, kw_ex, tld_ex, other_ex):
     if '.' not in domain or 'xn--' in domain or re.match(r'^\d{1,3}(\.\d{1,3}){3}$', domain):
         other_ex["Invalid/IP"] += 1
@@ -190,59 +191,6 @@ def optimize_domains(domains):
         last_kept = d
     return [d[::-1] for d in optimized]
 
-# --- 5. Main ---
-def main():
-    start_time = time.time()
-    cf = CloudflareAPI()
-    
-    all_source_data, total_raw_fetched = {}, 0
-    global_kw_ex, global_tld_ex, global_other_ex = Counter(), Counter(), Counter()
-    total_valid_pool = []
-
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = {executor.submit(fetch_url, name, url): name for name, url in MASTER_CONFIG['urls'].items()}
-        for future in concurrent.futures.as_completed(futures):
-            name, raw_fetched, valid_domains, kw_ex, tld_ex, other_ex = future.result()
-            all_source_data[name] = {'raw': raw_fetched, 'valid': len(valid_domains), 'set': valid_domains}
-            total_raw_fetched += raw_fetched
-            total_valid_pool.extend(list(valid_domains))
-            global_kw_ex.update(kw_ex)
-            global_tld_ex.update(tld_ex)
-            global_other_ex.update(other_ex)
-
-    # Uniqueness
-    for name, data in all_source_data.items():
-        other_domains = set()
-        for o_name, o_data in all_source_data.items():
-            if name != o_name: other_domains.update(o_data['set'])
-        data['unique_to_source'] = len(data['set'] - other_domains)
-
-    unique_set = set(total_valid_pool)
-    duplicates_count = len(total_valid_pool) - len(unique_set)
-    optimized_list = optimize_domains(unique_set)
-    tree_removed = len(unique_set) - len(optimized_list)
-    
-    avg_entropy = round(sum(calculate_entropy(d) for d in optimized_list) / len(optimized_list), 3) if optimized_list else 0
-    max_len = max(len(d) for d in optimized_list) if optimized_list else 0
-    
-    # Use sync_at4 from previous context
-    num_chunks = sync_at4(cf, optimized_list, False)
-    
-    generate_markdown_report({
-        'total_raw': total_raw_fetched, 
-        'kw_total': sum(global_kw_ex.values()),
-        'tld_total': sum(global_tld_ex.values()),
-        'duplicates': duplicates_count, 
-        'tree_removed': tree_removed, 
-        'final_size': len(optimized_list), 
-        'kw_ex': global_kw_ex,
-        'sources': all_source_data,
-        'avg_entropy': avg_entropy,
-        'max_len': max_len,
-        'chunks': num_chunks,
-        'runtime': round(time.time() - start_time, 2)
-    })
-
 def sync_at4(cf, domains, force):
     out = Path(MASTER_CONFIG['filename'])
     sorted_domains = sorted(list(domains))
@@ -275,6 +223,57 @@ def sync_at4(cf, domains, force):
             try: cf.delete_list(old_list['id'])
             except: pass
     return num_chunks
+
+# --- 5. Main ---
+def main():
+    start_time = time.time()
+    cf = CloudflareAPI()
+    
+    all_source_data, total_raw_fetched = {}, 0
+    global_kw_ex, global_tld_ex, global_other_ex = Counter(), Counter(), Counter()
+    total_valid_pool = []
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = {executor.submit(fetch_url, name, url): name for name, url in MASTER_CONFIG['urls'].items()}
+        for future in concurrent.futures.as_completed(futures):
+            name, raw_fetched, valid_domains, kw_ex, tld_ex, other_ex = future.result()
+            all_source_data[name] = {'raw': raw_fetched, 'valid': len(valid_domains), 'set': valid_domains}
+            total_raw_fetched += raw_fetched
+            total_valid_pool.extend(list(valid_domains))
+            global_kw_ex.update(kw_ex)
+            global_tld_ex.update(tld_ex)
+            global_other_ex.update(other_ex)
+
+    for name, data in all_source_data.items():
+        other_domains = set()
+        for o_name, o_data in all_source_data.items():
+            if name != o_name: other_domains.update(o_data['set'])
+        data['unique_to_source'] = len(data['set'] - other_domains)
+
+    unique_set = set(total_valid_pool)
+    duplicates_count = len(total_valid_pool) - len(unique_set)
+    optimized_list = optimize_domains(unique_set)
+    tree_removed = len(unique_set) - len(optimized_list)
+    
+    avg_entropy = round(sum(calculate_entropy(d) for d in optimized_list) / len(optimized_list), 3) if optimized_list else 0
+    max_len = max(len(d) for d in optimized_list) if optimized_list else 0
+    
+    num_chunks = sync_at4(cf, optimized_list, False)
+    
+    generate_markdown_report({
+        'total_raw': total_raw_fetched, 
+        'kw_total': sum(global_kw_ex.values()),
+        'tld_total': sum(global_tld_ex.values()),
+        'duplicates': duplicates_count, 
+        'tree_removed': tree_removed, 
+        'final_size': len(optimized_list), 
+        'kw_ex': global_kw_ex,
+        'sources': all_source_data,
+        'avg_entropy': avg_entropy,
+        'max_len': max_len,
+        'chunks': num_chunks,
+        'runtime': round(time.time() - start_time, 2)
+    })
 
 if __name__ == "__main__":
     main()
