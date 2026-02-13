@@ -1,26 +1,14 @@
-# 🛡️ Cloudflare Zero Trust Intelligence Report
-> **Last Update:** `2026-02-13 16:54:50` | **Runtime:** `4.13s`
+# 🛡️ Isaac's Cloudflare Intelligence Report
+> **Last Update:** `2026-02-13 17:31:00` | **Sync Runtime:** `145.39s`
 
 ## 📊 Visual Insights
 ```mermaid
-pie title Domain Sync Lifecycle
-    "Active Rules" : 276407
-    "Duplicates Found" : 1297
-    "Subdomain Pruning" : 1990
-    "Keyword Filtered" : 27177
-    "TLD Filtered" : 32794
-```
-
-```mermaid
-pie title Top Blocked Keywords
-    "sex (10,239)": 10239
-    "porn (9,223)": 9223
-    "xxx (3,735)": 3735
-    "xvideo (739)": 739
-    "hentai (677)": 677
-    "milf (559)": 559
-    "fuck (517)": 517
-    "pussy (274)": 274
+pie title Domain Lifecycle Breakdown
+    "Cloudflare Rules" : 332244
+    "Keyword Blocked" : 26482
+    "TLD Blocked" : 44460
+    "Duplicates Found" : 1480
+    "Tree Pruned" : 2627
 ```
 
 ---
@@ -28,46 +16,45 @@ pie title Top Blocked Keywords
 ## 📋 Summary Metrics
 | Metric | Count | % of Raw |
 | :--- | :--- | :--- |
-| **Total Raw Ingested** | 340,122 | 100% |
-| **Keyword Filtered** | - 27,177 | 8.0% |
-| **TLD Filtered** | - 32,794 | 9.6% |
-| **Duplicate Removal** | - 1,297 | 0.4% |
-| **Subdomain Pruning** | - 1,990 | 0.6% |
-| **Final Cloudflare List** | **276,407** | **81.3%** |
+| **Total Raw Fetched** | 408,375 | 100% |
+| **Aggressive Keyword Hit** | - 26,482 | 6.5% |
+| **Banned TLD Block** | - 44,460 | 10.9% |
+| **Duplicate/Tree Pruning** | - 4,107 | -- |
+| **Active Rules Sent** | **332,244** | **81.4%** |
 
 ---
 
-## 🚩 Keyword Analytics (Top 10)
-| Keyword | Hits |
-| :--- | :--- |
-| `sex` | 10,239 |
-| `porn` | 9,223 |
-| `xxx` | 3,735 |
-| `xvideo` | 739 |
-| `hentai` | 677 |
-| `milf` | 559 |
-| `fuck` | 517 |
-| `pussy` | 274 |
-| `bdsm` | 269 |
-| `horny` | 231 |
+## 🚩 Top 12 Keyword Analytics
+| `sex` | 9,815 |
+| `porn` | 9,510 |
+| `xxx` | 4,290 |
+| `hentai` | 714 |
+| `milf` | 523 |
+| `fuck` | 506 |
+| `bdsm` | 272 |
+| `pussy` | 263 |
+| `horny` | 239 |
+| `tits` | 155 |
+| `bondage` | 83 |
+| `blowjob` | 36 |
 
 ---
 
 ## 🛰️ Provider Analytics (Uniqueness)
-| Source | Raw | Valid | Unique |
+| Source | Raw Ingest | Valid Pool | Unique Contribution |
 | :--- | :--- | :--- | :--- |
-| HaGeZi Fake | 14,157 | 13,950 | **96.4%** |
-| Hagezi Badware Hoster | 1,298 | 1,238 | **92.0%** |
-| Hagezi Dynamic DNS | 1,482 | 1,423 | **88.0%** |
-| Hagezi DoH Only | 3,504 | 2,959 | **98.8%** |
-| Hagezi Safeserach not Supported | 212 | 188 | **98.4%** |
-| HaGeZi Pro++ | 240,418 | 213,902 | **99.4%** |
-| Hagezi Anti-Piracy | 11,735 | 10,542 | **98.1%** |
-| Hagezi NSFW | 67,316 | 35,492 | **98.9%** |
+| Hagezi Badware Hoster | 1,298 | 1,230 | **91.8%** |
+| Hagezi Anti-Piracy | 11,735 | 10,350 | **98.0%** |
+| Hagezi Dynamic DNS | 1,482 | 1,413 | **87.7%** |
+| HaGeZi Fake | 14,157 | 13,915 | **95.8%** |
+| Hagezi Safeserach not Supported | 212 | 185 | **97.8%** |
+| Hagezi DoH Only | 3,504 | 2,920 | **98.7%** |
+| Hagezi NSFW | 67,316 | 35,633 | **98.7%** |
+| HaGeZi Ultimate | 308,671 | 270,705 | **99.5%** |
 
 ---
 
-## 🛠️ Infrastructure Stats
-* **Avg Entropy:** `3.441`
+## 🛠️ Infrastructure Health
+* **Avg Entropy (Randomness):** `3.45`
 * **Max Domain Length:** `179`
-* **Quota Usage:** `92.14%`
+* **Cloudflare Quota Usage:** `110.75%`
