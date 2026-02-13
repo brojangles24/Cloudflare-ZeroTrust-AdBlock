@@ -11,7 +11,7 @@ class Config:
     ACCOUNT_ID = os.environ.get("ACCOUNT_ID", "")
     MAX_LIST_SIZE = 1000  
     MAX_RETRIES = 3
-    TOTAL_QUOTA = 300000 # Cloudflare Free/Standard limit
+    TOTAL_QUOTA = 300000 # Cloudflare Zero Trust Free/Standard Limit
     REQUEST_TIMEOUT = (5, 25)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
@@ -31,34 +31,39 @@ MASTER_CONFIG = {
         "download", "ooo", "by", "cn", "ir", "kp", "ng", "ru", "su", "ss",
         "accountant", "accountants", "rest", "bar", "bzar", "bet", "cc", "poker", "casino"
     },
-    "offloaded_keywords": {
-        "xxx", "porn", "sex", "fuck", "tits", "pussy", 
-        "hentai", "milf", "blowjob", "threesome", "bondage", "bdsm", 
-        "gangbang", "handjob", "deepthroat", "horny", "bukkake"
+    "keywords": {
+        # AGGRESSIVE: Block if found ANYWHERE (catches zzzxxx154)
+        "aggressive": {
+            "xxx", "porn", "fuck", "tits", "pussy", "hentai", "milf", 
+            "blowjob", "threesome", "bondage", "bdsm", "gangbang", "handjob", 
+            "deepthroat", "bukkake",
+        },
     },
     "urls": {
-        # --- ACTIVE LISTS ---
-        "HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
+        # --- BASE AD/TRACKER PROTECTION (Active) ---
+        #"HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+        
+        # --- CONTENT & AGGRESSIVE BLOCKS (Active) ---
         "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
         "Hagezi Anti-Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
-        "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt", # <--- Ensure this comma exists!
-        
+        "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
+
+        # --- INFRASTRUCTURE & PRIVACY (Active) ---
+        #"Hagezi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
+        #"Hagezi DoH Only": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-onlydomains.txt",
+        #"Hagezi Badware Hoster": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
+
         # --- DISABLED / OPTIONAL ---
-        #"HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
-        #"HaGeZi Pro": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
-        #"1Hosts Lite": "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/domains.wildcards",
-        #"TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
-        #"OISD NSFW": "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_big.txt",
+        "HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
+        #"Hagezi Safeserach not Supported": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
         #"Hagezi Social Media": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
         #"Hagezi DoH/VPN": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
-        #"Hagezi Badware Hoster": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
-        #"Hagezi DoH Only": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-onlydomains.txt",
-        #"Hagezi Safeserach not Supported": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
-        #"Hagezi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
+        #"1Hosts Lite": "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/domains.wildcards",
+        #"TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
     }
 }
 
-# --- 2. Analytics & API Utils ---
+# --- 2. Analytics Utils ---
 def calculate_entropy(domain):
     prob = [float(domain.count(c)) / len(domain) for c in dict.fromkeys(list(domain))]
     return - sum([p * math.log(p) / math.log(2.0) for p in prob])
@@ -86,21 +91,37 @@ class CloudflareAPI:
 
 # --- 3. Processing Core ---
 def is_valid_domain(domain, kw_ex, tld_ex, other_ex):
+    # CRITICAL: Clean domain of wildcards and leading dots to prevent 400 Bad Request
     domain = domain.strip().strip('.')
+    
     if not domain or any(c in domain for c in ('*', '/', ':', '[', ']')):
         other_ex["Malformed/Wildcard"] += 1
         return False
+
     if '.' not in domain or 'xn--' in domain or re.match(r'^\d{1,3}(\.\d{1,3}){3}$', domain):
         other_ex["Invalid/IP/IDN"] += 1
         return False
+    
+    # 1. Banned TLD Check
     tld = domain.rsplit('.', 1)[-1]
     if tld in MASTER_CONFIG['banned_tlds']:
         tld_ex[tld] += 1
         return False
-    for kw in MASTER_CONFIG['offloaded_keywords']:
+    
+    # 2. Hybrid Keyword Matching
+    # A. Aggressive Check (Substring)
+    for kw in MASTER_CONFIG['keywords']['aggressive']:
         if kw in domain:
             kw_ex[kw] += 1
             return False
+
+    # B. Safe Check (Segments Only) - Spares 'document', 'community', 'peacock'
+    segments = re.split(r'\.|\-', domain)
+    for kw in MASTER_CONFIG['keywords']['safe']:
+        if kw in segments:
+            kw_ex[kw] += 1
+            return False
+            
     return domain
 
 def fetch_url(name, url):
@@ -117,7 +138,6 @@ def fetch_url(name, url):
             cleaned = is_valid_domain(raw_domain, kw_ex, tld_ex, other_ex)
             if cleaned:
                 valid_domains.add(cleaned)
-        logger.info(f"✅ Finished: {name} ({len(valid_domains):,} valid)")
         return name, raw_count, valid_domains, kw_ex, tld_ex, other_ex
     except Exception as e:
         logger.error(f"❌ Error fetching {name}: {e}")
@@ -132,27 +152,56 @@ def optimize_domains(domains):
         last_kept = d
     return [d[::-1] for d in optimized]
 
-# --- 4. Report & Sync ---
+# --- 4. Sync & Reporting ---
 def generate_markdown_report(stats):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     kw_rows = "\n".join([f'| `{kw}` | {count:,} |' for kw, count in stats["kw_ex"].most_common(12)])
     source_rows = "\n".join([f"| {n} | {d['raw']:,} | {d['valid']:,} | **{round((d['unique_to_source']/d['valid'])*100, 1) if d['valid'] > 0 else 0}%** |" for n, d in stats['sources'].items()])
-    funnel_chart = f"""```mermaid\npie title Domain Lifecycle Breakdown\n    "Cloudflare Rules" : {stats['final_size']}\n    "Keyword Blocked" : {stats['kw_total']}\n    "TLD Blocked" : {stats['tld_total']}\n    "Duplicates Found" : {stats['duplicates']}\n    "Tree Pruned" : {stats['tree_removed']}\n```"""
-    md_content = f"# 🛡️ Isaac's Cloudflare Intelligence Report\n> **Last Update:** `{now}` | **Sync Runtime:** `{stats['runtime']}s` \n\n## 📊 Visual Insights\n{funnel_chart}\n\n---\n\n## 📋 Summary Metrics\n| Metric | Count | % of Raw |\n| :--- | :--- | :--- |\n| **Total Raw Fetched** | {stats['total_raw']:,} | 100% |\n| **Aggressive Keyword Hit** | - {stats['kw_total']:,} | {round((stats['kw_total']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}% |\n| **Banned TLD Block** | - {stats['tld_total']:,} | {round((stats['tld_total']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}% |\n| **Duplicate/Tree Pruning** | - {stats['duplicates'] + stats['tree_removed']:,} | -- |\n| **Active Rules Sent** | **{stats['final_size']:,}** | **{round((stats['final_size']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}%** |\n\n---\n\n## 🚩 Top 12 Keyword Analytics\n{kw_rows}\n\n---\n\n## 🛰️ Provider Analytics (Uniqueness)\n| Source | Raw Ingest | Valid Pool | Unique Contribution |\n| :--- | :--- | :--- | :--- |\n{source_rows}\n\n---\n\n## 🛠️ Infrastructure Health\n* **Avg Entropy (Randomness):** `{stats['avg_entropy']}`\n* **Max Domain Length:** `{stats['max_len']}`\n* **Cloudflare Quota Usage:** `{round((stats['final_size']/Config.TOTAL_QUOTA)*100, 2)}%`"
+    
+    md_content = f"""# 🛡️ Isaac's Cloudflare Intelligence Report
+> **Sync Update:** `{now}` | **Duration:** `{stats['runtime']}s`
+
+## 📊 Processing Metrics
+| Metric | Count | % of Raw |
+| :--- | :--- | :--- |
+| **Total Raw Ingested** | {stats['total_raw']:,} | 100% |
+| **Keyword Filtered** | - {stats['kw_total']:,} | {round((stats['kw_total']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}% |
+| **TLD Filtered (.cc, etc)** | - {stats['tld_total']:,} | {round((stats['tld_total']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}% |
+| **Active Rules Sent** | **{stats['final_size']:,}** | **{round((stats['final_size']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}%** |
+
+---
+
+## 🚩 Top Blocked Keywords
+{kw_rows}
+
+---
+
+## 🛰️ Provider Analytics
+{source_rows}
+
+---
+
+## 🛠️ Infrastructure Health
+* **Randomness Index (Entropy):** `{stats['avg_entropy']}`
+* **Cloudflare Quota Usage:** `{round((stats['final_size']/Config.TOTAL_QUOTA)*100, 2)}%`
+"""
     Path(MASTER_CONFIG['stats_filename']).write_text(md_content)
 
 def sync_at4(cf, domains, force):
     out = Path(MASTER_CONFIG['filename'])
     if len(domains) > Config.TOTAL_QUOTA:
-        logger.warning(f"🚨 QUOTA EXCEEDED! Slicing from {len(domains):,} to {Config.TOTAL_QUOTA:,}")
+        logger.warning(f"⚠️ QUOTA FULL: Truncating from {len(domains):,} to {Config.TOTAL_QUOTA:,}")
         domains = domains[:Config.TOTAL_QUOTA]
+
     sorted_domains = sorted(list(domains))
     new_content = '\n'.join(sorted_domains)
     chunks = [sorted_domains[i:i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
+    
     out.write_text(new_content)
     lists = cf.get_lists()
     existing = sorted([l for l in lists if MASTER_CONFIG['prefix'] in l['name']], key=lambda x: x['name'])
     used_ids = []
+    
     for idx, chunk in enumerate(chunks):
         items = [{"value": d} for d in chunk]
         if idx < len(existing):
@@ -162,8 +211,10 @@ def sync_at4(cf, domains, force):
         else:
             res = cf.create_list(f"{MASTER_CONFIG['prefix']} {idx+1:03d}", items)
             used_ids.append(res['result']['id'])
+            
     if len(existing) > len(chunks):
         for i in range(len(chunks), len(existing)): cf.delete_list(existing[i]['id'])
+
     rules = cf.get_rules()
     rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
     clauses = [f'any(dns.domains[*] in ${lid})' for lid in used_ids]
@@ -172,11 +223,13 @@ def sync_at4(cf, domains, force):
     else: cf.create_rule(payload)
     return len(chunks)
 
+# --- 5. Main ---
 def main():
     start_time = time.time()
     cf = CloudflareAPI()
     all_source_data, total_raw_fetched, total_valid_pool = {}, 0, []
     global_kw_ex, global_tld_ex, global_other_ex = Counter(), Counter(), Counter()
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(fetch_url, name, url): name for name, url in MASTER_CONFIG['urls'].items()}
         for future in concurrent.futures.as_completed(futures):
@@ -187,12 +240,15 @@ def main():
             global_kw_ex.update(kw_ex)
             global_tld_ex.update(tld_ex)
             global_other_ex.update(other_ex)
+
     for name, data in all_source_data.items():
         others = set().union(*(d['set'] for n, d in all_source_data.items() if n != name))
         data['unique_to_source'] = len(data['set'] - others)
+
     unique_set = set(total_valid_pool)
     optimized_list = optimize_domains(unique_set)
     num_chunks = sync_at4(cf, optimized_list, False)
+    
     generate_markdown_report({
         'total_raw': total_raw_fetched, 'kw_total': sum(global_kw_ex.values()), 'tld_total': sum(global_tld_ex.values()),
         'duplicates': len(total_valid_pool) - len(unique_set), 'tree_removed': len(unique_set) - len(optimized_list), 
@@ -201,7 +257,7 @@ def main():
         'max_len': max(len(d) for d in optimized_list) if optimized_list else 0,
         'chunks': num_chunks, 'runtime': round(time.time() - start_time, 2)
     })
-    logger.info("✨ DONE. Full Intelligence Report Generated.")
+    logger.info("✨ DONE. Intelligence Report Generated.")
 
 if __name__ == "__main__":
     main()
