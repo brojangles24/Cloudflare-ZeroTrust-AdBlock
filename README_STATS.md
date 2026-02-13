@@ -1,32 +1,70 @@
 # 🛡️ Cloudflare Zero Trust Intelligence Report
-> **Generated on:** `2026-02-13 15:49:06`
+> **Cycle Updated:** `2026-02-13 15:50:42` | **Runtime:** `2.88s` | **Status:** 🟢
 
-## 📊 Fleet Summary
-| Metric | Value |
-| :--- | :--- |
-| **Total Raw Ingested** | 294,511 |
-| **Filtered (TLD/Keywords)** | - 55,211 |
-| **Skipped (Duplicates)** | - 871 |
-| **Optimized (Subdomains)** | - 1,726 |
-| **Final Upload Size** | **236,703** |
+## 📊 Visual Insights
+
+### Data Processing Funnel
+How raw inputs are transformed into active rules.
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'pie1': '#00C853', 'pie2': '#FFAB00', 'pie3': '#2962FF', 'pie4': '#D50000'}}}%%
+pie title Data Processing Funnel
+    "Active Rules (236,703)" : 236703
+    "Exact Duplicates (871)" : 871
+    "Subdomain Opt. (1,726)" : 1726
+    "Filtered By Policy (55,211)" : 55211
+```
+
+### Top Filtered Categories
+What is being removed before optimization.
+```mermaid
+%%{init: {'theme': 'forest'}}%%
+pie title Top Blocked Categories
+    "Keyword Offload (27,059)": 27059
+    "TLD top (6,284)": 6284
+    "TLD xyz (4,860)": 4860
+    "TLD ru (4,820)": 4820
+    "TLD cfd (2,412)": 2412
+    "TLD cn (2,234)": 2234
+    "Others (7,542)": 7542
+```
 
 ---
 
-## 🛰️ Source Effectiveness
-| Provider | Raw Domains | Passed Filter |
+## 📋 Summary Metrics
+| Metric | Count | % of Raw |
 | :--- | :--- | :--- |
-| Hagezi DoH Only | 3,504 | 2,959 |
-| Hagezi Dynamic DNS | 1,482 | 1,423 |
-| Hagezi Safeserach not Supported | 212 | 188 |
-| Hagezi Badware Hoster | 1,298 | 1,238 |
-| HaGeZi Fake | 14,157 | 13,950 |
-| Hagezi Anti-Piracy | 11,735 | 10,542 |
-| HaGeZi Pro | 194,807 | 173,508 |
-| Hagezi NSFW | 67,316 | 35,492 |
+| **Total Ingested** | 294,511 | 100% |
+| **Active Rules (Final)** | **236,703** | **80.4%** |
+| **Noise Removed** | 57,808 | |
 
 ---
 
-## 🚩 Top Blocked TLDs & Categories
+## 🚩 Deep Analytics & Trends
+| Indicator | Value | Insight |
+| :--- | :--- | :--- |
+| **Cloudflare Quota** | `78.9%` | Used 236,703 of 300,000 |
+| **Average Domain Entropy** | `3.435` | High entropy (>4.0) suggests DGA/Malware |
+| **Max Domain Length** | `82` chars | Extremely long names are anomaly markers |
+| **Common FQDN Depth** | `2.33` levels | Average subdomains per root |
+| **API Chunks** | `237` lists | Total lists managed in Cloudflare Gateway |
+
+---
+
+## 🛰️ Provider Effectiveness
+| Source | Raw Ingest | Validated | Clean Efficiency |
+| :--- | :--- | :--- | :--- |
+| Hagezi DoH Only | 3,504 | 2,959 | 84.4% |
+| Hagezi Badware Hoster | 1,298 | 1,238 | 95.4% |
+| Hagezi Safeserach not Supported | 212 | 188 | 88.7% |
+| Hagezi Dynamic DNS | 1,482 | 1,423 | 96.0% |
+| Hagezi Anti-Piracy | 11,735 | 10,542 | 89.8% |
+| HaGeZi Fake | 14,157 | 13,950 | 98.5% |
+| Hagezi NSFW | 67,316 | 35,492 | 52.7% |
+| HaGeZi Pro | 194,807 | 173,508 | 89.1% |
+
+---
+
+## 🛑 Top 25 Filtered Categories List
 | Reason / TLD | Count |
 | :--- | :--- |
 | Keyword Offload | 27,059 |
@@ -49,9 +87,8 @@
 | TLD: win | 125 |
 | TLD: bid | 123 |
 | TLD: monster | 104 |
-
----
-## 🛠️ Performance
-* **Cloudflare Chunks:** 237 lists
-* **List Density:** 1000 items/list
-* **Quota Usage:** 78.9%
+| TLD: stream | 81 |
+| TLD: bar | 70 |
+| TLD: bet | 68 |
+| TLD: by | 39 |
+| TLD: party | 39 |
