@@ -9,9 +9,10 @@ from urllib3.util import Retry
 class Config:
     API_TOKEN = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID = os.environ.get("ACCOUNT_ID", "")
-    MAX_LIST_SIZE = 1000  
-    MAX_RETRIES = 5
+    MAX_LIST_SIZE = 1001  
+    MAX_RETRIES = 3
     TOTAL_QUOTA = 300000 
+    REQUEST_TIMEOUT = (5, 15) # (Connect, Read)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
 logger = logging.getLogger(__name__)
@@ -65,11 +66,12 @@ class CloudflareAPI:
         self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{Config.ACCOUNT_ID}/gateway"
         self.headers = {"Authorization": f"Bearer {Config.API_TOKEN}", "Content-Type": "application/json"}
         self.session = requests.Session()
-        retries = Retry(total=Config.MAX_RETRIES, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+        # respect_retry_after_header=False prevents hanging on server-side rate limit delays
+        retries = Retry(total=Config.MAX_RETRIES, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504], respect_retry_after_header=False)
         self.session.mount("https://", HTTPAdapter(max_retries=retries))
 
     def _request(self, method, endpoint, **kwargs):
-        resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, **kwargs)
+        resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, timeout=Config.REQUEST_TIMEOUT, **kwargs)
         resp.raise_for_status()
         return resp.json()
 
@@ -80,13 +82,16 @@ class CloudflareAPI:
     def get_rules(self): return self._request("GET", "rules").get('result') or []
     def create_rule(self, data): return self._request("POST", "rules", json=data)
     def update_rule(self, rid, data): return self._request("PUT", f"rules/{rid}", json=data)
-    def delete_rule(self, rid): return self._request("DELETE", f"rules/{rid}")
 
-# --- 3. Report Logic ---
+# --- 3. Markdown Generator ---
 def generate_markdown_report(stats):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # 1. Mermaid Pie Charts
+    # Pre-generate complex strings to avoid f-string SyntaxErrors
+    kw_rows = "\n".join([f'| `{kw}` | {count:,} |' for kw, count in stats["kw_ex"].most_common(10)])
+    source_rows = "\n".join([f"| {n} | {d['raw']:,} | {d['valid']:,} | **{round((d['unique_to_source']/d['valid'])*100, 1) if d['valid'] > 0 else 0}%** |" for n, d in stats['sources'].items()])
+    
+    # Charts
     funnel_chart = f"""```mermaid
 pie title Domain Sync Lifecycle
     "Active Rules" : {stats['final_size']}
@@ -96,25 +101,20 @@ pie title Domain Sync Lifecycle
     "TLD Filtered" : {stats['tld_total']}
 ```"""
 
-    kw_slices = "\n".join([f'    "{kw} ({count:,})": {count}' for kw, count in stats['kw_ex'].most_common(10)])
+    kw_slices = "\n".join([f'    "{kw} ({count:,})": {count}' for kw, count in stats['kw_ex'].most_common(8)])
     kw_chart = f"```mermaid\npie title Top Blocked Keywords\n{kw_slices}\n```"
 
-    # 2. Pre-generate rows to avoid backslashes inside f-string {}
-    kw_rows = "\n".join([f'| `{kw}` | {count:,} |' for kw, count in stats["kw_ex"].most_common(10)])
-    source_rows = "\n".join([f"| {n} | {d['raw']:,} | {d['valid']:,} | **{round((d['unique_to_source']/d['valid'])*100, 1) if d['valid'] > 0 else 0}%** |" 
-                             for n, d in stats['sources'].items()])
-
     md_content = f"""# 🛡️ Cloudflare Zero Trust Intelligence Report
-> **Cycle Updated:** `{now}` | **Runtime:** `{stats['runtime']}s`
+> **Last Update:** `{now}` | **Runtime:** `{stats['runtime']}s`
 
-## 📊 Processing Insights
+## 📊 Visual Insights
 {funnel_chart}
 
 {kw_chart}
 
 ---
 
-## 📋 Comprehensive Metrics
+## 📋 Summary Metrics
 | Metric | Count | % of Raw |
 | :--- | :--- | :--- |
 | **Total Raw Ingested** | {stats['total_raw']:,} | 100% |
@@ -122,53 +122,51 @@ pie title Domain Sync Lifecycle
 | **TLD Filtered** | - {stats['tld_total']:,} | {round((stats['tld_total']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}% |
 | **Duplicate Removal** | - {stats['duplicates']:,} | {round((stats['duplicates']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}% |
 | **Subdomain Pruning** | - {stats['tree_removed']:,} | {round((stats['tree_removed']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}% |
-| **Final Active Rules** | **{stats['final_size']:,}** | **{round((stats['final_size']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}%** |
+| **Final Cloudflare List** | **{stats['final_size']:,}** | **{round((stats['final_size']/stats['total_raw'])*100, 1) if stats['total_raw'] > 0 else 0}%** |
 
 ---
 
-## 🚩 Keyword Hit Analytics (Top 10)
+## 🚩 Keyword Analytics (Top 10)
 | Keyword | Hits |
 | :--- | :--- |
 {kw_rows}
 
 ---
 
-## 🛰️ Provider Quality (Uniqueness)
-| Source | Raw | Valid | Uniqueness |
+## 🛰️ Provider Analytics (Uniqueness)
+| Source | Raw | Valid | Unique |
 | :--- | :--- | :--- | :--- |
 {source_rows}
 
 ---
 
-## 🛠️ Infrastructure Analytics
+## 🛠️ Infrastructure Stats
 * **Avg Entropy:** `{stats['avg_entropy']}`
 * **Max Domain Length:** `{stats['max_len']}`
 * **Quota Usage:** `{round((stats['final_size']/Config.TOTAL_QUOTA)*100, 2)}%`
 """
     Path(MASTER_CONFIG['stats_filename']).write_text(md_content)
 
-# --- 4. Processing Functions ---
+# --- 4. Core Logic ---
 def is_valid_domain(domain, kw_ex, tld_ex, other_ex):
     if '.' not in domain or 'xn--' in domain or re.match(r'^\d{1,3}(\.\d{1,3}){3}$', domain):
         other_ex["Invalid/IP"] += 1
         return False
-    
     tld = domain.rsplit('.', 1)[-1]
     if tld in MASTER_CONFIG['banned_tlds']:
         tld_ex[tld] += 1
         return False
-    
     for kw in MASTER_CONFIG['offloaded_keywords']:
         if kw in domain:
             kw_ex[kw] += 1
             return False
-            
     return True
 
 def fetch_url(name, url):
+    logger.info(f"🚀 Fetching: {name}")
     kw_ex, tld_ex, other_ex, valid_domains, raw_count = Counter(), Counter(), Counter(), set(), 0
     try:
-        resp = requests.get(url, timeout=30)
+        resp = requests.get(url, timeout=Config.REQUEST_TIMEOUT)
         resp.raise_for_status()
         for line in resp.text.splitlines():
             line = line.strip()
@@ -177,16 +175,17 @@ def fetch_url(name, url):
             raw_count += 1
             if is_valid_domain(domain, kw_ex, tld_ex, other_ex):
                 valid_domains.add(domain)
+        logger.info(f"✅ Finished: {name}")
         return name, raw_count, valid_domains, kw_ex, tld_ex, other_ex
-    except:
+    except Exception as e:
+        logger.error(f"❌ Error fetching {name}: {e}")
         return name, 0, set(), Counter(), Counter(), Counter()
 
 def optimize_domains(domains):
     reversed_domains = sorted([d[::-1] for d in domains])
     optimized, last_kept = [], None
     for d in reversed_domains:
-        if last_kept and d.startswith(last_kept + "."):
-            continue
+        if last_kept and d.startswith(last_kept + "."): continue
         optimized.append(d)
         last_kept = d
     return [d[::-1] for d in optimized]
@@ -203,14 +202,13 @@ def sync_at4(cf, domains, force):
     existing = sorted([l for l in lists if MASTER_CONFIG['prefix'] in l['name']], key=lambda x: x['name'])
     used_ids = []
     for idx, chunk in enumerate(chunks):
-        list_name = f"{MASTER_CONFIG['prefix']} {idx+1:03d}"
         items = [{"value": d} for d in chunk]
         if idx < len(existing):
             lid = existing[idx]['id']
-            cf.update_list(lid, list_name, items)
+            cf.update_list(lid, f"{MASTER_CONFIG['prefix']} {idx+1:03d}", items)
             used_ids.append(lid)
         else:
-            res = cf.create_list(list_name, items)
+            res = cf.create_list(f"{MASTER_CONFIG['prefix']} {idx+1:03d}", items)
             used_ids.append(res['result']['id'])
     rules = cf.get_rules()
     rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
@@ -218,22 +216,16 @@ def sync_at4(cf, domains, force):
     payload = {"name": MASTER_CONFIG['policy_name'], "action": "block", "enabled": True, "filters": ["dns"], "traffic": " or ".join(clauses)}
     if rid: cf.update_rule(rid, payload)
     else: cf.create_rule(payload)
-    if len(existing) > num_chunks:
-        for old_list in existing[num_chunks:]:
-            try: cf.delete_list(old_list['id'])
-            except: pass
     return num_chunks
 
 # --- 5. Main ---
 def main():
     start_time = time.time()
     cf = CloudflareAPI()
-    
-    all_source_data, total_raw_fetched = {}, 0
-    global_kw_ex, global_tld_ex, global_other_ex = Counter(), Counter(), Counter()
-    total_valid_pool = []
+    all_source_data, total_raw_fetched, total_valid_pool = {}, 0, []
+    global_kw_ex, global_tld_ex = Counter(), Counter()
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(fetch_url, name, url): name for name, url in MASTER_CONFIG['urls'].items()}
         for future in concurrent.futures.as_completed(futures):
             name, raw_fetched, valid_domains, kw_ex, tld_ex, other_ex = future.result()
@@ -242,38 +234,24 @@ def main():
             total_valid_pool.extend(list(valid_domains))
             global_kw_ex.update(kw_ex)
             global_tld_ex.update(tld_ex)
-            global_other_ex.update(other_ex)
 
     for name, data in all_source_data.items():
-        other_domains = set()
-        for o_name, o_data in all_source_data.items():
-            if name != o_name: other_domains.update(o_data['set'])
-        data['unique_to_source'] = len(data['set'] - other_domains)
+        others = set().union(*(d['set'] for n, d in all_source_data.items() if n != name))
+        data['unique_to_source'] = len(data['set'] - others)
 
     unique_set = set(total_valid_pool)
-    duplicates_count = len(total_valid_pool) - len(unique_set)
     optimized_list = optimize_domains(unique_set)
-    tree_removed = len(unique_set) - len(optimized_list)
-    
-    avg_entropy = round(sum(calculate_entropy(d) for d in optimized_list) / len(optimized_list), 3) if optimized_list else 0
-    max_len = max(len(d) for d in optimized_list) if optimized_list else 0
-    
     num_chunks = sync_at4(cf, optimized_list, False)
     
     generate_markdown_report({
-        'total_raw': total_raw_fetched, 
-        'kw_total': sum(global_kw_ex.values()),
-        'tld_total': sum(global_tld_ex.values()),
-        'duplicates': duplicates_count, 
-        'tree_removed': tree_removed, 
-        'final_size': len(optimized_list), 
-        'kw_ex': global_kw_ex,
-        'sources': all_source_data,
-        'avg_entropy': avg_entropy,
-        'max_len': max_len,
-        'chunks': num_chunks,
-        'runtime': round(time.time() - start_time, 2)
+        'total_raw': total_raw_fetched, 'kw_total': sum(global_kw_ex.values()), 'tld_total': sum(global_tld_ex.values()),
+        'duplicates': len(total_valid_pool) - len(unique_set), 'tree_removed': len(unique_set) - len(optimized_list), 
+        'final_size': len(optimized_list), 'kw_ex': global_kw_ex, 'sources': all_source_data,
+        'avg_entropy': round(sum(calculate_entropy(d) for d in optimized_list) / len(optimized_list), 3) if optimized_list else 0,
+        'max_len': max(len(d) for d in optimized_list) if optimized_list else 0,
+        'chunks': num_chunks, 'runtime': round(time.time() - start_time, 2)
     })
+    logger.info("✨ Intelligence Sync Complete.")
 
 if __name__ == "__main__":
     main()
