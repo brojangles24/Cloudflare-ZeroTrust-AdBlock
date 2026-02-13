@@ -9,7 +9,7 @@ from urllib3.util import Retry
 class Config:
     API_TOKEN = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID = os.environ.get("ACCOUNT_ID", "")
-    MAX_LIST_SIZE = 1000  # Stays well within the 300-list limit
+    MAX_LIST_SIZE = 1000  # Optimized for Cloudflare's 300-list limit
     MAX_RETRIES = 5
     TOTAL_QUOTA = 300000 
 
@@ -21,18 +21,17 @@ MASTER_CONFIG = {
     "prefix": "Ads, Tracker, Telemetry, Malware", 
     "policy_name": "Ads, Tracker, Telemetry, Malware",
     "filename": "aggregate_blocklist.txt",
+    "stats_filename": "README_STATS.md",
     "banned_tlds": {
-        # --- High-Risk / Spam TLDs ---
+        # High-Risk / Spam
         "top", "xyz", "xin", "icu", "sbs", "cfd", "gdn", "monster", "buzz", "bid", 
         "stream", "webcam", "zip", "mov", "pw", "tk", "ml", "ga", "cf", "gq",
         "men", "work", "click", "link", "party", "trade", "date", "loan", "win", 
         "faith", "racing", "review", "country", "kim", "cricket", "science",
         "download", "ooo",
-
-        # --- Requested Country Blocks ---
+        # Requested Country Blocks
         "by", "cn", "ir", "kp", "ng", "ru", "su", "ss",
-
-        # --- Finance, Gambling & Business ---
+        # Business & Gambling
         "accountant", "accountants", "rest", "bar", "bzar", "bet", "poker", "casino"
     },
     "offloaded_keywords": {
@@ -85,21 +84,19 @@ class CloudflareAPI:
 
 # --- 3. Processing Logic ---
 def is_valid_domain(domain, ex_counts):
-    # Basic validation
+    # IDN / Punycode / IP Check
     if '.' not in domain or 'xn--' in domain or re.match(r'^\d{1,3}(\.\d{1,3}){3}$', domain):
+        ex_counts["Invalid/IDN/IP"] += 1
         return False
-        
     # TLD filtering
     tld = domain.rsplit('.', 1)[-1]
     if tld in MASTER_CONFIG['banned_tlds']:
         ex_counts[f"TLD: {tld}"] += 1
         return False
-
     # Keyword filtering
     if any(kw in domain for kw in MASTER_CONFIG['offloaded_keywords']):
         ex_counts["Keyword Offload"] += 1
         return False
-
     return True
 
 def fetch_url(name, url):
@@ -113,8 +110,8 @@ def fetch_url(name, url):
         for line in resp.text.splitlines():
             line = line.strip()
             if not line or line.startswith(('#', '!', '//')): continue
-            raw_count += 1
             domain = line.split()[-1].lower()
+            raw_count += 1
             if is_valid_domain(domain, ex_counts):
                 valid_domains.add(domain)
         return name, raw_count, valid_domains, ex_counts
@@ -133,13 +130,54 @@ def optimize_domains(domains):
         last_kept = d
     return [d[::-1] for d in optimized]
 
-# --- 4. Sync Mechanism ---
+# --- 4. Markdown Generator ---
+def generate_markdown_report(stats):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    tld_rows = "\n".join([f"| {reason} | {count:,} |" for reason, count in stats['global_ex'].most_common(20)])
+    source_rows = "\n".join([f"| {name} | {data['raw']:,} | {data['valid']:,} |" for name, data in stats['sources'].items()])
+
+    md_content = f"""# 🛡️ Cloudflare Zero Trust Intelligence Report
+> **Generated on:** `{now}`
+
+## 📊 Fleet Summary
+| Metric | Value |
+| :--- | :--- |
+| **Total Raw Ingested** | {stats['total_raw']:,} |
+| **Filtered (TLD/Keywords)** | - {stats['total_excluded']:,} |
+| **Skipped (Duplicates)** | - {stats['duplicates']:,} |
+| **Optimized (Subdomains)** | - {stats['tree_removed']:,} |
+| **Final Upload Size** | **{stats['final_size']:,}** |
+
+---
+
+## 🛰️ Source Effectiveness
+| Provider | Raw Domains | Passed Filter |
+| :--- | :--- | :--- |
+{source_rows}
+
+---
+
+## 🚩 Top Blocked TLDs & Categories
+| Reason / TLD | Count |
+| :--- | :--- |
+{tld_rows}
+
+---
+## 🛠️ Performance
+* **Cloudflare Chunks:** {stats['chunks']} lists
+* **List Density:** {Config.MAX_LIST_SIZE} items/list
+* **Quota Usage:** {round((stats['final_size'] / Config.TOTAL_QUOTA) * 100, 2)}%
+"""
+    Path(MASTER_CONFIG['stats_filename']).write_text(md_content)
+    logger.info("Intelligence report updated.")
+
+# --- 5. Sync Mechanism ---
 def sync_at4(cf, domains, force):
     out = Path(MASTER_CONFIG['filename'])
     new_content = '\n'.join(sorted(domains))
     if out.exists() and not force and out.read_text().strip() == new_content.strip():
         logger.info("No changes detected. Skipping Sync.")
-        return
+        return 0
     out.write_text(new_content)
 
     lists = cf.get_lists()
@@ -165,79 +203,59 @@ def sync_at4(cf, domains, force):
     rules = cf.get_rules()
     rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
     clauses = [f'any(dns.domains[*] in ${lid})' for lid in used_ids]
-    payload = {
-        "name": MASTER_CONFIG['policy_name'], 
-        "action": "block", 
-        "enabled": True, 
-        "filters": ["dns"], 
-        "traffic": " or ".join(clauses)
-    }
+    payload = {"name": MASTER_CONFIG['policy_name'], "action": "block", "enabled": True, "filters": ["dns"], "traffic": " or ".join(clauses)}
     
     if rid: cf.update_rule(rid, payload)
     else: cf.create_rule(payload)
     
-    # Cleanup leftover lists if the new count is smaller
     if len(existing) > len(chunks):
         for old_list in existing[len(chunks):]:
-            try:
-                cf.delete_list(old_list['id'])
-            except:
-                logger.warning(f"Cleanup: List {old_list['id']} is likely still locked.")
-                
+            try: cf.delete_list(old_list['id'])
+            except: pass
     logger.info("Sync Complete.")
+    return len(chunks)
 
-# --- 5. Main ---
+# --- 6. Main ---
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--delete", action="store_true")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
-    
     cf = CloudflareAPI()
 
     if args.delete:
-        logger.info("Starting cleanup process...")
         rules, lists = cf.get_rules(), cf.get_lists()
-        
         rid = next((r['id'] for r in rules if r['name'] == MASTER_CONFIG['policy_name']), None)
         if rid:
-            logger.info(f"Deleting Rule: {MASTER_CONFIG['policy_name']}")
             cf.delete_rule(rid)
-            logger.info("Waiting 3 seconds for lock release...")
             time.sleep(3)
-        
-        target_lists = [ls for ls in lists if MASTER_CONFIG['prefix'] in ls['name']]
-        for l in target_lists:
-            try:
-                logger.info(f"Deleting List: {l['name']}")
-                cf.delete_list(l['id'])
-            except Exception as e:
-                logger.error(f"Error deleting list {l['name']}: {e}")
+        for l in [ls for ls in lists if MASTER_CONFIG['prefix'] in ls['name']]:
+            try: cf.delete_list(l['id'])
+            except: pass
         return
 
-    all_unique = set()
-    global_ex = Counter()
+    all_unique, global_ex, total_raw_fetched, source_stats = set(), Counter(), 0, {}
     
     with concurrent.futures.ThreadPoolExecutor() as executor:
         futures = {executor.submit(fetch_url, name, url) for name, url in MASTER_CONFIG['urls'].items()}
         for future in concurrent.futures.as_completed(futures):
-            _, _, valid_domains, ex_counts = future.result()
+            name, raw_fetched, valid_domains, ex_counts = future.result()
             all_unique.update(valid_domains)
             global_ex.update(ex_counts)
+            total_raw_fetched += raw_fetched
+            source_stats[name] = {'raw': raw_fetched, 'valid': len(valid_domains)}
 
-    # Filtering summary
     total_excluded = sum(global_ex.values())
-    logger.info(f"FILTERING REPORT: {total_excluded:,} domains removed.")
-    for reason, count in global_ex.most_common(15):
-        logger.info(f"  {reason}: {count:,}")
-
+    duplicates_count = total_raw_fetched - total_excluded - len(all_unique)
     optimized_list = optimize_domains(all_unique)
+    tree_removed = len(all_unique) - len(optimized_list)
     
     if len(optimized_list) > Config.TOTAL_QUOTA:
-        logger.error(f"CRITICAL: Optimized list size ({len(optimized_list):,}) exceeds quota. Sync aborted.")
+        logger.error(f"OVER QUOTA: {len(optimized_list):,}. Sync aborted.")
         return
 
-    sync_at4(cf, optimized_list, args.force)
+    num_chunks = sync_at4(cf, optimized_list, args.force)
+    generate_markdown_report({'total_raw': total_raw_fetched, 'total_excluded': total_excluded, 'duplicates': duplicates_count, 'tree_removed': tree_removed, 'final_size': len(optimized_list), 'global_ex': global_ex, 'chunks': num_chunks, 'sources': source_stats, 'all_unique': all_unique})
 
 if __name__ == "__main__":
     main()
