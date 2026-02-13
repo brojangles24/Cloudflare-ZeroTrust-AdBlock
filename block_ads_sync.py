@@ -17,9 +17,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 MASTER_CONFIG = {
-    "name": "Blocklist", 
-    "prefix": "Blocklist", 
-    "policy_name": "Blocklist",
+    "name": "Ads, Tracker, Telemetry, Malware", 
+    "prefix": "Ads, Tracker, Telemetry, Malware", 
+    "policy_name": "Ads, Tracker, Telemetry, Malware",
     "filename": "aggregate_blocklist.txt",
     "banned_tlds": {
         "top", "xin", "icu", "sbs", "cfd", "gdn", "monster", "buzz", "bid", "stream", "webcam", 
