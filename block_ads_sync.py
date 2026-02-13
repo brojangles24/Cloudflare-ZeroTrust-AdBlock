@@ -38,6 +38,8 @@ MASTER_CONFIG = {
             "blowjob", "threesome", "bondage", "bdsm", "gangbang", "handjob", 
             "deepthroat", "bukkake",
         },
+        
+        "safe": set()
     },
     "urls": {
         # --- BASE AD/TRACKER PROTECTION (Active) ---
