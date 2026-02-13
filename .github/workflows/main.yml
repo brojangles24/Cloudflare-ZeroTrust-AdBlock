@@ -2,7 +2,7 @@ name: Cloudflare Gateway Sync
 
 on:
   schedule:
-    - cron: '0 * * * *' # Runs every hour on the hour
+    - cron: '0 * * * *' # Runs hourly
   workflow_dispatch:
     inputs:
       force_mode:
@@ -30,10 +30,12 @@ jobs:
           python-version: '3.11'
 
       - name: Install Dependencies
+        # requests is the only required library
         run: pip install requests
 
       - name: Run Sync
         env:
+          # Ensure these secrets are set in your repo settings
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
         run: |
@@ -46,11 +48,8 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # Explicitly add both the blocklist and the stats file
           git add aggregate_blocklist.txt README_STATS.md
           if ! git diff --cached --quiet; then
-            git commit -m "Update blocklists and stats [skip ci]"
+            git commit -m "Update intelligence report and blocklist [skip ci]"
             git push
-          else
-            echo "No file changes to commit."
           fi
