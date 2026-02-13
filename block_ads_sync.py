@@ -35,10 +35,10 @@ MASTER_CONFIG = {
         "accountant", "accountants", "rest", "bar", "bzar", "bet", "cc", "poker", "casino"
     },
     "offloaded_keywords": {
-        "xxx", "porn", "sex", "sexy", "fuck", "tits", "titties", "boobs", "boobies", "booty", "pussy",
+        "xxx", "porn", "sex", "sexy", "fuck", "tits", "titties", "titty", "boobs", "boobies", "booty", "pussy",
         "hentai", "milf", "blowjob", "threesome", "bondage", "bdsm", 
         "gangbang", "handjob", "deepthroat", "horny", "bukkake", "titfuck",
-        "brazzers", "redtube", "pornhub", 
+        "brazzers", "redtube", "pornhub", "shemale", "erotic", "omegle", "xnxx", "xvideo", "xxvideo",
     },
     "urls": {
         # --- ACTIVE LISTS ---
