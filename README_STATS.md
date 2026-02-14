@@ -1,5 +1,5 @@
 # 🛡️ Isaac's Cloudflare Intelligence Report
-> **Last Update:** `2026-02-14 11:28:42` | **Sync Runtime:** `92.87s`
+> **Last Update:** `2026-02-14 13:01:35` | **Sync Runtime:** `95.43s`
 
 ## 📊 Visual Insights
 ```mermaid
@@ -25,18 +25,18 @@ pie title Domain Lifecycle Breakdown
 ---
 
 ## 🚩 Top 12 Keyword Analytics
-| `sex` | 10,098 |
-| `porn` | 8,869 |
-| `xxx` | 3,673 |
-| `hentai` | 669 |
-| `milf` | 573 |
-| `fuck` | 539 |
-| `erotic` | 417 |
-| `xnxx` | 319 |
-| `xxvideo` | 261 |
-| `bdsm` | 260 |
-| `shemale` | 254 |
-| `pussy` | 245 |
+| `sex` | 10,265 |
+| `porn` | 8,843 |
+| `xxx` | 3,394 |
+| `hentai` | 666 |
+| `xnxx` | 596 |
+| `milf` | 555 |
+| `fuck` | 503 |
+| `erotic` | 430 |
+| `xvideo` | 276 |
+| `bdsm` | 262 |
+| `shemale` | 245 |
+| `pussy` | 244 |
 
 ---
 
