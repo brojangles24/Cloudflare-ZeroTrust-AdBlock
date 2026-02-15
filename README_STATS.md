@@ -1,5 +1,5 @@
 # 🛡️ Isaac's Cloudflare Intelligence Report
-> **Last Update:** `2026-02-15 21:31:59` | **Sync Runtime:** `126.04s`
+> **Last Update:** `2026-02-15 22:31:56` | **Sync Runtime:** `95.75s`
 
 ## 📊 Visual Insights
 ```mermaid
@@ -25,18 +25,18 @@ pie title Domain Lifecycle Breakdown
 ---
 
 ## 🚩 Top 12 Keyword Analytics
-| `porn` | 9,504 |
-| `sex` | 9,260 |
-| `xxx` | 4,400 |
-| `sexy` | 1,053 |
-| `hentai` | 693 |
-| `milf` | 615 |
-| `fuck` | 545 |
-| `erotic` | 439 |
-| `xvideo` | 426 |
-| `xnxx` | 282 |
-| `bdsm` | 271 |
-| `pussy` | 246 |
+| `porn` | 9,273 |
+| `sex` | 9,238 |
+| `xxx` | 4,165 |
+| `sexy` | 1,046 |
+| `hentai` | 727 |
+| `xvideo` | 726 |
+| `milf` | 578 |
+| `fuck` | 440 |
+| `erotic` | 431 |
+| `xnxx` | 351 |
+| `bdsm` | 273 |
+| `pussy` | 269 |
 
 ---
 
@@ -47,8 +47,8 @@ pie title Domain Lifecycle Breakdown
 | Hagezi Anti-Piracy | 11,730 | 10,341 | **98.0%** |
 | HaGeZi Fake | 14,103 | 13,862 | **96.9%** |
 | Hagezi NSFW | 68,599 | 34,669 | **98.8%** |
-| 1Hosts Lite | 94,050 | 88,034 | **29.2%** |
 | HaGeZi Pro++ | 236,886 | 209,976 | **70.0%** |
+| 1Hosts Lite | 94,050 | 88,034 | **29.2%** |
 
 ---
 
