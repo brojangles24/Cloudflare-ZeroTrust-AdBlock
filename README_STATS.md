@@ -1,10 +1,10 @@
 # 🛡️ Isaac's Cloudflare Intelligence Report
-> **Last Update:** `2026-02-14 23:31:20` | **Sync Runtime:** `97.27s`
+> **Last Update:** `2026-02-15 02:45:24` | **Sync Runtime:** `94.75s`
 
 ## 📊 Visual Insights
 ```mermaid
 pie title Domain Lifecycle Breakdown
-    "Cloudflare Rules" : 281230
+    "Cloudflare Rules" : 281229
     "Keyword Blocked" : 27646
     "TLD Blocked" : 39066
     "Duplicates Found" : 63014
@@ -16,39 +16,39 @@ pie title Domain Lifecycle Breakdown
 ## 📋 Summary Metrics
 | Metric | Count | % of Raw |
 | :--- | :--- | :--- |
-| **Total Raw Fetched** | 423,641 | 100% |
+| **Total Raw Fetched** | 423,640 | 100% |
 | **Aggressive Keyword Hit** | - 27,646 | 6.5% |
 | **Banned TLD Block** | - 39,066 | 9.2% |
 | **Duplicate/Tree Pruning** | - 75,218 | -- |
-| **Active Rules Sent** | **281,230** | **66.4%** |
+| **Active Rules Sent** | **281,229** | **66.4%** |
 
 ---
 
 ## 🚩 Top 12 Keyword Analytics
-| `porn` | 9,416 |
-| `sex` | 8,507 |
-| `xxx` | 4,358 |
-| `sexy` | 938 |
-| `hentai` | 678 |
-| `milf` | 557 |
-| `fuck` | 509 |
-| `erotic` | 432 |
-| `xvideo` | 402 |
-| `xnxx` | 366 |
+| `sex` | 10,357 |
+| `porn` | 9,695 |
+| `xxx` | 3,258 |
+| `hentai` | 698 |
+| `milf` | 508 |
+| `fuck` | 482 |
+| `erotic` | 427 |
+| `xvideo` | 405 |
+| `xnxx` | 282 |
+| `bdsm` | 268 |
+| `shemale` | 259 |
 | `pussy` | 247 |
-| `bdsm` | 243 |
 
 ---
 
 ## 🛰️ Provider Analytics (Uniqueness)
 | Source | Raw Ingest | Valid Pool | Unique Contribution |
 | :--- | :--- | :--- | :--- |
-| HaGeZi Fake | 14,148 | 13,907 | **96.8%** |
-| Hagezi NSFW | 66,768 | 34,153 | **98.8%** |
+| HaGeZi Fake | 14,147 | 13,906 | **96.8%** |
 | Hagezi Anti-Piracy | 11,752 | 10,361 | **98.1%** |
 | Hagezi SafeSearch Not Supported | 214 | 186 | **98.4%** |
-| 1Hosts Lite | 93,873 | 87,865 | **29.3%** |
 | HaGeZi Pro++ | 236,886 | 209,976 | **70.1%** |
+| Hagezi NSFW | 66,768 | 34,153 | **98.8%** |
+| 1Hosts Lite | 93,873 | 87,865 | **29.3%** |
 
 ---
 
