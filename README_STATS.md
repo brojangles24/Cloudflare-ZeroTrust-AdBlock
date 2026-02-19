@@ -1,14 +1,14 @@
 # 🛡️ Isaac's Cloudflare Intelligence Report
-> **Last Update:** `2026-02-19 10:52:55` | **Sync Runtime:** `104.6s`
+> **Last Update:** `2026-02-19 11:43:40` | **Sync Runtime:** `114.64s`
 
 ## 📊 Visual Insights
 ```mermaid
 pie title Domain Lifecycle Breakdown
-    "Cloudflare Rules" : 277574
-    "Keyword Blocked" : 27827
-    "TLD Blocked" : 37926
-    "Duplicates Found" : 63103
-    "Tree Pruned" : 12279
+    "Cloudflare Rules" : 274734
+    "Keyword Blocked" : 27636
+    "TLD Blocked" : 36712
+    "Duplicates Found" : 63006
+    "Tree Pruned" : 12313
 ```
 
 ---
@@ -16,43 +16,43 @@ pie title Domain Lifecycle Breakdown
 ## 📋 Summary Metrics
 | Metric | Count | % of Raw |
 | :--- | :--- | :--- |
-| **Total Raw Fetched** | 419,030 | 100% |
-| **Aggressive Keyword Hit** | - 27,827 | 6.6% |
-| **Banned TLD Block** | - 37,926 | 9.1% |
-| **Duplicate/Tree Pruning** | - 75,382 | -- |
-| **Active Rules Sent** | **277,574** | **66.2%** |
+| **Total Raw Fetched** | 414,719 | 100% |
+| **Aggressive Keyword Hit** | - 27,636 | 6.7% |
+| **Banned TLD Block** | - 36,712 | 8.9% |
+| **Duplicate/Tree Pruning** | - 75,319 | -- |
+| **Active Rules Sent** | **274,734** | **66.2%** |
 
 ---
 
 ## 🚩 Top 12 Keyword Analytics
-| `sex` | 10,702 |
-| `porn` | 8,920 |
-| `xxx` | 3,712 |
-| `hentai` | 681 |
-| `fuck` | 515 |
-| `milf` | 492 |
-| `erotic` | 424 |
-| `xnxx` | 314 |
-| `xvideo` | 279 |
-| `bdsm` | 268 |
-| `pussy` | 263 |
-| `shemale` | 230 |
+| `sex` | 10,274 |
+| `porn` | 9,875 |
+| `xxx` | 2,945 |
+| `hentai` | 692 |
+| `milf` | 580 |
+| `xnxx` | 543 |
+| `fuck` | 464 |
+| `erotic` | 433 |
+| `pussy` | 260 |
+| `xvideo` | 250 |
+| `bdsm` | 243 |
+| `shemale` | 212 |
 
 ---
 
 ## 🛰️ Provider Analytics (Uniqueness)
 | Source | Raw Ingest | Valid Pool | Unique Contribution |
 | :--- | :--- | :--- | :--- |
-| Hagezi Anti-Piracy | 11,681 | 10,287 | **98.1%** |
-| HaGeZi Fake | 13,951 | 13,718 | **97.8%** |
 | Hagezi SafeSearch Not Supported | 214 | 186 | **98.4%** |
-| Hagezi NSFW | 66,878 | 34,243 | **98.8%** |
-| 1Hosts Lite | 93,054 | 87,230 | **28.5%** |
-| HaGeZi Pro++ | 233,252 | 207,292 | **69.7%** |
+| Hagezi Anti-Piracy | 11,681 | 10,287 | **98.1%** |
+| HaGeZi Fake | 13,962 | 13,729 | **97.8%** |
+| Hagezi NSFW | 66,387 | 34,104 | **98.8%** |
+| 1Hosts Lite | 93,054 | 87,230 | **28.6%** |
+| HaGeZi Pro++ | 229,421 | 204,517 | **69.3%** |
 
 ---
 
 ## 🛠️ Infrastructure Health
-* **Avg Entropy (Randomness):** `3.452`
+* **Avg Entropy (Randomness):** `3.45`
 * **Max Domain Length:** `179`
-* **Cloudflare Quota Usage:** `92.52%`
+* **Cloudflare Quota Usage:** `91.58%`
