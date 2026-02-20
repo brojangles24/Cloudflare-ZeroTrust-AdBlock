@@ -9,10 +9,10 @@
 
 **Cloudflare Gateway · Ads, Tracker, Telemetry & Malware Blocklist**
 
-![Last Sync](https://img.shields.io/badge/Last_Sync-2026-02-20_19-40-35-blue?style=for-the-badge&logo=cloudflare&logoColor=white)
+![Last Sync](https://img.shields.io/badge/Last_Sync-2026-02-20_20-39-52-blue?style=for-the-badge&logo=cloudflare&logoColor=white)
 ![Active Rules](https://img.shields.io/badge/Active_Rules-252,957-success?style=for-the-badge&logo=shield&logoColor=white)
 ![Quota](https://img.shields.io/badge/Quota-84.32%25-critical?style=for-the-badge)
-![Runtime](https://img.shields.io/badge/Runtime-85.58s-lightgrey?style=for-the-badge&logo=lightning&logoColor=white)
+![Runtime](https://img.shields.io/badge/Runtime-74.69s-lightgrey?style=for-the-badge&logo=lightning&logoColor=white)
 ![Sources](https://img.shields.io/badge/Sources-5_Active-informational?style=for-the-badge)
 
 </div>
@@ -29,7 +29,7 @@
 | 🧹 | **Total Filtered Out** | `57,071` | noise removed |
 | 🔁 | **Duplicates Removed** | `753` | cross-source overlap |
 | 🌳 | **Subdomains Tree-Pruned** | `1,048` | covered by parent rule |
-| ⏱️ | **Sync Runtime** | `85.58s` | wall clock |
+| ⏱️ | **Sync Runtime** | `74.69s` | wall clock |
 | 📦 | **Cloudflare List Chunks** | `253` | × 1,000 domains each |
 
 ---
@@ -94,10 +94,10 @@ Gateway Rule Limit: 300,000
 ```mermaid
 xychart-beta horizontal
     title "Source — Valid Domains Ingested"
-    x-axis ['"Hagezi SafeSearch Not "', '"HaGeZi Fake"', '"Hagezi Anti-Piracy"', '"Hagezi NSFW"', '"HaGeZi Pro++"']
+    x-axis ['"Hagezi SafeSearch Not "', '"Hagezi Anti-Piracy"', '"HaGeZi Pro++"', '"HaGeZi Fake"', '"Hagezi NSFW"']
     y-axis "Domains"
-    bar [186, 13751, 10291, 34011, 196519]
-    line [186, 13751, 10291, 34011, 196519]
+    bar [186, 10291, 196519, 13751, 34011]
+    line [186, 10291, 196519, 13751, 34011]
 ```
 
 ### Uniqueness Ranking
@@ -128,10 +128,10 @@ quadrantChart
     quadrant-3 Redundant
     quadrant-4 Short & Unique
         Hagezi SafeSearch No(100.0, 16.0)
-        HaGeZi Fake(100.0, 16.0)
         Hagezi Anti-Piracy(100.0, 14.0)
-        Hagezi NSFW(100.0, 15.0)
         HaGeZi Pro++(100.0, 19.0)
+        HaGeZi Fake(100.0, 16.0)
+        Hagezi NSFW(100.0, 15.0)
 ```
 
 ---
@@ -141,30 +141,30 @@ quadrantChart
 ```mermaid
 xychart-beta
     title "Top 10 Offloaded Keyword Hits"
-    x-axis ['"sex"', '"porn"', '"xxx"', '"sexy"', '"xnxx"', '"hentai"', '"milf"', '"fuck"', '"erotic"', '"xvideo"']
+    x-axis ['"sex"', '"porn"', '"xxx"', '"hentai"', '"milf"', '"fuck"', '"erotic"', '"xnxx"', '"xvideo"', '"bdsm"']
     y-axis "Blocked Domains"
-    bar [9085, 8769, 3349, 990, 672, 647, 549, 453, 445, 267]
+    bar [10281, 8789, 3720, 666, 538, 493, 426, 277, 266, 259]
 ```
 
 ### Full Keyword Hit Table (Top 15)
 
 | Keyword | Blocked | Distribution |
 | :--- | ---: | :--- |
-| `sex                 ` |    9,085 | `██████████████████████  100.0%` |
-| `porn                ` |    8,769 | `█████████████████████░  96.5%` |
-| `xxx                 ` |    3,349 | `████████░░░░░░░░░░░░░░  36.9%` |
-| `sexy                ` |      990 | `██░░░░░░░░░░░░░░░░░░░░  10.9%` |
-| `xnxx                ` |      672 | `██░░░░░░░░░░░░░░░░░░░░  7.4%` |
-| `hentai              ` |      647 | `██░░░░░░░░░░░░░░░░░░░░  7.1%` |
-| `milf                ` |      549 | `█░░░░░░░░░░░░░░░░░░░░░  6.0%` |
-| `fuck                ` |      453 | `█░░░░░░░░░░░░░░░░░░░░░  5.0%` |
-| `erotic              ` |      445 | `█░░░░░░░░░░░░░░░░░░░░░  4.9%` |
-| `xvideo              ` |      267 | `█░░░░░░░░░░░░░░░░░░░░░  2.9%` |
-| `bdsm                ` |      259 | `█░░░░░░░░░░░░░░░░░░░░░  2.9%` |
-| `pussy               ` |      255 | `█░░░░░░░░░░░░░░░░░░░░░  2.8%` |
-| `xxvideo             ` |      244 | `█░░░░░░░░░░░░░░░░░░░░░  2.7%` |
-| `shemale             ` |      228 | `█░░░░░░░░░░░░░░░░░░░░░  2.5%` |
-| `horny               ` |      203 | `░░░░░░░░░░░░░░░░░░░░░░  2.2%` |
+| `sex                 ` |   10,281 | `██████████████████████  100.0%` |
+| `porn                ` |    8,789 | `███████████████████░░░  85.5%` |
+| `xxx                 ` |    3,720 | `████████░░░░░░░░░░░░░░  36.2%` |
+| `hentai              ` |      666 | `█░░░░░░░░░░░░░░░░░░░░░  6.5%` |
+| `milf                ` |      538 | `█░░░░░░░░░░░░░░░░░░░░░  5.2%` |
+| `fuck                ` |      493 | `█░░░░░░░░░░░░░░░░░░░░░  4.8%` |
+| `erotic              ` |      426 | `█░░░░░░░░░░░░░░░░░░░░░  4.1%` |
+| `xnxx                ` |      277 | `█░░░░░░░░░░░░░░░░░░░░░  2.7%` |
+| `xvideo              ` |      266 | `█░░░░░░░░░░░░░░░░░░░░░  2.6%` |
+| `bdsm                ` |      259 | `█░░░░░░░░░░░░░░░░░░░░░  2.5%` |
+| `shemale             ` |      254 | `█░░░░░░░░░░░░░░░░░░░░░  2.5%` |
+| `pussy               ` |      245 | `█░░░░░░░░░░░░░░░░░░░░░  2.4%` |
+| `horny               ` |      203 | `░░░░░░░░░░░░░░░░░░░░░░  2.0%` |
+| `tits                ` |      140 | `░░░░░░░░░░░░░░░░░░░░░░  1.4%` |
+| `pornhub             ` |      119 | `░░░░░░░░░░░░░░░░░░░░░░  1.2%` |
 
 ---
 
@@ -224,6 +224,6 @@ xychart-beta
 
 <div align="center">
 
-*Auto-generated · `2026-02-20 19:40:35` · [sync_blocklist.py](./sync_blocklist.py)*
+*Auto-generated · `2026-02-20 20:39:52` · [sync_blocklist.py](./sync_blocklist.py)*
 
 </div>
