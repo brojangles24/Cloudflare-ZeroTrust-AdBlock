@@ -9,10 +9,10 @@
 
 **Cloudflare Gateway · Ads, Tracker, Telemetry & Malware Blocklist**
 
-![Last Sync](https://img.shields.io/badge/Last_Sync-2026-02-21_21-29-48-blue?style=for-the-badge&logo=cloudflare&logoColor=white)
+![Last Sync](https://img.shields.io/badge/Last_Sync-2026-02-21_22-34-40-blue?style=for-the-badge&logo=cloudflare&logoColor=white)
 ![Active Rules](https://img.shields.io/badge/Active_Rules-254,443-success?style=for-the-badge&logo=shield&logoColor=white)
 ![Quota](https://img.shields.io/badge/Quota-84.81%25-critical?style=for-the-badge)
-![Runtime](https://img.shields.io/badge/Runtime-56.03s-lightgrey?style=for-the-badge&logo=lightning&logoColor=white)
+![Runtime](https://img.shields.io/badge/Runtime-269.06s-lightgrey?style=for-the-badge&logo=lightning&logoColor=white)
 ![Sources](https://img.shields.io/badge/Sources-5_Active-informational?style=for-the-badge)
 
 </div>
@@ -29,7 +29,7 @@
 | 🧹 | **Total Filtered Out** | `58,886` | noise removed |
 | 🔁 | **Duplicates Removed** | `745` | cross-source overlap |
 | 🌳 | **Subdomains Tree-Pruned** | `1,050` | covered by parent rule |
-| ⏱️ | **Sync Runtime** | `56.03s` | wall clock |
+| ⏱️ | **Sync Runtime** | `269.06s` | wall clock |
 | 📦 | **Cloudflare List Chunks** | `255` | × 1,000 domains each |
 
 ---
@@ -141,30 +141,30 @@ quadrantChart
 ```mermaid
 xychart-beta
     title "Top 10 Offloaded Keyword Hits"
-    x-axis ['"sex"', '"porn"', '"xxx"', '"xnxx"', '"hentai"', '"milf"', '"erotic"', '"fuck"', '"bdsm"', '"xvideo"']
+    x-axis ['"sex"', '"porn"', '"xxx"', '"hentai"', '"fuck"', '"milf"', '"erotic"', '"bdsm"', '"xnxx"', '"xxvideo"']
     y-axis "Blocked Domains"
-    bar [10320, 9506, 3975, 684, 647, 513, 444, 422, 253, 251]
+    bar [10313, 9824, 3579, 647, 526, 502, 444, 282, 278, 255]
 ```
 
 ### Full Keyword Hit Table (Top 15)
 
 | Keyword | Blocked | Distribution |
 | :--- | ---: | :--- |
-| `sex                 ` |   10,320 | `██████████████████████  100.0%` |
-| `porn                ` |    9,506 | `████████████████████░░  92.1%` |
-| `xxx                 ` |    3,975 | `████████░░░░░░░░░░░░░░  38.5%` |
-| `xnxx                ` |      684 | `█░░░░░░░░░░░░░░░░░░░░░  6.6%` |
+| `sex                 ` |   10,313 | `██████████████████████  100.0%` |
+| `porn                ` |    9,824 | `█████████████████████░  95.3%` |
+| `xxx                 ` |    3,579 | `████████░░░░░░░░░░░░░░  34.7%` |
 | `hentai              ` |      647 | `█░░░░░░░░░░░░░░░░░░░░░  6.3%` |
-| `milf                ` |      513 | `█░░░░░░░░░░░░░░░░░░░░░  5.0%` |
+| `fuck                ` |      526 | `█░░░░░░░░░░░░░░░░░░░░░  5.1%` |
+| `milf                ` |      502 | `█░░░░░░░░░░░░░░░░░░░░░  4.9%` |
 | `erotic              ` |      444 | `█░░░░░░░░░░░░░░░░░░░░░  4.3%` |
-| `fuck                ` |      422 | `█░░░░░░░░░░░░░░░░░░░░░  4.1%` |
-| `bdsm                ` |      253 | `█░░░░░░░░░░░░░░░░░░░░░  2.5%` |
-| `xvideo              ` |      251 | `█░░░░░░░░░░░░░░░░░░░░░  2.4%` |
-| `pussy               ` |      230 | `░░░░░░░░░░░░░░░░░░░░░░  2.2%` |
-| `horny               ` |      221 | `░░░░░░░░░░░░░░░░░░░░░░  2.1%` |
-| `shemale             ` |      205 | `░░░░░░░░░░░░░░░░░░░░░░  2.0%` |
-| `tits                ` |      123 | `░░░░░░░░░░░░░░░░░░░░░░  1.2%` |
-| `boobs               ` |       77 | `░░░░░░░░░░░░░░░░░░░░░░  0.7%` |
+| `bdsm                ` |      282 | `█░░░░░░░░░░░░░░░░░░░░░  2.7%` |
+| `xnxx                ` |      278 | `█░░░░░░░░░░░░░░░░░░░░░  2.7%` |
+| `xxvideo             ` |      255 | `█░░░░░░░░░░░░░░░░░░░░░  2.5%` |
+| `pussy               ` |      247 | `█░░░░░░░░░░░░░░░░░░░░░  2.4%` |
+| `xvideo              ` |      245 | `█░░░░░░░░░░░░░░░░░░░░░  2.4%` |
+| `horny               ` |      220 | `░░░░░░░░░░░░░░░░░░░░░░  2.1%` |
+| `shemale             ` |      206 | `░░░░░░░░░░░░░░░░░░░░░░  2.0%` |
+| `tits                ` |      122 | `░░░░░░░░░░░░░░░░░░░░░░  1.2%` |
 
 ---
 
@@ -224,6 +224,6 @@ xychart-beta
 
 <div align="center">
 
-*Auto-generated · `2026-02-21 21:29:48` · [sync_blocklist.py](./sync_blocklist.py)*
+*Auto-generated · `2026-02-21 22:34:40` · [sync_blocklist.py](./sync_blocklist.py)*
 
 </div>
