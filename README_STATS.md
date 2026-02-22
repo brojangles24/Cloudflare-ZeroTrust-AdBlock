@@ -9,10 +9,10 @@
 
 **Cloudflare Gateway · Ads, Tracker, Telemetry & Malware Blocklist**
 
-![Last Sync](https://img.shields.io/badge/Last_Sync-2026-02-22_13-01-59-blue?style=for-the-badge&logo=cloudflare&logoColor=white)
-![Active Rules](https://img.shields.io/badge/Active_Rules-262,386-success?style=for-the-badge&logo=shield&logoColor=white)
-![Quota](https://img.shields.io/badge/Quota-87.46%25-critical?style=for-the-badge)
-![Runtime](https://img.shields.io/badge/Runtime-86.57s-lightgrey?style=for-the-badge&logo=lightning&logoColor=white)
+![Last Sync](https://img.shields.io/badge/Last_Sync-2026-02-22_14-32-51-blue?style=for-the-badge&logo=cloudflare&logoColor=white)
+![Active Rules](https://img.shields.io/badge/Active_Rules-262,275-success?style=for-the-badge&logo=shield&logoColor=white)
+![Quota](https://img.shields.io/badge/Quota-87.42%25-critical?style=for-the-badge)
+![Runtime](https://img.shields.io/badge/Runtime-76.28s-lightgrey?style=for-the-badge&logo=lightning&logoColor=white)
 ![Sources](https://img.shields.io/badge/Sources-5_Active-informational?style=for-the-badge)
 
 </div>
@@ -24,23 +24,23 @@
 | | Metric | Value | |
 |:---:|:---|---:|:---|
 | 🌐 | **Sources Active** | `5` | feeds ingested this sync |
-| 📥 | **Raw Domains Fetched** | `325,255` | before any filtering |
-| ✅ | **Active Block Rules** | `262,386` | pushed to Cloudflare |
+| 📥 | **Raw Domains Fetched** | `325,144` | before any filtering |
+| ✅ | **Active Block Rules** | `262,275` | pushed to Cloudflare |
 | 🧹 | **Total Filtered Out** | `62,869` | noise removed |
 | 🔁 | **Duplicates Removed** | `746` | cross-source overlap |
 | 🌳 | **Subdomains Tree-Pruned** | `1,047` | covered by parent rule |
-| ⏱️ | **Sync Runtime** | `86.57s` | wall clock |
+| ⏱️ | **Sync Runtime** | `76.28s` | wall clock |
 | 📦 | **Cloudflare List Chunks** | `263` | × 1,000 domains each |
 
 ---
 
 ## 📊 Pipeline Funnel
 
-> From **325,255 raw domains** down to **262,386 precision block rules** — a 19.3% reduction in noise.
+> From **325,144 raw domains** down to **262,275 precision block rules** — a 19.3% reduction in noise.
 
 ```mermaid
 pie showData title DNS Blocklist Pipeline Breakdown
-    "Active Rules"     : 262386
+    "Active Rules"     : 262275
     "Keyword Filtered" : 28019
     "Banned TLD"       : 32732
     "Deduplication"    : 746
@@ -56,14 +56,14 @@ timeline
     title Sync Pipeline Execution
     section Ingest
         Concurrent Fetch   : 5 sources
-                           : 325,255 raw domains
+                           : 325,144 raw domains
     section Filter
         Keyword Offload    : -28,019 domains
         TLD Blocklist      : -32,732 domains
         Deduplication      : -746 duplicates
     section Optimise
         Subdomain Tree Prune : -1,047 subdomains
-        Final Domain Pool    : 262,386 unique rules
+        Final Domain Pool    : 262,275 unique rules
     section Deploy
         Cloudflare Sync    : 263 list chunks
                            : 1 gateway firewall rule
@@ -75,17 +75,17 @@ timeline
 
 ```
 Gateway Rule Limit: 300,000
-███████████████████████████████████░░░░░  87.5%  262,386 / 300,000  [🟠 High]
+███████████████████████████████████░░░░░  87.4%  262,275 / 300,000  [🟠 High]
 ```
 
 ### Filter Stage Breakdown
 
 | Stage | Domains | Share of Raw | Visual |
 | :--- | ---: | ---: | :--- |
-| 🔴 Keyword Filtered  | 28,019  | 8.61%  | `██░░░░░░░░░░░░░░░░░░░░░░░░░░  8.6%` |
-| 🟠 Banned TLD        | 32,732 | 10.06% | `███░░░░░░░░░░░░░░░░░░░░░░░░░  10.1%` |
+| 🔴 Keyword Filtered  | 28,019  | 8.62%  | `██░░░░░░░░░░░░░░░░░░░░░░░░░░  8.6%` |
+| 🟠 Banned TLD        | 32,732 | 10.07% | `███░░░░░░░░░░░░░░░░░░░░░░░░░  10.1%` |
 | 🟡 Dedup + Tree Prune | 1,793 | 0.55% | `░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0.6%` |
-| 🟢 **Active Rules**  | **262,386** | **80.67%** | `███████████████████████░░░░░  80.7%` |
+| 🟢 **Active Rules**  | **262,275** | **80.66%** | `███████████████████████░░░░░  80.7%` |
 
 ---
 
@@ -94,10 +94,10 @@ Gateway Rule Limit: 300,000
 ```mermaid
 xychart-beta horizontal
     title "Source — Valid Domains Ingested"
-    x-axis ['"Hagezi SafeSearch Not "', '"Hagezi Anti-Piracy"', '"HaGeZi Fake"', '"Hagezi NSFW"', '"HaGeZi Pro++"']
+    x-axis ['"Hagezi SafeSearch Not "', '"HaGeZi Fake"', '"Hagezi Anti-Piracy"', '"HaGeZi Pro++"', '"Hagezi NSFW"']
     y-axis "Domains"
-    bar [186, 10298, 14213, 34346, 205136]
-    line [186, 10298, 14213, 34346, 205136]
+    bar [186, 14102, 10298, 205136, 34346]
+    line [186, 14102, 10298, 205136, 34346]
 ```
 
 ### Uniqueness Ranking
@@ -109,7 +109,7 @@ xychart-beta horizontal
 | :--- | ---: | ---: | ---: | :--- | :---: |
 | HaGeZi Pro++ |    231,336 |    205,136 |   205,136 | `████████████████  100.0%` | 🥇 |
 | Hagezi NSFW |     67,555 |     34,346 |    34,346 | `████████████████  100.0%` | 🥈 |
-| HaGeZi Fake |     14,452 |     14,213 |    14,213 | `████████████████  100.0%` | 🥉 |
+| HaGeZi Fake |     14,341 |     14,102 |    14,102 | `████████████████  100.0%` | 🥉 |
 | Hagezi Anti-Piracy |     11,698 |     10,298 |    10,298 | `████████████████  100.0%` | · |
 | Hagezi SafeSearch Not Supported |        214 |        186 |       186 | `████████████████  100.0%` | · |
 
@@ -128,10 +128,10 @@ quadrantChart
     quadrant-3 Redundant
     quadrant-4 Short & Unique
         Hagezi SafeSearch No(100.0, 16.0)
-        Hagezi Anti-Piracy(100.0, 14.0)
         HaGeZi Fake(100.0, 16.0)
-        Hagezi NSFW(100.0, 15.0)
+        Hagezi Anti-Piracy(100.0, 14.0)
         HaGeZi Pro++(100.0, 19.0)
+        Hagezi NSFW(100.0, 15.0)
 ```
 
 ---
@@ -141,30 +141,30 @@ quadrantChart
 ```mermaid
 xychart-beta
     title "Top 10 Offloaded Keyword Hits"
-    x-axis ['"sex"', '"porn"', '"xxx"', '"hentai"', '"milf"', '"erotic"', '"fuck"', '"bdsm"', '"xnxx"', '"pussy"']
+    x-axis ['"porn"', '"sex"', '"xxx"', '"sexy"', '"hentai"', '"xvideo"', '"xnxx"', '"milf"', '"fuck"', '"erotic"']
     y-axis "Blocked Domains"
-    bar [10453, 9059, 4303, 677, 499, 437, 430, 277, 276, 261]
+    bar [9973, 9238, 2947, 1003, 690, 661, 642, 519, 469, 440]
 ```
 
 ### Full Keyword Hit Table (Top 15)
 
 | Keyword | Blocked | Distribution |
 | :--- | ---: | :--- |
-| `sex                 ` |   10,453 | `██████████████████████  100.0%` |
-| `porn                ` |    9,059 | `███████████████████░░░  86.7%` |
-| `xxx                 ` |    4,303 | `█████████░░░░░░░░░░░░░  41.2%` |
-| `hentai              ` |      677 | `█░░░░░░░░░░░░░░░░░░░░░  6.5%` |
-| `milf                ` |      499 | `█░░░░░░░░░░░░░░░░░░░░░  4.8%` |
-| `erotic              ` |      437 | `█░░░░░░░░░░░░░░░░░░░░░  4.2%` |
-| `fuck                ` |      430 | `█░░░░░░░░░░░░░░░░░░░░░  4.1%` |
-| `bdsm                ` |      277 | `█░░░░░░░░░░░░░░░░░░░░░  2.6%` |
-| `xnxx                ` |      276 | `█░░░░░░░░░░░░░░░░░░░░░  2.6%` |
-| `pussy               ` |      261 | `█░░░░░░░░░░░░░░░░░░░░░  2.5%` |
-| `xvideo              ` |      248 | `█░░░░░░░░░░░░░░░░░░░░░  2.4%` |
-| `shemale             ` |      247 | `█░░░░░░░░░░░░░░░░░░░░░  2.4%` |
-| `horny               ` |      214 | `░░░░░░░░░░░░░░░░░░░░░░  2.0%` |
-| `tits                ` |      123 | `░░░░░░░░░░░░░░░░░░░░░░  1.2%` |
-| `pornhub             ` |      117 | `░░░░░░░░░░░░░░░░░░░░░░  1.1%` |
+| `porn                ` |    9,973 | `██████████████████████  100.0%` |
+| `sex                 ` |    9,238 | `████████████████████░░  92.6%` |
+| `xxx                 ` |    2,947 | `███████░░░░░░░░░░░░░░░  29.5%` |
+| `sexy                ` |    1,003 | `██░░░░░░░░░░░░░░░░░░░░  10.1%` |
+| `hentai              ` |      690 | `██░░░░░░░░░░░░░░░░░░░░  6.9%` |
+| `xvideo              ` |      661 | `█░░░░░░░░░░░░░░░░░░░░░  6.6%` |
+| `xnxx                ` |      642 | `█░░░░░░░░░░░░░░░░░░░░░  6.4%` |
+| `milf                ` |      519 | `█░░░░░░░░░░░░░░░░░░░░░  5.2%` |
+| `fuck                ` |      469 | `█░░░░░░░░░░░░░░░░░░░░░  4.7%` |
+| `erotic              ` |      440 | `█░░░░░░░░░░░░░░░░░░░░░  4.4%` |
+| `bdsm                ` |      255 | `█░░░░░░░░░░░░░░░░░░░░░  2.6%` |
+| `pussy               ` |      249 | `█░░░░░░░░░░░░░░░░░░░░░  2.5%` |
+| `horny               ` |      221 | `░░░░░░░░░░░░░░░░░░░░░░  2.2%` |
+| `shemale             ` |      204 | `░░░░░░░░░░░░░░░░░░░░░░  2.0%` |
+| `tits                ` |      132 | `░░░░░░░░░░░░░░░░░░░░░░  1.3%` |
 
 ---
 
@@ -224,6 +224,6 @@ xychart-beta
 
 <div align="center">
 
-*Auto-generated · `2026-02-22 13:01:59` · [sync_blocklist.py](./sync_blocklist.py)*
+*Auto-generated · `2026-02-22 14:32:51` · [sync_blocklist.py](./sync_blocklist.py)*
 
 </div>
