@@ -9,10 +9,10 @@
 
 **Cloudflare Gateway · Ads, Tracker, Telemetry & Malware Blocklist**
 
-![Last Sync](https://img.shields.io/badge/Last_Sync-2026-02-23_02-44-23-blue?style=for-the-badge&logo=cloudflare&logoColor=white)
+![Last Sync](https://img.shields.io/badge/Last_Sync-2026-02-23_05-07-28-blue?style=for-the-badge&logo=cloudflare&logoColor=white)
 ![Active Rules](https://img.shields.io/badge/Active_Rules-269,106-success?style=for-the-badge&logo=shield&logoColor=white)
 ![Quota](https://img.shields.io/badge/Quota-89.7%25-critical?style=for-the-badge)
-![Runtime](https://img.shields.io/badge/Runtime-289.03s-lightgrey?style=for-the-badge&logo=lightning&logoColor=white)
+![Runtime](https://img.shields.io/badge/Runtime-287.25s-lightgrey?style=for-the-badge&logo=lightning&logoColor=white)
 ![Sources](https://img.shields.io/badge/Sources-5_Active-informational?style=for-the-badge)
 
 </div>
@@ -29,7 +29,7 @@
 | 🧹 | **Total Filtered Out** | `63,604` | noise removed |
 | 🔁 | **Duplicates Removed** | `855` | cross-source overlap |
 | 🌳 | **Subdomains Tree-Pruned** | `1,050` | covered by parent rule |
-| ⏱️ | **Sync Runtime** | `289.03s` | wall clock |
+| ⏱️ | **Sync Runtime** | `287.25s` | wall clock |
 | 📦 | **Cloudflare List Chunks** | `270` | × 1,000 domains each |
 
 ---
@@ -141,30 +141,30 @@ quadrantChart
 ```mermaid
 xychart-beta
     title "Top 10 Offloaded Keyword Hits"
-    x-axis ['"sex"', '"porn"', '"xxx"', '"hentai"', '"milf"', '"erotic"', '"fuck"', '"xnxx"', '"bdsm"', '"pussy"']
+    x-axis ['"sex"', '"porn"', '"xxx"', '"hentai"', '"milf"', '"xnxx"', '"fuck"', '"erotic"', '"bdsm"', '"pussy"']
     y-axis "Blocked Domains"
-    bar [10910, 9597, 3301, 649, 559, 441, 424, 277, 276, 257]
+    bar [10573, 9722, 2944, 710, 587, 564, 451, 441, 279, 272]
 ```
 
 ### Full Keyword Hit Table (Top 15)
 
 | Keyword | Blocked | Distribution |
 | :--- | ---: | :--- |
-| `sex                 ` |   10,910 | `██████████████████████  100.0%` |
-| `porn                ` |    9,597 | `███████████████████░░░  88.0%` |
-| `xxx                 ` |    3,301 | `███████░░░░░░░░░░░░░░░  30.3%` |
-| `hentai              ` |      649 | `█░░░░░░░░░░░░░░░░░░░░░  5.9%` |
-| `milf                ` |      559 | `█░░░░░░░░░░░░░░░░░░░░░  5.1%` |
-| `erotic              ` |      441 | `█░░░░░░░░░░░░░░░░░░░░░  4.0%` |
-| `fuck                ` |      424 | `█░░░░░░░░░░░░░░░░░░░░░  3.9%` |
-| `xnxx                ` |      277 | `█░░░░░░░░░░░░░░░░░░░░░  2.5%` |
-| `bdsm                ` |      276 | `█░░░░░░░░░░░░░░░░░░░░░  2.5%` |
-| `pussy               ` |      257 | `█░░░░░░░░░░░░░░░░░░░░░  2.4%` |
-| `xvideo              ` |      251 | `█░░░░░░░░░░░░░░░░░░░░░  2.3%` |
-| `horny               ` |      229 | `░░░░░░░░░░░░░░░░░░░░░░  2.1%` |
-| `shemale             ` |      205 | `░░░░░░░░░░░░░░░░░░░░░░  1.9%` |
-| `xxvideo             ` |      154 | `░░░░░░░░░░░░░░░░░░░░░░  1.4%` |
-| `tits                ` |      141 | `░░░░░░░░░░░░░░░░░░░░░░  1.3%` |
+| `sex                 ` |   10,573 | `██████████████████████  100.0%` |
+| `porn                ` |    9,722 | `████████████████████░░  92.0%` |
+| `xxx                 ` |    2,944 | `██████░░░░░░░░░░░░░░░░  27.8%` |
+| `hentai              ` |      710 | `█░░░░░░░░░░░░░░░░░░░░░  6.7%` |
+| `milf                ` |      587 | `█░░░░░░░░░░░░░░░░░░░░░  5.6%` |
+| `xnxx                ` |      564 | `█░░░░░░░░░░░░░░░░░░░░░  5.3%` |
+| `fuck                ` |      451 | `█░░░░░░░░░░░░░░░░░░░░░  4.3%` |
+| `erotic              ` |      441 | `█░░░░░░░░░░░░░░░░░░░░░  4.2%` |
+| `bdsm                ` |      279 | `█░░░░░░░░░░░░░░░░░░░░░  2.6%` |
+| `pussy               ` |      272 | `█░░░░░░░░░░░░░░░░░░░░░  2.6%` |
+| `xvideo              ` |      256 | `█░░░░░░░░░░░░░░░░░░░░░  2.4%` |
+| `shemale             ` |      254 | `█░░░░░░░░░░░░░░░░░░░░░  2.4%` |
+| `horny               ` |      218 | `░░░░░░░░░░░░░░░░░░░░░░  2.1%` |
+| `xxvideo             ` |      134 | `░░░░░░░░░░░░░░░░░░░░░░  1.3%` |
+| `tits                ` |      127 | `░░░░░░░░░░░░░░░░░░░░░░  1.2%` |
 
 ---
 
@@ -224,6 +224,6 @@ xychart-beta
 
 <div align="center">
 
-*Auto-generated · `2026-02-23 02:44:23` · [sync_blocklist.py](./sync_blocklist.py)*
+*Auto-generated · `2026-02-23 05:07:28` · [sync_blocklist.py](./sync_blocklist.py)*
 
 </div>
