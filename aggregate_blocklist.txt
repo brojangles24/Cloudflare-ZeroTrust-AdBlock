@@ -3319,14 +3319,12 @@ ads-img.mozilla.org
 ads-impressions.com
 ads-inmobi-comtm.trafficmanager.net
 ads-interfaces.sc-cdn.net
-ads-manager-creatives-prod.s3.amazonaws.com
 ads-marketing-vivofs.vivo.com.cn
 ads-media.gameforge.com
 ads-media.truecaller.com
 ads-meta-logo.s3.amazonaws.com
 ads-monitoring.shziyi.com
 ads-msn-com-profile.trafficmanager.net
-ads-mspremium-io-1878973238.us-east-1.elb.amazonaws.com
 ads-oglasi.api.24ur.si
 ads-partner-noneu.truecaller.com
 ads-partners.coupang.com
@@ -4105,6 +4103,7 @@ ads.vrabotuvanje.com.mk
 ads.vtc.vn
 ads.warnerbros.com
 ads.washingtonpost.com
+ads.watson.ch
 ads.weather.ca
 ads.web.de
 ads.webhosting.info
@@ -5203,7 +5202,6 @@ affiliate.hrkgame.com
 affiliate.juno.co.uk
 affiliate.k4.tinhte.vn
 affiliate.kinguin.net
-affiliate.klook.com
 affiliate.konibet.com
 affiliate.mediatemple.net
 affiliate.privatevpn.com
@@ -5941,7 +5939,6 @@ alvesesantosadv.com.br
 alvesluthieria.com.br
 alwingulla.com
 alwxamfivx.com
-alx-api.exponea.com
 alxbgo.com
 alxxnxxxxxsex.wiki
 alyssapizermanagementblog.com
@@ -7256,7 +7253,6 @@ analytics.educause.edu
 analytics.educlub.com.br
 analytics.eduxe.com.br
 analytics.edvaldoconsultordeimoveis.com.br
-analytics.edynamix.com
 analytics.effectory.com
 analytics.efsa.europa.eu
 analytics.eggoffer.com
@@ -7395,7 +7391,6 @@ analytics.flir.com
 analytics.flodesk.com
 analytics.floraprima.de
 analytics.flow.riverty.com
-analytics.flyproxy.com
 analytics.fmh.de
 analytics.fmovies4u.com
 analytics.fnni.com
@@ -8466,7 +8461,6 @@ analytics.searchspring.net
 analytics.seekxr.com
 analytics.seg.ritual.com
 analytics.selfh.st
-analytics.sellauth.com
 analytics.sendsafely.com
 analytics.senja.io
 analytics.sensorpartners.com
@@ -11670,7 +11664,6 @@ bag.longchonpsac.eu.com
 bagcilarescorts6.xyz
 baggyrepackingrocky.com
 bagheera.centerblog.net
-bahaymulley.com
 bahiaescorts.com
 bahninfo.at
 bahpartridge.com
@@ -12477,8 +12470,6 @@ belgikanst.iad-03.braze.com
 belgium.wolterskluwer.com
 beliebtestewebseite.de
 belk.demdex.net
-bell-api.branch.io
-bell-cdn.branch.io
 bell-self-serve-apps.iad-06.braze.com
 bell.inq.com
 bellacia.com.br
@@ -14650,32 +14641,20 @@ c00033-dl.urbanairship.com
 c00049-dl.urbanairship.com
 c00097-dl.urbanairship.com
 c00098-dl.urbanairship.com
-c00119-dl.urbanairship.com
 c0012.brsimg.com
-c00156-dl.urbanairship.com
 c00157-dl.urbanairship.com
-c00158-dl.urbanairship.com
 c00162-dl.urbanairship.com
 c00166-dl.urbanairship.com
-c00168-dl.urbanairship.com
 c00180-dl.urbanairship.com
-c00190-dl.urbanairship.com
 c00197-dl.urbanairship.com
 c00241-dl.urbanairship.com
 c00250-dl.urbanairship.com
-c00253-dl.urbanairship.com
-c00268-dl.urbanairship.com
-c00305-dl.urbanairship.com
 c00307-dl.urbanairship.com
 c00316-dl.urbanairship.com
-c00335-dl.urbanairship.com
 c00354-dl.urbanairship.com
 c00355-dl.urbanairship.com
-c00381-dl.urbanairship.com
-c00382-dl.urbanairship.com
 c00383-dl.urbanairship.com
 c00402-dl.urbanairship.com
-c00412-dl.urbanairship.com
 c066b573.smrta.pages.dev
 c0930.com
 c0nt4ct-me.pages.dev
@@ -15184,7 +15163,6 @@ carbonfeverthink.com
 carbongarden.net
 carboninternationalco.fwh.is
 carbonquotes.com
-cardapio-api-analytics-prd-alb-19443409.us-east-1.elb.amazonaws.com
 cardgeotechnics.co.uk
 cardinal.businessfirstonline.co.uk
 cardinal.krisenchat.de
@@ -15534,14 +15512,12 @@ cdn.defractal.com
 cdn.dfsdk.com
 cdn.doyouad.com
 cdn.dsspn.com
-cdn.dv.tech
 cdn.efilli.com
 cdn.empower.net
 cdn.ex.co
 cdn.exp.xiaomi.com
 cdn.fds-ssl.api.xiaomi.com
 cdn.fds.api.xiaomi.com
-cdn.feathr.co
 cdn.feedify.net
 cdn.firstpromoter.com
 cdn.flashtalking.com
@@ -15562,7 +15538,6 @@ cdn.http.anno.test.channel4.com
 cdn.i993.com
 cdn.iads.unitychina.cn
 cdn.images.dailystar.co.uk
-cdn.innity.net.edgekey.net
 cdn.instant.one
 cdn.jandaqwe.com
 cdn.jeckear.com
@@ -17354,6 +17329,7 @@ conf-in-dc.heytapdl.com
 conf-in-dc.heytapmobile.com
 conf-in.dc.heytapmobi.com
 conf-sg-dc.heytapdl.com
+conf-sg-dc.heytapdl.com.akamaized.net
 conf-sg.dc.heytapmobi.com
 confeccoesegito.com.br
 confection-io.webpkgcache.com
@@ -19244,7 +19220,6 @@ d264dxqvolp03e.cloudfront.net
 d26adrx9c3n0mq.cloudfront.net
 d26e5rmb2qzuo3.cloudfront.net
 d26exkfgvy72ja.cloudfront.net
-d26hpdecvhwn5s.cloudfront.net
 d26p9ecwyy9zqv.cloudfront.net
 d26r44l4vrn00m.cloudfront.net
 d26tbbq8zqdi4v.cloudfront.net
@@ -23059,7 +23034,6 @@ easywebcamsex.com
 easyxblogs.com
 easyxporn.com
 easyxtubes.com
-eatcells.com
 eats-ads-event-capture.coupang.com
 eaus2watcab01.blob.core.windows.net
 eaus2watcab02.blob.core.windows.net
@@ -23189,7 +23163,6 @@ ed-sys.net
 ed68f500d5.com
 edaa.eu
 edapotheke.store
-edayo.banner-ad-nex.com
 edc.112.2o7.net
 edcbaupdate.yxwvutsrqponmlkjihgfedcbamer-conference-2026.mario-s-event-organization.fullsailevents.com
 edcdelivery.com.br
@@ -25198,8 +25171,6 @@ f-log-mobile.grammarly.io
 f-log-officeaddin.grammarly.io
 f-log-test.grammarly.io
 f-log-win-extension.grammarly.io
-f-log.grammarly.io
-f-p-va.isnssdk.com.edgekey.net
 f-tra.com
 f.360.cn
 f.mtr.cool
@@ -25705,6 +25676,7 @@ fdtsolutions.co.za
 fdz.flashtalking.com
 fe-go.letv.com
 fearlessfaucet.com
+feathr.co
 feature-flag-edge.live.clickbus.net
 featureinfo-service-sg.allawnos.com
 featuretv.live
@@ -30915,7 +30887,6 @@ hmama.tv
 hmanga.asia
 hmdv2.gogomailbali.eu.org
 hme-live-loganalytics-namespace.servicebus.windows.net
-hme-uat-loganalytics-namespace.servicebus.windows.net
 hmg.handelsblatt.com
 hmg.wiwo.de
 hmma.baidu.com
@@ -34352,7 +34323,6 @@ js-sec.indexww.com.cdn.cloudflare.net
 js.adara.com
 js.agkn.com
 js.aiservice.vn
-js.banner-ad-nex.com
 js.blozoo.info
 js.cdn.applicationinsights.io
 js.chilipiper.com
@@ -34790,7 +34760,6 @@ kbjfree.com
 kbkb.bet
 kbkvmeg.com
 kbnmnl.com
-kbox-analytics-backup.s3-accelerate.amazonaws.com
 kbox-analytics-backup.s3.amazonaws.com
 kbox-analytics-prod.s3-accelerate.amazonaws.com
 kbox-analytics-prod.s3.amazonaws.com
@@ -36414,10 +36383,9 @@ livetech.shopee.co.id
 livetech.shopee.co.id.cdn20.com
 livetech.shopee.co.id.txlivecdn.com
 livetech.shopee.co.th
+livetech.shopee.co.th.tlivecdn.com
+livetech.shopee.co.th.txlivecdn.com
 livetech.shopee.com.br
-livetech.shopee.com.br.cdn20.com
-livetech.shopee.com.br.tlivecdn.com
-livetech.shopee.com.br.txlivecdn.com
 livetech.shopee.com.mx
 livetech.shopee.com.my
 livetech.shopee.ph
@@ -36425,7 +36393,6 @@ livetech.shopee.ph.cdn20.com
 livetech.shopee.sg
 livetech.shopee.tw
 livetech.shopee.vn
-livetech.shopee.vn.cdn20.com
 livethemagictravels.co.uk
 livetrafficfeed.com
 livetubez.com
@@ -36494,6 +36461,7 @@ ln-ring.msedge.net
 ln.ameba.jp
 ln.is
 lndpy.com
+lner-api.exponea.com
 lngtd.com
 lnk0.com
 lnkd.demdex.net
@@ -39550,7 +39518,6 @@ maws-aax-apse-rtb-adx.amazon-adsystem.com
 maws-aax-apse-rtb.amazon-adsystem.com
 maws-aax-eu-rtb-adx.amazon-adsystem.com
 maws-aax-eu-rtb.amazon-adsystem.com
-maws-aax-eu.amazon-adsystem.com
 maws-aax-fe-sin.amazon-adsystem.com
 maws-aax-fe.amazon-adsystem.com
 maws-aax-us-east-rtb-adx.amazon-adsystem.com
@@ -41022,7 +40989,6 @@ metrics.ingdirect.es
 metrics.ingredion.com
 metrics.inmac-wstore.com
 metrics.innovatrics.com
-metrics.inshared.nl
 metrics.insider.hagerty.com
 metrics.insight.com
 metrics.inspireuplift.com
@@ -42498,7 +42464,6 @@ mobile-events.eservice.emarsys.net
 mobile-http-intake.logs.datadoghq.com
 mobile-http-intake.logs.datadoghq.eu
 mobile-production.content-square.net
-mobile-telemetry-1356052157.eu-west-1.elb.amazonaws.com
 mobile-xvideos.com
 mobile.eum-appdynamics.com
 mobile.slgnt.eu
@@ -43244,7 +43209,6 @@ muniyura.gob.pe
 munqu.com
 munrosofjedburgh.co.uk
 muoapeicp.top
-muon-collector-kube-1510719261.ca-central-1.elb.amazonaws.com
 muplon.com
 muralink.in.net
 muralis-tech.in.net
@@ -43688,7 +43652,6 @@ n91hg.com
 na-ad-lgsmartad-com.aws-prd.net
 na-telefon.biz
 na.groupondata.com
-na.telemetry.wolterskluwer.com
 na1.hs-sales-engage.com
 naaktkrant.nl
 nab.demdex.net
@@ -44284,7 +44247,6 @@ newsstat.dallasnews.com
 newstats.blogg.se
 newsticker.save.tv
 newtabsearch.net
-newtail-adserver-api-v5-events-prod.us-east-1.elasticbeanstalk.com
 newtdsone.shop
 newtonpaiva.br
 newtop.one
@@ -45809,6 +45771,7 @@ opehs.tanx.com
 open-air-broadcasters.co.uk
 open-analytics.hrw.org
 open-analytics.se
+open-collectors.sumologic.com
 open-homepage.ghost.io
 open-homepages.ghost.io
 open-legrlive.ghost.io
@@ -46837,6 +46800,7 @@ pcdn.yximgs.com
 pcdwm.com
 pcf.demdex.net
 pcfg.wps.cn
+pchelpsoft.com
 pchur.belkin.com
 pckqac.tech
 pcl.demdex.net
@@ -50284,7 +50248,6 @@ prod-pod8-dvc-telemetry-podlbalb-1340119296.us-east-1.elb.amazonaws.com
 prod-pod9-dvc-telemetry-podlbalb-1234979978.us-west-2.elb.amazonaws.com
 prod-server-side-tagging-oh25t3yxza-uc.a.run.app
 prod-sgtm.very.co.uk
-prod-snowplow-collector-lb-289388854.us-east-1.elb.amazonaws.com
 prod-sponsoredads.mkt.zappos.com
 prod-telemetry-10-archive.s3.eu-central-1.amazonaws.com
 prod-track-edge-alb-1680312427.us-west-1.elb.amazonaws.com
@@ -50619,7 +50582,6 @@ pub.chez.com
 pub.club-internet.fr
 pub.club.voila.fr
 pub.cuisineaz.com
-pub.dv.tech
 pub.funshion.com
 pub.groupe-ldlc.com
 pub.hardware.fr
@@ -54860,14 +54822,11 @@ server-side-gtm.deporvillage.de
 server-side-gtm.deporvillage.it
 server-side-gtm.deporvillage.pt
 server-side-tagging-1014570026822.southamerica-east1.run.app
-server-side-tagging-1037254496037.us-central1.run.app
 server-side-tagging-1061937729407.us-west2.run.app
 server-side-tagging-1064454456539.europe-west4.run.app
 server-side-tagging-1086177390344.us-central1.run.app
 server-side-tagging-109911223195.us-central1.run.app
 server-side-tagging-110675462923.us-central1.run.app
-server-side-tagging-111586184465.southamerica-east1.run.app
-server-side-tagging-120677438498.australia-southeast1.run.app
 server-side-tagging-120973504724.europe-west2.run.app
 server-side-tagging-127328350455.us-east1.run.app
 server-side-tagging-163551643076.us-central1.run.app
@@ -54877,7 +54836,6 @@ server-side-tagging-231604340165.us-central1.run.app
 server-side-tagging-23211202459.us-central1.run.app
 server-side-tagging-242akifimq-uc.a.run.app
 server-side-tagging-25uhm7q2wq-uc.a.run.app
-server-side-tagging-26ctfrxzoa-uc.a.run.app
 server-side-tagging-26xnzl3e5q-uc.a.run.app
 server-side-tagging-2diybmqccq-uc.a.run.app
 server-side-tagging-2djpxrgfza-uc.a.run.app
@@ -54895,7 +54853,6 @@ server-side-tagging-2zg4mqr57q-uc.a.run.app
 server-side-tagging-332119067620.europe-west2.run.app
 server-side-tagging-337961370956.us-central1.run.app
 server-side-tagging-35ihqwuxka-nw.a.run.app
-server-side-tagging-3b3npf7ata-uc.a.run.app
 server-side-tagging-3bgkdfnngq-uc.a.run.app
 server-side-tagging-3cfs2eiaca-uc.a.run.app
 server-side-tagging-3dz7fhh55q-uc.a.run.app
@@ -54919,7 +54876,6 @@ server-side-tagging-46371070519.asia-southeast1.run.app
 server-side-tagging-467905025565.us-central1.run.app
 server-side-tagging-46vvite5ja-uc.a.run.app
 server-side-tagging-497919682888.europe-west1.run.app
-server-side-tagging-4bzt5dsxdq-uc.a.run.app
 server-side-tagging-4emtbbe4fq-uc.a.run.app
 server-side-tagging-4f3s2bg27q-uc.a.run.app
 server-side-tagging-4hh3i5325q-uc.a.run.app
@@ -54938,7 +54894,6 @@ server-side-tagging-53asoamuvq-uk.a.run.app
 server-side-tagging-546829201795.europe-west2.run.app
 server-side-tagging-555503985895.europe-west4.run.app
 server-side-tagging-55p73cbiya-uc.a.run.app
-server-side-tagging-582660599531.us-central1.run.app
 server-side-tagging-5bttyxmdra-uc.a.run.app
 server-side-tagging-5cnlj4axba-uc.a.run.app
 server-side-tagging-5dqhkzpalq-uc.a.run.app
@@ -54954,7 +54909,6 @@ server-side-tagging-5qxzsjwina-uc.a.run.app
 server-side-tagging-5szwzyr5qa-uc.a.run.app
 server-side-tagging-5uwabwkwaq-uc.a.run.app
 server-side-tagging-5uypxp7j5q-uc.a.run.app
-server-side-tagging-5w4zmrpk2q-uc.a.run.app
 server-side-tagging-5ybvv4cctq-uc.a.run.app
 server-side-tagging-622efmsmwq-uc.a.run.app
 server-side-tagging-62f3cf3fya-ew.a.run.app
@@ -55012,7 +54966,6 @@ server-side-tagging-7z7aekkuga-uc.a.run.app
 server-side-tagging-833949469797.us-central1.run.app
 server-side-tagging-846695342379.asia-northeast1.run.app
 server-side-tagging-87544884307.europe-west1.run.app
-server-side-tagging-879569142456.us-west2.run.app
 server-side-tagging-922531518864.us-central1.run.app
 server-side-tagging-965440604880.europe-west1.run.app
 server-side-tagging-98424044405.europe-west1.run.app
@@ -55154,7 +55107,6 @@ server-side-tagging-hagb5cf6bq-uc.a.run.app
 server-side-tagging-hangnitwaa-uc.a.run.app
 server-side-tagging-hayzpmf72a-uc.a.run.app
 server-side-tagging-hddrfyouaa-uc.a.run.app
-server-side-tagging-hdsbbjsfma-uc.a.run.app
 server-side-tagging-he3u4nhsuq-uc.a.run.app
 server-side-tagging-hezmbyn5ka-uc.a.run.app
 server-side-tagging-hflvsypeyq-uc.a.run.app
@@ -55216,7 +55168,6 @@ server-side-tagging-jkaryw7dmq-uc.a.run.app
 server-side-tagging-jn5ignkvia-uc.a.run.app
 server-side-tagging-jneis7rxra-uc.a.run.app
 server-side-tagging-jnl3cdhwjq-uc.a.run.app
-server-side-tagging-jpelrpkiaa-uc.a.run.app
 server-side-tagging-jps-x-lttp-890745626621.europe-west1.run.app
 server-side-tagging-jt2ttgbsqq-uc.a.run.app
 server-side-tagging-jwctumxqsa-uc.a.run.app
@@ -55270,7 +55221,6 @@ server-side-tagging-mmhzhsy53q-uc.a.run.app
 server-side-tagging-mngd35f3eq-uc.a.run.app
 server-side-tagging-mppn2bcgpq-uc.a.run.app
 server-side-tagging-mrb7fzt5pa-uc.a.run.app
-server-side-tagging-msy2xdw4uq-uc.a.run.app
 server-side-tagging-mt5oopr7ta-uc.a.run.app
 server-side-tagging-mugiibsnhq-uc.a.run.app
 server-side-tagging-mvjvqor42a-uc.a.run.app
@@ -55302,7 +55252,6 @@ server-side-tagging-ob4hdxmtca-uc.a.run.app
 server-side-tagging-oh37ak3tfq-uc.a.run.app
 server-side-tagging-oj6mtecqpq-uc.a.run.app
 server-side-tagging-okdnqmrjrq-uc.a.run.app
-server-side-tagging-olubkeitfa-uc.a.run.app
 server-side-tagging-oqa72bcbbq-uc.a.run.app
 server-side-tagging-or5jarxr6a-uc.a.run.app
 server-side-tagging-orabrkodiq-uc.a.run.app
@@ -55365,7 +55314,6 @@ server-side-tagging-r2eme5rpbq-uc.a.run.app
 server-side-tagging-r344omkv3a-uc.a.run.app
 server-side-tagging-r6d6zcbweq-uc.a.run.app
 server-side-tagging-r7i42fi3ka-uc.a.run.app
-server-side-tagging-rbypzybp6a-uc.a.run.app
 server-side-tagging-rd2wb3zclq-uc.a.run.app
 server-side-tagging-rdhyazexpq-uc.a.run.app
 server-side-tagging-rg6bprzgmq-uc.a.run.app
@@ -55400,9 +55348,7 @@ server-side-tagging-spir5fmtja-ue.a.run.app
 server-side-tagging-srdrkorspq-uc.a.run.app
 server-side-tagging-srhz37eb2a-uc.a.run.app
 server-side-tagging-ssv4waagvq-uc.a.run.app
-server-side-tagging-sw34qojrpa-uc.a.run.app
 server-side-tagging-sw5m3dx77a-uc.a.run.app
-server-side-tagging-sw7v4q6aha-uc.a.run.app
 server-side-tagging-syuqaofd7q-uc.a.run.app
 server-side-tagging-sznt3iolpq-uc.a.run.app
 server-side-tagging-t22nqfy7nq-uc.a.run.app
@@ -55449,7 +55395,6 @@ server-side-tagging-ukqmduss3a-uc.a.run.app
 server-side-tagging-uly3a6r7wq-uc.a.run.app
 server-side-tagging-umqcuasmua-uc.a.run.app
 server-side-tagging-unmdd5zqra-uc.a.run.app
-server-side-tagging-unocylsnwa-uc.a.run.app
 server-side-tagging-unqnnr2eeq-uc.a.run.app
 server-side-tagging-uow6ovgcbq-uc.a.run.app
 server-side-tagging-up5xe4up6a-uc.a.run.app
@@ -55476,12 +55421,10 @@ server-side-tagging-vvgdkfogla-uc.a.run.app
 server-side-tagging-vwo52nibmq-no.a.run.app
 server-side-tagging-vwo52nibmq-uc.a.run.app
 server-side-tagging-vzab3cylwq-uc.a.run.app
-server-side-tagging-vzku63srda-uc.a.run.app
 server-side-tagging-w2hutj4lya-uc.a.run.app
 server-side-tagging-w333dtewla-uc.a.run.app
 server-side-tagging-w4rdwld45a-uc.a.run.app
 server-side-tagging-w66n5pxv4a-uc.a.run.app
-server-side-tagging-w6yto2yxra-uc.a.run.app
 server-side-tagging-wckz53bfpa-uc.a.run.app
 server-side-tagging-wimtd4yatq-uc.a.run.app
 server-side-tagging-wlkhpzj6hq-uc.a.run.app
@@ -55502,7 +55445,6 @@ server-side-tagging-xnxvaxpp7q-uc.a.run.app
 server-side-tagging-xqgk2uszeq-uc.a.run.app
 server-side-tagging-xsbg4oka3a-uc.a.run.app
 server-side-tagging-xxoru7kyxq-uc.a.run.app
-server-side-tagging-y4pfpv3kba-uc.a.run.app
 server-side-tagging-y5b4w4fk4a-uc.a.run.app
 server-side-tagging-y75c6bvoia-uc.a.run.app
 server-side-tagging-y77zhtflyq-uc.a.run.app
@@ -57257,7 +57199,6 @@ sgtm.lindenhomes.co.uk
 sgtm.lindt.co.uk
 sgtm.lindt.de
 sgtm.lindt.fr
-sgtm.lindt.pl
 sgtm.lindtusa.com
 sgtm.livesport.cz
 sgtm.lookfantastic.com
@@ -57390,7 +57331,6 @@ sgtm.open.ac.uk
 sgtm.openhaardhout-gigant.nl
 sgtm.optimaitalia.com
 sgtm.oseamalibu.com
-sgtm.otokocikinciel.com
 sgtm.owayo.de
 sgtm.pall.com
 sgtm.parentia.be
@@ -61265,8 +61205,6 @@ sowa.carhartt.com
 soxnwz.lg.com
 soycdn.lol
 soytuyo.com
-sp-collector-lb-1064368878.eu-west-1.elb.amazonaws.com
-sp-collector-lb-2104379155.us-east-1.elb.amazonaws.com
 sp-collector.supermetrics.com
 sp-eu.dev.polarbyte.com
 sp-g2.gumgum.com
@@ -64310,7 +64248,6 @@ t-ring-fallbacks2.msedge.net
 t-ring-fdv2.msedge.net
 t-ring-s.msedge.net
 t-ring-s2.msedge.net
-t-ring-trafficshield.msedge.net
 t-ring.msedge.net
 t-s.gene.com
 t-s1-ring.msedge.net
@@ -64713,7 +64650,6 @@ tagmanager.marktplaats.nl
 tagmanager.meh.com
 tagmanager.morningsave.com
 tagmanager.smartadserver.com
-tagmanager.smartadserver.com.edgesuite.net
 tagmanager.toast.com
 tagmanager.yodobashi.com
 tagmanager1.citi.com
@@ -67246,7 +67182,6 @@ track.oasis.magictavern.com
 track.olx.com.br
 track.onef.pro
 track.opentable.com
-track.opentable.com.au
 track.opentable.com.mx
 track.opentable.de
 track.patpat.com
@@ -67336,7 +67271,6 @@ tracker-dot-dfty-optimeeze-leroymerlinfr.appspot.com
 tracker-dot-dfty-optimeeze-leroymerlinit.appspot.com
 tracker-dot-dfty-optimeeze-leroymerlinpt.appspot.com
 tracker-dot-optimeeze.appspot.com
-tracker-load-balancer-910132794.us-east-1.elb.amazonaws.com
 tracker-loadbalancer-1440587428.eu-central-1.elb.amazonaws.com
 tracker-mw-zlivestream.zapps.vn
 tracker-novembers-347342.appspot.com
@@ -68256,7 +68190,6 @@ trk-mkt.tason.com
 trk-pcweb.api.zaloapp.com
 trk-web.com
 trk.a-dsp.com
-trk.ad-serving-ads.com
 trk.adbutter.net
 trk.analytics.wisetracker.co.kr
 trk.avalara.com
@@ -68803,7 +68736,6 @@ tvm-tv4-freewheel.akamaized.net
 tvn.hit.gemius.pl
 tvn2.adocean.pl
 tvp-ads-log.samsungads.com
-tvp-interactive-ad.samsungads.com
 tvp.tv
 tvpgapl.hit.gemius.pl
 tvping.com
@@ -69147,7 +69079,6 @@ ujqgr.twothirds.com
 ujzlb.harryanddavid.com
 uk-bet.com
 uk-exhibitionist.com
-uk-timesync.vivoglobal.com
 uk.simpleescort.com
 uk.slunkosela.world
 ukadh.livelyroot.com
@@ -69678,7 +69609,6 @@ us-central1-markuphero.cloudfunctions.net
 us-central1-metrics-prd.cloudfunctions.net
 us-central1-r2u-analytics.cloudfunctions.net
 us-datareceiver.aki-game.net
-us-event.dengage.com
 us-events.api.iheart.com
 us-exodus.zapier.app
 us-exoduswallt.zapier.app
@@ -70530,6 +70460,7 @@ vcm-match.dotomi.com
 vcmedia.vn
 vcommission.com
 vcs.zijieapi.com
+vcsa.telemetry.broadcom.com.cdn.cloudflare.net
 vcteens.com
 vcvnl.fashionnova.com
 vcx.com
@@ -72029,7 +71960,6 @@ webads.nl
 webanalyse.jena.de
 webanalyse.kdvz-frechen.de
 webanalytic.aalborg.dk
-webanalytics-1823844529.ap-southeast-2.elb.amazonaws.com
 webanalytics-cdn.sbs
 webanalytics-listener-685646918301.us-east1.run.app
 webanalytics-matomo.ccomptes.fr
@@ -73238,7 +73168,6 @@ wyeud.m-pages.com
 wyn.demdex.net
 wysistat.com
 wyylde.com
-wyze-o-metrics-service-s3.s3.us-west-2.amazonaws.com
 wz.typmussy.com
 wzi7eobzn.localto.net
 wzjs1.oss-accelerate.aliyuncs.com
@@ -74789,6 +74718,7 @@ xxzakaz.com
 xxzye-d.santxye.biz.id
 xy-cdnfile1pcdn.msstatic.com
 xy-fileserverpcdn.cdn.huya.com
+xy-fileserverpcdn.cdn.huya.com.gslb.kuiniuca.com
 xy-livewebbs2pcdn.msstatic.com
 xy.com
 xy.fbcdn.net
@@ -75361,7 +75291,6 @@ z929.fuelfix.com
 z953.marinij.com
 za-ad-lgsmartad-com.aws-prd.net
 za-mc.videoplaza.tv
-za-p.vivoglobal.com
 za.baomoi.com
 za.lgsmartad.com
 za.qeeq.com
@@ -75414,18 +75343,7 @@ zarinaescorts.com
 zarize.com
 zarpop.ir
 zasc-cota.vivoglobal.com
-zasc-domaincfg.vivoglobal.com
-zasc-err-up.vivoglobal.com
-zasc-onrt-stsdk.vivoglobal.com
-zasc-ort-stsdk.vivoglobal.com
-zasc-pnrt-stsdk.vivoglobal.com
-zasc-romsp-unifyconfig.vivoglobal.com
-zasc-st-sl.vivoglobal.com
-zasc-stsdk.vivoglobal.com
-zasc-timesync.vivoglobal.com
-zasc-vcode-api.vivoglobal.com
 zasc-vcode-od.vivoglobal.com
-zasc-vcode-or.vivoglobal.com
 zatnoh.com
 zatube.com
 zatzy.com
