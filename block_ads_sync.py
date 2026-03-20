@@ -44,19 +44,26 @@ MASTER_CONFIG = {
     "policy_name":    "Ads, Tracker, Telemetry, Malware",
     "filename":       "aggregate_blocklist.txt",
     "banned_tlds": {
-        "top", "xyz", "xin", "icu", "sbs", "cfd", "gdn", "monster", "buzz", "bid",
-        "stream", "webcam", "zip", "mov", "pw", "tk", "ml", "ga", "cf", "gq",
-        "men", "work", "click", "link", "party", "trade", "date", "loan", "win",
-        "faith", "racing", "review", "country", "kim", "cricket", "science",
-        "download", "ooo", "by", "cn", "ir", "kp", "ng", "ru", "su", "ss",
-        "accountant", "accountants", "rest", "bar", "bzar", "bet", "cc", "poker", "casino",
+        # Free/Defunct TLDs (Historically 99% abuse)
+        "tk", "ml", "ga", "cf", "gq",
+        
+        # Ultra-cheap & massively abused TLDs (High Spam/Malware)
+        "icu", "top", "xin", "gdn", "bid", "pw", "sbs", "cfd", "monster",
+        "stream", "webcam", "download", "win", "party", "racing", "trade",
+        "loan", "faith", "review", "accountant", "accountants", "cricket",
+        
+        # Borderline / High Phishing Risk
+        "zip", "mov",
+        
+        # Explicit / Sketchy Categories
+        "xxx", "casino",
     },
     "offloaded_keywords": {
-        "xxx", "porn", "sex", "sexy", "fuck", "tits", "titties", "titty", "boobs",
-        "boobies", "booty", "pussy", "hentai", "milf", "blowjob", "threesome",
-        "bondage", "bdsm", "gangbang", "handjob", "deepthroat", "horny", "bukkake",
-        "titfuck", "brazzers", "redtube", "pornhub", "shemale", "erotic", "omegle",
-        "xnxx", "xvideo", "xxvideo",
+        # Highly specific explicit terms that do not appear in normal English words
+        "blowjob", "threesome", "gangbang", "handjob", "deepthroat", 
+        "bukkake", "titfuck", "shemale", 
+        # Specific major adult/sketchy brand names
+        "pornhub", "redtube", "brazzers", "xnxx", "xvideo", "xxvideo", "omegle",
     },
     "urls": {
         #"HaGeZi Pro++":                  "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
@@ -65,6 +72,12 @@ MASTER_CONFIG = {
         #"Hagezi Anti-Piracy":            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
         "HaGeZi Fake":                    "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
         #"Hagezi SafeSearch Not Supported":"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
+        
+        # Native Trackers by Hagezi
+        "Amazon":                         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/domains/native.amazon.txt",
+        "TikTok":                         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/domains/native.tiktok.txt",
+        "Windows":                        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/domains/native.winoffice.txt",
+        "Apple":                          "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/domains/native.apple.txt",
     },
 }
 
