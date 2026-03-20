@@ -2,13 +2,8 @@ name: Cloudflare Gateway Sync
 
 on:
   schedule:
-    #- cron: '0 * * * *' 
+    - cron: '0 * * * *' 
   workflow_dispatch:
-    inputs:
-      force_mode:
-        description: 'Force Update'
-        type: boolean
-        default: false
 
 jobs:
   run-sync:
@@ -32,13 +27,15 @@ jobs:
         env:
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
-        run: python3 block_ads_sync.py ${{ github.event.inputs.force_mode == 'true' && '--force' || '' }}
+        # Make sure this filename perfectly matches your repo!
+        run: python3 block_ads_sync.py 
 
       - name: Commit and Push Changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add aggregate_blocklist.txt README_STATS.md
+          # Only adding the text file since stats were removed
+          git add aggregate_blocklist.txt 
           if ! git diff --cached --quiet; then
             git commit -m "Full Intelligence Update [skip ci]"
             git push
