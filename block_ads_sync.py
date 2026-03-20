@@ -14,7 +14,7 @@ from urllib3.util import Retry
 class Config:
     API_TOKEN               = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID              = os.environ.get("ACCOUNT_ID", "")
-    ENABLE_TLD_KW_FILTERING = False  # <--- TOGGLE THIS TO TRUE/FALSE
+    ENABLE_TLD_KW_FILTERING = True  # <--- TOGGLE THIS TO TRUE/FALSE
     MAX_LIST_SIZE           = 1000
     MAX_RETRIES             = 3
     TOTAL_QUOTA             = 300_000
