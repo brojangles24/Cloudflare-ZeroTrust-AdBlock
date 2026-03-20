@@ -70,13 +70,13 @@ MASTER_CONFIG = {
     "urls": {
         # --- THE CORE FOUR (Broad Protection) ---
         "HaGeZi Normal":                  "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-        "1Hosts Lite":                    "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/domains.wildcards",
+        #"1Hosts Lite":                    "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/domains.wildcards",
         #"OISD Big":                       "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_big.txt",
         "Hagezi TIF Mini":                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
 
         # --- SPECIALTY & SAFETY ---
         "Hagezi NSFW":                    "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
-        "OISD NSFW":                      "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt",
+        #"OISD NSFW":                      "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt",
         "HaGeZi Fake":                    "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
         
         # --- NATIVE TRACKERS (Device Specific) ---
