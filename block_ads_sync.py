@@ -4,17 +4,24 @@ import logging
 import requests
 import concurrent.futures
 import time
+import io
+import zipfile
+import gzip
 from pathlib import Path
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
 # ---------------------------------------------------------------------------
-# 1. Config
+# 1. Config & Top Lists
 # ---------------------------------------------------------------------------
 class Config:
     API_TOKEN               = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID              = os.environ.get("ACCOUNT_ID", "")
-    ENABLE_TLD_KW_FILTERING = True  # <--- TOGGLE THIS TO TRUE/FALSE
+    
+    # --- TOGGLES ---
+    ENABLE_TLD_KW_FILTERING = True
+    ENABLE_RELEVANCE_FILTER = True   # <--- Keep only active/popular domains
+    
     MAX_LIST_SIZE           = 1000
     MAX_RETRIES             = 3
     TOTAL_QUOTA             = 300_000
@@ -25,9 +32,7 @@ class Config:
     def validate(cls):
         missing = [k for k in ("API_TOKEN", "ACCOUNT_ID") if not getattr(cls, k)]
         if missing:
-            raise EnvironmentError(
-                f"Missing required environment variable(s): {', '.join(missing)}"
-            )
+            raise EnvironmentError(f"Missing environment variables: {', '.join(missing)}")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,31 +43,28 @@ logger = logging.getLogger(__name__)
 
 IP_PATTERN = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
+# Relevance Datasets
+TOP_LISTS = [
+    ("https://tranco-list.eu/top-1m.csv.zip", 1, False, "zip"),
+    ("http://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip", 1, False, "zip"),
+    ("https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz", 0, True, "gzip"),
+    ("https://downloads.majestic.com/majestic_million.csv", 2, True, "raw"),
+]
+
 MASTER_CONFIG = {
     "name":           "Ads, Tracker, Telemetry, Malware",
     "prefix":         "Ads, Tracker, Telemetry, Malware",
     "policy_name":    "Ads, Tracker, Telemetry, Malware",
     "filename":       "aggregate_blocklist.txt",
     "banned_tlds": {
-        # Free/Defunct TLDs (Historically 99% abuse)
-        "tk", "ml", "ga", "cf", "gq",
-        
-        # Ultra-cheap & massively abused TLDs (High Spam/Malware)
-        "icu", "top", "xin", "gdn", "bid", "pw", "sbs", "cfd", "monster",
-        "stream", "webcam", "download", "win", "party", "racing", "trade",
-        "loan", "faith", "review", "accountant", "accountants", "cricket",
-        
-        # Borderline / High Phishing Risk
-        "zip", "mov",
-        
-        # Explicit / Sketchy Categories
-        "xxx", "casino",
+        "tk", "ml", "ga", "cf", "gq", "icu", "top", "xin", "gdn", "bid", "pw", "sbs", 
+        "cfd", "monster", "stream", "webcam", "download", "win", "party", "racing", 
+        "trade", "loan", "faith", "review", "accountant", "accountants", "cricket",
+        "zip", "mov", "xxx", "casino",
     },
     "offloaded_keywords": {
-        # Highly specific explicit terms that do not appear in normal English words
         "blowjob", "threesome", "gangbang", "handjob", "deepthroat", 
         "bukkake", "titfuck", "shemale", 
-        # Specific major adult/sketchy brand names
         "pornhub", "redtube", "brazzers", "xnxx", "xvideo", "xxvideo", "omegle",
     },
     "urls": {
@@ -72,7 +74,7 @@ MASTER_CONFIG = {
         "Hagezi NSFW":                    "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
         #"Hagezi Anti-Piracy":            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
         "HaGeZi Fake":                    "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
-        #"Hagezi SafeSearch Not Supported":"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
+        #"Hagezi SafeSearch Not Supported":"https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",  
         
         # Native Trackers by Hagezi
         "Amazon":                         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/domains/native.amazon.txt",
@@ -88,27 +90,13 @@ MASTER_CONFIG = {
 class CloudflareAPI:
     def __init__(self):
         self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{Config.ACCOUNT_ID}/gateway"
-        self.headers = {
-            "Authorization": f"Bearer {Config.API_TOKEN}",
-            "Content-Type": "application/json",
-        }
+        self.headers = {"Authorization": f"Bearer {Config.API_TOKEN}", "Content-Type": "application/json"}
         self.session = requests.Session()
-        retry = Retry(
-            total=Config.MAX_RETRIES,
-            backoff_factor=1,
-            status_forcelist=[429, 500, 502, 503, 504],
-            respect_retry_after_header=False,
-        )
+        retry = Retry(total=Config.MAX_RETRIES, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
         self.session.mount("https://", HTTPAdapter(max_retries=retry))
 
     def _request(self, method, endpoint, **kwargs):
-        resp = self.session.request(
-            method,
-            f"{self.base_url}/{endpoint}",
-            headers=self.headers,
-            timeout=Config.REQUEST_TIMEOUT,
-            **kwargs,
-        )
+        resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, timeout=Config.REQUEST_TIMEOUT, **kwargs)
         resp.raise_for_status()
         return resp.json()
 
@@ -121,13 +109,50 @@ class CloudflareAPI:
     def update_rule(self, rid, data):         return self._request("PUT",    f"rules/{rid}",   json=data)
 
 # ---------------------------------------------------------------------------
-# 3. Domain Processing
+# 3. Domain Processing & Relevance
 # ---------------------------------------------------------------------------
 _BANNED_TLDS  = MASTER_CONFIG["banned_tlds"]
 _OFFLOAD_KW   = MASTER_CONFIG["offloaded_keywords"]
 _BAD_CHARS    = frozenset("*/:[]")
 
-def is_valid_domain(domain: str) -> str | None:
+def has_suffix_match(host: str, lookup_set: set[str]) -> bool:
+    if host in lookup_set: return True
+    idx = host.find('.')
+    while idx != -1:
+        if host[idx+1:] in lookup_set: return True
+        idx = host.find('.', idx + 1)
+    return False
+
+def _parse_csv_lines(iterable, col_idx: int, skip_header: bool) -> set[str]:
+    domains = set()
+    for i, line in enumerate(iterable):
+        if skip_header and i == 0: continue
+        parts = line.split(',')
+        if len(parts) > col_idx:
+            dom = parts[col_idx].strip().lower().strip('"')
+            if dom and "." in dom: domains.add(dom)
+    return domains
+
+def fetch_top_list(url: str, col_idx: int, skip_header: bool, compression: str) -> set[str]:
+    logger.info(f"Fetching Top List: {url}")
+    try:
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=90)
+        r.raise_for_status()
+        if compression == "zip":
+            with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                with io.TextIOWrapper(z.open(z.namelist()[0]), encoding='utf-8', errors='ignore') as f:
+                    return _parse_csv_lines(f, col_idx, skip_header)
+        elif compression == "gzip":
+            with gzip.GzipFile(fileobj=io.BytesIO(r.content)) as gz:
+                with io.TextIOWrapper(gz, encoding='utf-8', errors='ignore') as f:
+                    return _parse_csv_lines(f, col_idx, skip_header)
+        else:
+            return _parse_csv_lines(r.text.splitlines(), col_idx, skip_header)
+    except Exception as e:
+        logger.error(f"Error fetching top list {url}: {e}")
+        return set()
+
+def is_valid_domain(domain: str, top_domains: set[str]) -> str | None:
     domain = domain.strip().strip(".")
 
     if not domain or _BAD_CHARS.intersection(domain):
@@ -138,17 +163,18 @@ def is_valid_domain(domain: str) -> str | None:
 
     if Config.ENABLE_TLD_KW_FILTERING:
         tld = domain.rsplit(".", 1)[-1]
-        if tld in _BANNED_TLDS:
-            return None
+        if tld in _BANNED_TLDS: return None
+        if any(kw in domain for kw in _OFFLOAD_KW): return None
 
-        # Fast generator expression for keyword checking
-        if any(kw in domain for kw in _OFFLOAD_KW):
+    # Relevance check: If enabled, domain MUST exist in the top lists
+    if Config.ENABLE_RELEVANCE_FILTER and top_domains:
+        if not has_suffix_match(domain, top_domains):
             return None
 
     return domain
 
-def fetch_url(name: str, url: str) -> tuple[str, set[str]]:
-    logger.info(f"Fetching: {name}")
+def fetch_url(name: str, url: str, top_domains: set[str]) -> tuple[str, set[str]]:
+    logger.info(f"Fetching Blocklist: {name}")
     valid_domains: set[str] = set()
 
     try:
@@ -159,7 +185,7 @@ def fetch_url(name: str, url: str) -> tuple[str, set[str]]:
             if not line or line[0] in ("#", "!", "/"):
                 continue
             
-            cleaned = is_valid_domain(line.split()[-1].lower())
+            cleaned = is_valid_domain(line.split()[-1].lower(), top_domains)
             if cleaned:
                 valid_domains.add(cleaned)
                 
@@ -170,7 +196,6 @@ def fetch_url(name: str, url: str) -> tuple[str, set[str]]:
     return name, valid_domains
 
 def optimize_domains(domains: set[str]) -> list[str]:
-    """Tree-prune subdomains covered by parent rules."""
     reversed_sorted = sorted(d[::-1] for d in domains)
     optimized: list[str] = []
     last_kept: str | None = None
@@ -194,23 +219,15 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str]) -> None:
         domains = domains[: Config.TOTAL_QUOTA]
 
     sorted_domains = sorted(domains)
-    chunks = [
-        sorted_domains[i : i + Config.MAX_LIST_SIZE]
-        for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)
-    ]
+    chunks = [sorted_domains[i : i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
 
-    # Save final list to disk
     Path(MASTER_CONFIG["filename"]).write_text("\n".join(sorted_domains))
 
-    existing = sorted(
-        [l for l in cf.get_lists() if MASTER_CONFIG["prefix"] in l["name"]],
-        key=lambda x: x["name"],
-    )
-
+    existing = sorted([l for l in cf.get_lists() if MASTER_CONFIG["prefix"] in l["name"]], key=lambda x: x["name"])
     used_ids: list[str] = []
 
     for idx, chunk in enumerate(chunks):
-        items     = [{"value": d} for d in chunk]
+        items = [{"value": d} for d in chunk]
         list_name = f"{MASTER_CONFIG['prefix']} {idx + 1:03d}"
         
         if idx < len(existing):
@@ -224,7 +241,6 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str]) -> None:
             used_ids.append(lid)
             logger.info(f"Created list {list_name} ({len(chunk):,} domains)")
 
-    # Update Gateway Policy Rule
     clauses = [f"any(dns.domains[*] in ${lid})" for lid in used_ids]
     payload = {
         "name":    MASTER_CONFIG["policy_name"],
@@ -235,7 +251,7 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str]) -> None:
     }
     
     rules = cf.get_rules()
-    rid   = next((r["id"] for r in rules if r["name"] == MASTER_CONFIG["policy_name"]), None)
+    rid = next((r["id"] for r in rules if r["name"] == MASTER_CONFIG["policy_name"]), None)
     
     if rid:
         cf.update_rule(rid, payload)
@@ -244,7 +260,6 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str]) -> None:
         cf.create_rule(payload)
         logger.info("Firewall rule created.")
 
-    # Cleanup stale lists
     for stale in existing[len(chunks):]:
         try:
             cf.delete_list(stale["id"])
@@ -257,28 +272,42 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str]) -> None:
 # ---------------------------------------------------------------------------
 def main() -> None:
     start = time.perf_counter()
-
     Config.validate()
     cf = CloudflareAPI()
-    global_domain_set: set[str] = set()
+    
+    global_top_domains: set[str] = set()
+    global_domain_set: set[str]  = set()
 
-    # Parallel Fetch
+    # Step 1: Pre-fetch Top Relevance Lists (If Enabled)
+    if Config.ENABLE_RELEVANCE_FILTER:
+        logger.info("Relevance Filter Enabled. Fetching global top internet domains...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
+            top_futures = [
+                pool.submit(fetch_top_list, url, col, skip, comp)
+                for url, col, skip, comp in TOP_LISTS
+            ]
+            for future in concurrent.futures.as_completed(top_futures):
+                global_top_domains |= future.result()
+        logger.info(f"Compiled {len(global_top_domains):,} root domains into the Relevance Allowlist.")
+
+    # Step 2: Fetch and Filter Blocklists
+    logger.info("Fetching DNS Blocklists...")
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
         futures = {
-            pool.submit(fetch_url, name, url): name
+            pool.submit(fetch_url, name, url, global_top_domains): name
             for name, url in MASTER_CONFIG["urls"].items()
         }
         for future in concurrent.futures.as_completed(futures):
             _, valid_set = future.result()
             global_domain_set |= valid_set
 
-    logger.info(f"Total unique domains ingested: {len(global_domain_set):,}")
+    logger.info(f"Total domains after relevance & validation: {len(global_domain_set):,}")
 
-    # Optimize (Tree Pruning)
+    # Step 3: Optimize (Tree Pruning)
     optimized = optimize_domains(global_domain_set)
     logger.info(f"Total domains after tree-pruning: {len(optimized):,}")
 
-    # Cloudflare Sync
+    # Step 4: Cloudflare Sync
     sync_to_cloudflare(cf, optimized)
 
     logger.info(f"Sync complete in {time.perf_counter() - start:.2f} seconds.")
