@@ -17959,7 +17959,6 @@ analytics2-3-meride-tv.akamaized.net
 analytics2-api.institut-ida.de
 analytics2-meride-tv.akamaized.net
 analytics2.awsli.com.br
-analytics2.carinet.de
 analytics2.craftsportswear.com
 analytics2.getwemap.com
 analytics2.istruzione.it
@@ -41416,6 +41415,7 @@ d12ue6f2329cfl.cloudfront.net
 d12ylqdkzgcup5.cloudfront.net
 d12zgccgt6pwjz.cloudfront.net
 d133y3h5r255gq.cloudfront.net
+d135aysof2oufc.cloudfront.net
 d138am4hd4ke4y.cloudfront.net
 d13dhn7ldhrcf6.cloudfront.net
 d13gni3sfor862.cloudfront.net
@@ -42034,6 +42034,7 @@ d26b395fwzu5fz.cloudfront.net
 d26c5.weblium.site
 d26e5rmb2qzuo3.cloudfront.net
 d26exkfgvy72ja.cloudfront.net
+d26hpdecvhwn5s.cloudfront.net
 d26opx5dl8t69i.cloudfront.net
 d26p9ecwyy9zqv.cloudfront.net
 d26r44l4vrn00m.cloudfront.net
@@ -43973,6 +43974,7 @@ data.email.intuitdome.com
 data.email.jet2.com
 data.email.jet2holidays.com
 data.email.ondemand.sbs.com.au
+data.email.philips-hue.com
 data.email.prada.com
 data.email.premierleague.com
 data.email.princess.com
@@ -49832,6 +49834,7 @@ easywebservices-contactuss.pages.dev
 easyxblogs.com
 easyxporn.com
 easyxtubes.com
+eatcells.com
 eatel484.weebly.com
 eateli.weebly.com
 eatelwebmailnotice.weebly.com
@@ -85292,7 +85295,6 @@ matomo.studyrama.com
 matomo.stuttgart.de
 matomo.stwdo.de
 matomo.sudradio.fr
-matomo.sundsvall.se
 matomo.sunelia.com
 matomo.susana.org
 matomo.sva.de
@@ -85312,7 +85314,6 @@ matomo.taxdome.com
 matomo.technik-museum.de
 matomo.technopat.net
 matomo.tedic.org
-matomo.teilauto.net
 matomo.teknosa.com
 matomo.telc.net
 matomo.teleborsa.it
@@ -150006,7 +150007,6 @@ utiq.ptitchef.com
 utiq.purebreak.com
 utiq.purepeople.com
 utiq.regio7.cat
-utiq.reisereporter.de
 utiq.renault.fr
 utiq.renew.auto
 utiq.rireetchansons.fr
@@ -155360,7 +155360,6 @@ widget.flowxo.com
 widget.getgist.com
 widget.golfscape.com
 widget.guide-epargne.be
-widget.halooglasi.com
 widget.headlines.pw
 widget.helpcrunch.com
 widget.hireaiva.com
