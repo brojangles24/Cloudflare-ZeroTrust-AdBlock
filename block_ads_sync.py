@@ -44,11 +44,13 @@ logger = logging.getLogger(__name__)
 IP_PATTERN = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
 # Relevance Datasets
-TOP_LISTS = [
+TOP_LISTS =  [
     ("https://tranco-list.eu/top-1m.csv.zip", 1, False, "zip"),
     ("http://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip", 1, False, "zip"),
     ("https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz", 0, True, "gzip"),
     ("https://downloads.majestic.com/majestic_million.csv", 2, True, "raw"),
+    ("https://www.domcop.com/files/top/top10milliondomains.csv.zip", 1, True, "zip"),
+    ("https://builtwith.com/dl/builtwith-top1m.zip", 0, False, "zip"),
 ]
 
 MASTER_CONFIG = {
@@ -70,8 +72,8 @@ MASTER_CONFIG = {
     "urls": {
         # --- THE CORE FOUR (Broad Protection) ---
         "HaGeZi Normal":                  "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-        "1Hosts Lite":                    "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/domains.wildcards",
-        "OISD Big":                       "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_big.txt",
+        #"1Hosts Lite":                    "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/domains.wildcards",
+        #"OISD Big":                       "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_big.txt",
         "Hagezi TIF Mini":                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
 
         # --- SPECIALTY & SAFETY ---
