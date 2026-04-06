@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 IP_PATTERN = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
 # Relevance Datasets
-TOP_LISTS =  [
+TOP_LISTS = [
     ("https://tranco-list.eu/top-1m.csv.zip", 1, False, "zip"),
     ("http://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip", 1, False, "zip"),
     ("https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz", 0, True, "gzip"),
