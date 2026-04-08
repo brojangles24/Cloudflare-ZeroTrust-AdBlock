@@ -58,31 +58,29 @@ MASTER_CONFIG = {
     "prefix":         "Ads, Tracker, Telemetry, Malware",
     "policy_name":    "Ads, Tracker, Telemetry, Malware",
     "filename":       "aggregate_blocklist.txt",
-    "banned_tlds": {
+    "banned_tlds": {'''
         "tk", "ml", "ga", "cf", "gq", "icu", "top", "xin", "gdn", "bid", "pw", "sbs", 
         "cfd", "monster", "stream", "webcam", "download", "win", "party", "racing", 
         "trade", "loan", "faith", "review", "accountant", "accountants", "cricket",
-        "zip", "mov", "xxx", "casino",
+        "zip", "mov", "xxx", "casino",'''
     },
-    "offloaded_keywords": {
-        "blowjob", "threesome", "gangbang", "handjob", "deepthroat", 
+    "offloaded_keywords": {''' 
+       "blowjob", "threesome", "gangbang", "handjob", "deepthroat", 
         "bukkake", "titfuck", "shemale", 
-        "porn", "redtube", "brazzers", "xnxx", "xvideo", "xxvideo", "omegle", "xxx"
+        "porn", "redtube", "brazzers", "xnxx", "xvideo", "xxvideo", "omegle", "xxx" '''
     },
     "urls": {
         # --- THE CORE FOUR (Broad Protection) ---
         #"HaGeZ Light":                    "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt",
-        #"HaGeZi Normal":                  "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-        "HaGeZi Pro":                      "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
+        "HaGeZi Normal":                  "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+        #"HaGeZi Pro":                      "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
         #"1Hosts Lite":                    "https://raw.githubusercontent.com/badmojr/1Hosts/refs/heads/master/Lite/domains.wildcards",
         #"OISD Big":                       "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_big.txt",
         "HagezI TIF Full":                 "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
         #"Hagezi TIF Mini":                "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
-        "HaGeZi Fake":                     "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
 
         # --- SPECIALTY & SAFETY ---
         "Hagezi NSFW":                    "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
-        #"OISD NSFW":                      "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt",
         "HaGeZi Fake":                    "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
         "OISD NSFW":                      "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt",
         "HaGeZi Safesearch Not Support":  "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
