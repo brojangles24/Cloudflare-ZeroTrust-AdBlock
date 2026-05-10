@@ -87,10 +87,10 @@ MASTER_CONFIG = {
         "HaGeZi Bypass Block":            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
         "Steven Black NSFW":              "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts",
         #"The Blocklist Project NSFW":     "https://blocklistproject.github.io/Lists/porn.txt",
-        "HaGeZi Anti Piracy":             "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/anti.piracy.txt", 
-        "HaGeZi Dynamic DNS":             "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/dyndns.txt",
-        "HaGeZi Gambling Mini":           "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/gambling.mini.txt", 
-        "HaGeZi Social":                  "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/social.txt",
+        "HaGeZi Anti Piracy":             "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt", 
+        "HaGeZi Dynamic DNS":             "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
+        "HaGeZi Gambling Mini":           "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/gambling.mini-onlydomains.txt", 
+        "HaGeZi Social":                  "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
 
         # --- NATIVE TRACKERS (Device Specific) ---
         #"Amazon":                         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/domains/native.amazon.txt",
