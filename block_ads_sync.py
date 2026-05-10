@@ -85,7 +85,13 @@ MASTER_CONFIG = {
         "OISD NSFW":                      "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt",
         "HaGeZi Safesearch Not Support":  "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
         "HaGeZi Bypass Block":            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
-        
+        "Steven Black NSFW":              "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts",
+        #"The Blocklist Project NSFW":     "https://blocklistproject.github.io/Lists/porn.txt",
+        "HaGeZi Anti Piracy":             "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/anti.piracy.txt", 
+        "HaGeZi Dynamic DNS":             "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/dyndns.txt",
+        "HaGeZi Gambling Mini":           "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/gambling.mini.txt", 
+        "HaGeZi Social":                  "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/social.txt",
+
         # --- NATIVE TRACKERS (Device Specific) ---
         #"Amazon":                         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/domains/native.amazon.txt",
         #"TikTok":                         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/domains/native.tiktok.txt",
