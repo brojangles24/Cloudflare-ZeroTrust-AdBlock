@@ -110,6 +110,9 @@ class CloudflareAPI:
 
     def _request(self, method, endpoint, **kwargs):
         resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, timeout=Config.REQUEST_TIMEOUT, **kwargs)
+        if not resp.ok:
+            # THIS WILL PRINT THE EXACT REASON CLOUDFLARE IS MAD
+            logger.error(f"Cloudflare API Error [{resp.status_code}]: {resp.text}")
         resp.raise_for_status()
         return resp.json()
 
