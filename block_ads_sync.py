@@ -20,7 +20,7 @@ class Config:
     
     # --- TOGGLES ---
     ENABLE_TLD_KW_FILTERING = False
-    ENABLE_RELEVANCE_FILTER = True   # <--- Keep only active/popular domains
+    ENABLE_RELEVANCE_FILTER = True
     
     MAX_LIST_SIZE           = 1000
     MAX_RETRIES             = 3
@@ -65,13 +65,12 @@ _OFFLOAD_KW = {
     "porn", "redtube", "brazzers", "xnxx", "xvideo", "xxvideo", "omegle", "xxx"
 }
 
-# Separate policy configurations
 POLICIES = [
     {
         "prefix": "Ads, Tracker, Telemetry, Malware",
         "policy_name": "Ads, Tracker, Telemetry, Malware",
         "filename": "aggregate_blocklist.txt",
-        "traffic_condition": None, # Applies to everyone
+        "traffic_condition": None,
         "urls": {
             "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
             "HagezI TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
@@ -90,7 +89,7 @@ POLICIES = [
         "prefix": "Social Block",
         "policy_name": "Social Block (John Doe)",
         "filename": "social_blocklist.txt",
-        "traffic_condition": 'user.email == "johndoenomore24@gmail.com"', # Applies ONLY to this user
+        "traffic_condition": 'identity.email == "johndoenomore24@gmail.com"',
         "urls": {
             "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
         }
@@ -111,7 +110,6 @@ class CloudflareAPI:
     def _request(self, method, endpoint, **kwargs):
         resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, timeout=Config.REQUEST_TIMEOUT, **kwargs)
         if not resp.ok:
-            # THIS WILL PRINT THE EXACT REASON CLOUDFLARE IS MAD
             logger.error(f"Cloudflare API Error [{resp.status_code}]: {resp.text}")
         resp.raise_for_status()
         return resp.json()
