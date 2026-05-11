@@ -19,7 +19,7 @@ class Config:
     ACCOUNT_ID              = os.environ.get("ACCOUNT_ID", "")
     
     # --- TOGGLES ---
-    ENABLE_TLD_KW_FILTERING = False
+    ENABLE_TLD_KW_FILTERING = True
     ENABLE_RELEVANCE_FILTER = True
     
     MAX_LIST_SIZE           = 1000
@@ -70,7 +70,7 @@ POLICIES = [
         "prefix": "Ads, Tracker, Telemetry, Malware",
         "policy_name": "Ads, Tracker, Telemetry, Malware",
         "filename": "aggregate_blocklist.txt",
-        "traffic_condition": None,
+        "identity_condition": None,
         "urls": {
             "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
             "HagezI TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
@@ -89,7 +89,7 @@ POLICIES = [
         "prefix": "Social Block",
         "policy_name": "Social Block (John Doe)",
         "filename": "social_blocklist.txt",
-        "traffic_condition": 'identity.email == "johndoenomore24@gmail.com"',
+        "identity_condition": 'identity.email == "johndoenomore24@gmail.com"',
         "urls": {
             "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
         }
@@ -252,11 +252,8 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> N
             used_ids.append(lid)
             logger.info(f"Created list {list_name} ({len(chunk):,} domains)")
 
-    list_clauses = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
-    if policy["traffic_condition"]:
-        traffic_expr = f"({policy['traffic_condition']}) and ({list_clauses})"
-    else:
-        traffic_expr = list_clauses
+    # The domains clause goes exclusively into the "traffic" field
+    traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
 
     payload = {
         "name":    policy["policy_name"],
@@ -265,6 +262,10 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> N
         "filters": ["dns"],
         "traffic": traffic_expr,
     }
+
+    # The identity clause goes into the dedicated "identity" field
+    if policy.get("identity_condition"):
+        payload["identity"] = policy["identity_condition"]
     
     rules = cf.get_rules()
     rid = next((r["id"] for r in rules if r["name"] == policy["policy_name"]), None)
