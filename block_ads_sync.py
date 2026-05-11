@@ -19,7 +19,7 @@ class Config:
     ACCOUNT_ID              = os.environ.get("ACCOUNT_ID", "")
     
     # --- TOGGLES ---
-    ENABLE_TLD_KW_FILTERING = True
+    ENABLE_TLD_KW_FILTERING = False
     ENABLE_RELEVANCE_FILTER = True   # <--- Keep only active/popular domains
     
     MAX_LIST_SIZE           = 1000
