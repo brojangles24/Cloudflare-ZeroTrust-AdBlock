@@ -65,34 +65,52 @@ _OFFLOAD_KW = {
     "porn", "redtube", "brazzers", "xnxx", "xvideo", "xxvideo", "omegle", "xxx"
 }
 
+# --- CENTRALIZED URL DEFINITIONS ---
+BLOCKLIST_URLS = {
+    "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+    "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
+    "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
+    "OISD NSFW": "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt",
+    "HaGeZi Safesearch Not Support": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
+    "HaGeZi Bypass Block": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+    "Steven Black NSFW": "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts",
+    "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt", 
+    "HaGeZi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
+    "HaGeZi Gambling Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/gambling.mini-onlydomains.txt",
+    "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
+}
+
+# --- SMART POLICIES ---
 POLICIES = [
     {
-        "prefix": "Ads, Tracker, Telemetry, Malware",
-        "policy_name": "Ads, Tracker, Telemetry, Malware",
-        "filename": "aggregate_blocklist.txt",
-        "identity_condition": None,
-        "urls": {
-            "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-            "HagezI TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
-            "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
-            "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
-            "OISD NSFW": "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt",
-            "HaGeZi Safesearch Not Support": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
-            "HaGeZi Bypass Block": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
-            "Steven Black NSFW": "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts",
-            "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt", 
-            "HaGeZi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-            "HaGeZi Gambling Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/gambling.mini-onlydomains.txt"
-        }
+        "prefix": "Base Normal",
+        "policy_name": "Base Ads & NSFW (Kalli + Me)",
+        "filename": "base_blocklist.txt",
+        "identity_condition": 'identity.email in {"jorgensenkalli@gmail.com", "johndoenomore24@gmail.com"}',
+        "include": [
+            "HaGeZi Normal", "Hagezi NSFW", "HaGeZi Fake", "OISD NSFW", 
+            "HaGeZi Safesearch Not Support", "HaGeZi Bypass Block", 
+            "Steven Black NSFW", "HaGeZi Anti Piracy", "HaGeZi Dynamic DNS", 
+            "HaGeZi Gambling Mini"
+        ],
+        "exclude": []
+    },
+    {
+        "prefix": "Pro++ Extra",
+        "policy_name": "Pro++ Extra Blocks (Me Only)",
+        "filename": "proplus_diff.txt",
+        "identity_condition": 'identity.email == "johndoenomore24@gmail.com"',
+        "include": ["HaGeZi Pro++"],
+        "exclude": ["HaGeZi Normal"] 
     },
     {
         "prefix": "Social Block",
-        "policy_name": "Social Block (John Doe)",
+        "policy_name": "Social Block (Me Only)",
         "filename": "social_blocklist.txt",
         "identity_condition": 'identity.email == "johndoenomore24@gmail.com"',
-        "urls": {
-            "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
-        }
+        "include": ["HaGeZi Social"],
+        "exclude": []
     }
 ]
 
@@ -252,7 +270,6 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> N
             used_ids.append(lid)
             logger.info(f"Created list {list_name} ({len(chunk):,} domains)")
 
-    # The domains clause goes exclusively into the "traffic" field
     traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
 
     payload = {
@@ -263,7 +280,6 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> N
         "traffic": traffic_expr,
     }
 
-    # The identity clause goes into the dedicated "identity" field
     if policy.get("identity_condition"):
         payload["identity"] = policy["identity_condition"]
     
@@ -305,18 +321,31 @@ def main() -> None:
                 global_top_domains |= future.result()
         logger.info(f"Compiled {len(global_top_domains):,} root domains.")
 
+    # 1. Fetch all URL blocklists first
+    fetched_lists = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
+        futures = {
+            pool.submit(fetch_url, name, url, global_top_domains): name
+            for name, url in BLOCKLIST_URLS.items()
+        }
+        for future in concurrent.futures.as_completed(futures):
+            name, valid_set = future.result()
+            fetched_lists[name] = valid_set
+
+    # 2. Process and sync policies
     for policy in POLICIES:
         logger.info(f"\n--- Processing Policy: {policy['policy_name']} ---")
         policy_domain_set: set[str] = set()
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
-            futures = {
-                pool.submit(fetch_url, name, url, global_top_domains): name
-                for name, url in policy["urls"].items()
-            }
-            for future in concurrent.futures.as_completed(futures):
-                _, valid_set = future.result()
-                policy_domain_set |= valid_set
+        # Add inclusions
+        for inc in policy.get("include", []):
+            if inc in fetched_lists:
+                policy_domain_set |= fetched_lists[inc]
+                
+        # Subtract exclusions (Magic Deduplication)
+        for exc in policy.get("exclude", []):
+            if exc in fetched_lists:
+                policy_domain_set -= fetched_lists[exc]
 
         optimized = optimize_domains(policy_domain_set)
         sync_to_cloudflare(cf, optimized, policy)
