@@ -28,6 +28,9 @@ class Config:
     REQUEST_TIMEOUT         = (5, 25)
     MAX_WORKERS             = 5
 
+    # Known old list names that are clogging up the 100-list limit
+    LEGACY_PREFIXES         = ["Ads, Tracker, Telemetry, Malware"]
+
     @classmethod
     def validate(cls):
         missing = [k for k in ("API_TOKEN", "ACCOUNT_ID") if not getattr(cls, k)]
@@ -236,8 +239,23 @@ def optimize_domains(domains: set[str]) -> list[str]:
     return [d[::-1] for d in optimized]
 
 # ---------------------------------------------------------------------------
-# 4. Cloudflare Sync
+# 4. Cloudflare Sync & Cleanup
 # ---------------------------------------------------------------------------
+def cleanup_legacy_lists(cf: CloudflareAPI) -> None:
+    logger.info("Checking for legacy lists to clean up...")
+    existing_lists = cf.get_lists()
+    deleted_count = 0
+    for lst in existing_lists:
+        if any(lst["name"].startswith(prefix) for prefix in Config.LEGACY_PREFIXES):
+            try:
+                cf.delete_list(lst["id"])
+                logger.info(f"Deleted legacy list: {lst['name']}")
+                deleted_count += 1
+            except Exception as e:
+                logger.error(f"Failed to delete legacy list {lst['name']}: {e}")
+    if deleted_count > 0:
+        logger.info(f"Successfully cleaned up {deleted_count} legacy lists. Quota restored.")
+
 def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> None:
     if not domains:
         logger.error(f"[{policy['policy_name']}] Optimised list is empty — aborting sync.")
@@ -307,6 +325,9 @@ def main() -> None:
     start = time.perf_counter()
     Config.validate()
     cf = CloudflareAPI()
+    
+    # Pre-flight cleanup to prevent hitting the 100 list limit
+    cleanup_legacy_lists(cf)
     
     global_top_domains: set[str] = set()
 
