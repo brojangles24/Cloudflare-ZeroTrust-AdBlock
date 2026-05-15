@@ -30,9 +30,9 @@ class Config:
 
     # Names to scrub to free up the 100-list limit
     SCRUB_TARGETS = [
-        "Ads, Tracker, Telemetry, Malware", 
-        "Base Normal", 
-        "Pro++ Extra", 
+        "Ads, Tracker", 
+        "Base", 
+        "Pro++", 
         "Social Block"
     ]
 
@@ -83,8 +83,8 @@ BLOCKLIST_URLS = {
     "HaGeZi Bypass Block": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
     "Steven Black NSFW": "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts",
     "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt", 
-    #"HaGeZi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-    #"HaGeZi Gambling Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/gambling.mini-onlydomains.txt",
+    "HaGeZi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
+    "HaGeZi Gambling Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/gambling.mini-onlydomains.txt",
     "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
 }
 
@@ -143,7 +143,7 @@ def nuke_old_setup(cf: CloudflareAPI):
     # 1. Rules MUST be deleted first
     rules = cf.get_rules()
     for r in rules:
-        if any(target in r["name"] for target in Config.SCRUB_TARGETS) or "Ads, Tracker" in r["name"]:
+        if any(target in r["name"] for target in Config.SCRUB_TARGETS):
             try:
                 cf.delete_rule(r["id"])
                 logger.info(f"Deleted Rule: {r['name']}")
@@ -153,7 +153,7 @@ def nuke_old_setup(cf: CloudflareAPI):
     # 2. Now lists can be deleted
     lists = cf.get_lists()
     for l in lists:
-        if any(target in l["name"] for target in Config.SCRUB_TARGETS) or "Ads, Tracker" in l["name"]:
+        if any(target in l["name"] for target in Config.SCRUB_TARGETS):
             try:
                 cf.delete_list(l["id"])
                 logger.info(f"Deleted List: {l['name']}")
@@ -251,9 +251,11 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> N
         if idx < len(existing):
             cf.update_list(existing[idx]["id"], list_name, items)
             used_ids.append(existing[idx]["id"])
+            logger.info(f"Updated list {list_name} ({len(chunk):,} domains)")
         else:
             res = cf.create_list(list_name, items)
             used_ids.append(res["result"]["id"])
+            logger.info(f"Created list {list_name} ({len(chunk):,} domains)")
     
     traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
     payload = {"name": policy["policy_name"], "action": "block", "enabled": True, "filters": ["dns"], "traffic": traffic_expr}
@@ -261,9 +263,12 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> N
     
     rules = cf.get_rules()
     rid = next((r["id"] for r in rules if r["name"] == policy["policy_name"]), None)
-    if rid: cf.update_rule(rid, payload)
-    else: cf.create_rule(payload)
-    logger.info(f"Sync complete for policy: {policy['policy_name']}")
+    if rid: 
+        cf.update_rule(rid, payload)
+        logger.info(f"Firewall rule updated: {policy['policy_name']}")
+    else: 
+        cf.create_rule(payload)
+        logger.info(f"Firewall rule created: {policy['policy_name']}")
 
 # ---------------------------------------------------------------------------
 # 5. Main
