@@ -28,8 +28,13 @@ class Config:
     REQUEST_TIMEOUT         = (5, 25)
     MAX_WORKERS             = 5
 
-    # Known old list names that are clogging up the 100-list limit
-    LEGACY_PREFIXES         = ["Ads, Tracker, Telemetry, Malware"]
+    # Names to scrub to free up the 100-list limit
+    SCRUB_TARGETS = [
+        "Ads, Tracker, Telemetry, Malware", 
+        "Base Normal", 
+        "Pro++ Extra", 
+        "Social Block"
+    ]
 
     @classmethod
     def validate(cls):
@@ -68,7 +73,6 @@ _OFFLOAD_KW = {
     "porn", "redtube", "brazzers", "xnxx", "xvideo", "xxvideo", "omegle", "xxx"
 }
 
-# --- CENTRALIZED URL DEFINITIONS ---
 BLOCKLIST_URLS = {
     "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
     "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
@@ -84,19 +88,13 @@ BLOCKLIST_URLS = {
     "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
 }
 
-# --- SMART POLICIES ---
 POLICIES = [
     {
         "prefix": "Base Normal",
         "policy_name": "Base Ads & NSFW (Kalli + Me)",
         "filename": "base_blocklist.txt",
         "identity_condition": 'identity.email in {"jorgensenkalli@gmail.com", "johndoenomore24@gmail.com"}',
-        "include": [
-            "HaGeZi Normal", "Hagezi NSFW", "HaGeZi Fake", "OISD NSFW", 
-            "HaGeZi Safesearch Not Support", "HaGeZi Bypass Block", 
-            "Steven Black NSFW", "HaGeZi Anti Piracy", "HaGeZi Dynamic DNS", 
-            "HaGeZi Gambling Mini"
-        ],
+        "include": ["HaGeZi Normal", "Hagezi NSFW", "HaGeZi Fake", "OISD NSFW", "HaGeZi Safesearch Not Support", "HaGeZi Bypass Block", "Steven Black NSFW", "HaGeZi Anti Piracy", "HaGeZi Dynamic DNS", "HaGeZi Gambling Mini"],
         "exclude": []
     },
     {
@@ -137,16 +135,38 @@ class CloudflareAPI:
 
     def get_lists(self):                      return self._request("GET",    "lists").get("result") or []
     def get_rules(self):                      return self._request("GET",    "rules").get("result") or []
+    def delete_list(self, lid):               return self._request("DELETE", f"lists/{lid}")
+    def delete_rule(self, rid):               return self._request("DELETE", f"rules/{rid}")
     def create_list(self, name, items):       return self._request("POST",   "lists",          json={"name": name, "type": "DOMAIN", "items": items})
     def update_list(self, lid, name, items):  return self._request("PUT",    f"lists/{lid}",   json={"name": name, "items": items})
-    def delete_list(self, lid):               return self._request("DELETE", f"lists/{lid}")
     def create_rule(self, data):              return self._request("POST",   "rules",          json=data)
     def update_rule(self, rid, data):         return self._request("PUT",    f"rules/{rid}",   json=data)
 
 # ---------------------------------------------------------------------------
-# 3. Domain Processing & Relevance
+# 3. Cleanup & Domain Logic
 # ---------------------------------------------------------------------------
-_BAD_CHARS    = frozenset("*/:[]")
+def nuke_old_setup(cf: CloudflareAPI):
+    logger.info("Starting pre-flight nuke of old rules and lists...")
+    
+    # 1. Rules MUST be deleted first
+    rules = cf.get_rules()
+    for r in rules:
+        if any(target in r["name"] for target in Config.SCRUB_TARGETS) or "Ads, Tracker" in r["name"]:
+            try:
+                cf.delete_rule(r["id"])
+                logger.info(f"Deleted Rule: {r['name']}")
+            except Exception as e:
+                logger.error(f"Could not delete rule {r['name']}: {e}")
+
+    # 2. Now lists can be deleted
+    lists = cf.get_lists()
+    for l in lists:
+        if any(target in l["name"] for target in Config.SCRUB_TARGETS) or "Ads, Tracker" in l["name"]:
+            try:
+                cf.delete_list(l["id"])
+                logger.info(f"Deleted List: {l['name']}")
+            except Exception as e:
+                logger.error(f"Could not delete list {l['name']}: {e}")
 
 def has_suffix_match(host: str, lookup_set: set[str]) -> bool:
     if host in lookup_set: return True
@@ -187,136 +207,71 @@ def fetch_top_list(url: str, col_idx: int, skip_header: bool, compression: str) 
 
 def is_valid_domain(domain: str, top_domains: set[str]) -> str | None:
     domain = domain.strip().strip(".")
-
-    if not domain or _BAD_CHARS.intersection(domain):
+    if not domain or any(c in domain for c in "*/:[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
         return None
-
-    if "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
-        return None
-
     if Config.ENABLE_TLD_KW_FILTERING:
-        tld = domain.rsplit(".", 1)[-1]
-        if tld in _BANNED_TLDS: return None
-        if any(kw in domain for kw in _OFFLOAD_KW): return None
-
+        if domain.rsplit(".", 1)[-1] in _BANNED_TLDS or any(kw in domain for kw in _OFFLOAD_KW):
+            return None
     if Config.ENABLE_RELEVANCE_FILTER and top_domains:
         if not has_suffix_match(domain, top_domains):
             return None
-
     return domain
 
 def fetch_url(name: str, url: str, top_domains: set[str]) -> tuple[str, set[str]]:
-    logger.info(f"Fetching Blocklist: {name}")
-    valid_domains: set[str] = set()
-
+    valid_domains = set()
     try:
         resp = requests.get(url, timeout=Config.REQUEST_TIMEOUT)
         resp.raise_for_status()
         for line in resp.text.splitlines():
             line = line.strip()
-            if not line or line[0] in ("#", "!", "/"):
-                continue
-            
+            if not line or line[0] in ("#", "!", "/"): continue
             cleaned = is_valid_domain(line.split()[-1].lower(), top_domains)
-            if cleaned:
-                valid_domains.add(cleaned)
-                
-        logger.info(f"Done: {name} — {len(valid_domains):,} valid domains")
+            if cleaned: valid_domains.add(cleaned)
+        logger.info(f"Fetched {name}: {len(valid_domains):,} domains")
     except Exception as exc:
         logger.error(f"Error fetching {name}: {exc}")
-
     return name, valid_domains
 
 def optimize_domains(domains: set[str]) -> list[str]:
     reversed_sorted = sorted(d[::-1] for d in domains)
-    optimized: list[str] = []
-    last_kept: str | None = None
+    optimized, last_kept = [], None
     for rev in reversed_sorted:
-        if last_kept and rev.startswith(last_kept + "."):
-            continue
+        if last_kept and rev.startswith(last_kept + "."): continue
         optimized.append(rev)
         last_kept = rev
     return [d[::-1] for d in optimized]
 
 # ---------------------------------------------------------------------------
-# 4. Cloudflare Sync & Cleanup
+# 4. Cloudflare Sync
 # ---------------------------------------------------------------------------
-def cleanup_legacy_lists(cf: CloudflareAPI) -> None:
-    logger.info("Checking for legacy lists to clean up...")
-    existing_lists = cf.get_lists()
-    deleted_count = 0
-    for lst in existing_lists:
-        if any(lst["name"].startswith(prefix) for prefix in Config.LEGACY_PREFIXES):
-            try:
-                cf.delete_list(lst["id"])
-                logger.info(f"Deleted legacy list: {lst['name']}")
-                deleted_count += 1
-            except Exception as e:
-                logger.error(f"Failed to delete legacy list {lst['name']}: {e}")
-    if deleted_count > 0:
-        logger.info(f"Successfully cleaned up {deleted_count} legacy lists. Quota restored.")
-
 def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> None:
-    if not domains:
-        logger.error(f"[{policy['policy_name']}] Optimised list is empty — aborting sync.")
-        return
-
-    if len(domains) > Config.TOTAL_QUOTA:
-        logger.warning(f"[{policy['policy_name']}] Quota exceeded — slicing to {Config.TOTAL_QUOTA:,}")
-        domains = domains[: Config.TOTAL_QUOTA]
-
+    if not domains: return
+    domains = domains[:Config.TOTAL_QUOTA]
     sorted_domains = sorted(domains)
     chunks = [sorted_domains[i : i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
-
-    Path(policy["filename"]).write_text("\n".join(sorted_domains))
-
+    
     existing = sorted([l for l in cf.get_lists() if policy["prefix"] in l["name"]], key=lambda x: x["name"])
-    used_ids: list[str] = []
+    used_ids = []
 
     for idx, chunk in enumerate(chunks):
         items = [{"value": d} for d in chunk]
         list_name = f"{policy['prefix']} {idx + 1:03d}"
-        
         if idx < len(existing):
-            lid = existing[idx]["id"]
-            cf.update_list(lid, list_name, items)
-            used_ids.append(lid)
-            logger.info(f"Updated list {list_name} ({len(chunk):,} domains)")
+            cf.update_list(existing[idx]["id"], list_name, items)
+            used_ids.append(existing[idx]["id"])
         else:
             res = cf.create_list(list_name, items)
-            lid = res["result"]["id"]
-            used_ids.append(lid)
-            logger.info(f"Created list {list_name} ({len(chunk):,} domains)")
-
+            used_ids.append(res["result"]["id"])
+    
     traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
-
-    payload = {
-        "name":    policy["policy_name"],
-        "action":  "block",
-        "enabled": True,
-        "filters": ["dns"],
-        "traffic": traffic_expr,
-    }
-
-    if policy.get("identity_condition"):
-        payload["identity"] = policy["identity_condition"]
+    payload = {"name": policy["policy_name"], "action": "block", "enabled": True, "filters": ["dns"], "traffic": traffic_expr}
+    if policy.get("identity_condition"): payload["identity"] = policy["identity_condition"]
     
     rules = cf.get_rules()
     rid = next((r["id"] for r in rules if r["name"] == policy["policy_name"]), None)
-    
-    if rid:
-        cf.update_rule(rid, payload)
-        logger.info(f"Firewall rule updated: {policy['policy_name']}")
-    else:
-        cf.create_rule(payload)
-        logger.info(f"Firewall rule created: {policy['policy_name']}")
-
-    for stale in existing[len(chunks):]:
-        try:
-            cf.delete_list(stale["id"])
-            logger.info(f"Deleted stale list: {stale['name']} ({stale['id']})")
-        except Exception as exc:
-            logger.error(f"Failed to delete stale list {stale['id']}: {exc}")
+    if rid: cf.update_rule(rid, payload)
+    else: cf.create_rule(payload)
+    logger.info(f"Sync complete for policy: {policy['policy_name']}")
 
 # ---------------------------------------------------------------------------
 # 5. Main
@@ -326,52 +281,29 @@ def main() -> None:
     Config.validate()
     cf = CloudflareAPI()
     
-    # Pre-flight cleanup to prevent hitting the 100 list limit
-    cleanup_legacy_lists(cf)
+    # ONE-TIME NUKE to solve the dependency error
+    nuke_old_setup(cf)
     
-    global_top_domains: set[str] = set()
-
+    global_top_domains = set()
     if Config.ENABLE_RELEVANCE_FILTER:
-        logger.info("Fetching global top internet domains...")
         with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
-            top_futures = [
-                pool.submit(fetch_top_list, url, col, skip, comp)
-                for url, col, skip, comp in TOP_LISTS
-            ]
-            for future in concurrent.futures.as_completed(top_futures):
-                global_top_domains |= future.result()
-        logger.info(f"Compiled {len(global_top_domains):,} root domains.")
+            top_futures = [pool.submit(fetch_top_list, *lst) for lst in TOP_LISTS]
+            for future in concurrent.futures.as_completed(top_futures): global_top_domains |= future.result()
 
-    # 1. Fetch all URL blocklists first
     fetched_lists = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
-        futures = {
-            pool.submit(fetch_url, name, url, global_top_domains): name
-            for name, url in BLOCKLIST_URLS.items()
-        }
+        futures = {pool.submit(fetch_url, name, url, global_top_domains): name for name, url in BLOCKLIST_URLS.items()}
         for future in concurrent.futures.as_completed(futures):
             name, valid_set = future.result()
             fetched_lists[name] = valid_set
 
-    # 2. Process and sync policies
     for policy in POLICIES:
-        logger.info(f"\n--- Processing Policy: {policy['policy_name']} ---")
-        policy_domain_set: set[str] = set()
-        
-        # Add inclusions
-        for inc in policy.get("include", []):
-            if inc in fetched_lists:
-                policy_domain_set |= fetched_lists[inc]
-                
-        # Subtract exclusions (Magic Deduplication)
-        for exc in policy.get("exclude", []):
-            if exc in fetched_lists:
-                policy_domain_set -= fetched_lists[exc]
+        policy_domain_set = set()
+        for inc in policy.get("include", []): policy_domain_set |= fetched_lists.get(inc, set())
+        for exc in policy.get("exclude", []): policy_domain_set -= fetched_lists.get(exc, set())
+        sync_to_cloudflare(cf, optimize_domains(policy_domain_set), policy)
 
-        optimized = optimize_domains(policy_domain_set)
-        sync_to_cloudflare(cf, optimized, policy)
-
-    logger.info(f"\nAll Syncs complete in {time.perf_counter() - start:.2f} seconds.")
+    logger.info(f"Total time: {time.perf_counter() - start:.2f} seconds.")
 
 if __name__ == "__main__":
     main()
