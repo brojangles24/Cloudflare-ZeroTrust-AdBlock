@@ -93,25 +93,17 @@ POLICIES = [
         "prefix": "Base Normal",
         "policy_name": "Base Ads & NSFW (Kalli + Me)",
         "filename": "base_blocklist.txt",
-        "identity_condition": 'identity.email in {"jorgensenkalli@gmail.com", "johndoenomore24@gmail.com"}',
+        "identity_condition": 'identity.email == "jorgensenkalli@gmail.com" or identity.email == "johndoenomore24@gmail.com"',
         "include": ["HaGeZi Normal", "Hagezi NSFW", "HaGeZi Fake", "OISD NSFW", "HaGeZi Safesearch Not Support", "HaGeZi Bypass Block", "Steven Black NSFW", "HaGeZi Anti Piracy", "HaGeZi Dynamic DNS", "HaGeZi Gambling Mini"],
         "exclude": []
     },
     {
         "prefix": "Pro++ Extra",
-        "policy_name": "Pro++ Extra Blocks (Me Only)",
+        "policy_name": "Pro++ Extra & Social Blocks (Me Only)",
         "filename": "proplus_diff.txt",
         "identity_condition": 'identity.email == "johndoenomore24@gmail.com"',
-        "include": ["HaGeZi Pro++"],
+        "include": ["HaGeZi Pro++", "HaGeZi Social"],
         "exclude": ["HaGeZi Normal"] 
-    },
-    {
-        "prefix": "Social Block",
-        "policy_name": "Social Block (Me Only)",
-        "filename": "social_blocklist.txt",
-        "identity_condition": 'identity.email == "johndoenomore24@gmail.com"',
-        "include": ["HaGeZi Social"],
-        "exclude": []
     }
 ]
 
