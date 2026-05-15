@@ -76,6 +76,7 @@ _OFFLOAD_KW = {
 BLOCKLIST_URLS = {
     "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
     "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+    "HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "OISD NSFW": "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt",
@@ -102,7 +103,7 @@ POLICIES = [
         "policy_name": "Pro++ Extra & Social Blocks (Me Only)",
         "filename": "proplus_diff.txt",
         "identity_condition": 'identity.email == "johndoenomore24@gmail.com"',
-        "include": ["HaGeZi Pro++", "HaGeZi Social"],
+        "include": ["HaGeZi Ultimate", "HaGeZi Social"],
         "exclude": ["HaGeZi Normal"] 
     }
 ]
