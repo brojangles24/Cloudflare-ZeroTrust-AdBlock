@@ -103,7 +103,7 @@ POLICIES = [
         "policy_name": "Pro++ Extra & Social Blocks (Me Only)",
         "filename": "proplus_diff.txt",
         "identity_condition": 'identity.email == "johndoenomore24@gmail.com"',
-        "include": ["HaGeZi Ultimate", "HaGeZi Social"],
+        "include": ["HaGeZi Pro++", "HaGeZi Social"],
         "exclude": ["HaGeZi Normal"] 
     }
 ]
