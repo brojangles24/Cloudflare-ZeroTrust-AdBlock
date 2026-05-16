@@ -14,8 +14,8 @@ from urllib3.util import Retry
 class Config:
     API_TOKEN               = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID              = os.environ.get("ACCOUNT_ID", "")
-    PRIMARY_EMAIL           = os.environ.get("PRIMARY_EMAIL", "")   
-    SECONDARY_EMAIL         = os.environ.get("SECONDARY_EMAIL", "") 
+    PRIMARY_EMAIL           = os.environ.get("PRIMARY_EMAIL", "")    
+    SECONDARY_EMAIL         = os.environ.get("SECONDARY_EMAIL", "")  
     
     # --- TOGGLES ---
     ENABLE_TLD_KW_FILTERING = False
@@ -128,14 +128,14 @@ POLICIES = [
     },
     {
         "prefix": "L_ProPlus",
-        "policy_name": "Block: HaGeZi Pro++ Mini (Except Kalli)",
-        "identity_condition": f'not (identity.email == "{Config.SECONDARY_EMAIL}")',
+        "policy_name": "Block: HaGeZi Pro++ Mini (Except Secondary)",
+        "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")',
         "include": ["HaGeZi Pro++ Mini"],
         "exclude": ["HaGeZi Pro Mini"] 
     },
     {
         "prefix": "L_Social",
-        "policy_name": "Block: HaGeZi Social (John Only)",
+        "policy_name": "Block: HaGeZi Social (Primary Only)",
         "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', 
         "include": ["HaGeZi Social"],
         "exclude": []
@@ -261,20 +261,17 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> t
         futures = [executor.submit(process_chunk, idx, chunk) for idx, chunk in enumerate(chunks)]
         used_ids = [f.result() for f in concurrent.futures.as_completed(futures)]
 
-    domain_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
+    traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
+    payload = {"name": policy["policy_name"], "action": "block", "enabled": True, "filters": ["dns"], "traffic": traffic_expr}
     
     if policy.get("identity_condition"):
-        traffic_expr = f"({domain_expr}) and ({policy['identity_condition']})"
-    else:
-        traffic_expr = domain_expr
-
-    payload = {"name": policy["policy_name"], "action": "block", "enabled": True, "filters": ["dns"], "traffic": traffic_expr}
+        payload["identity"] = policy["identity_condition"]
     
     rules = cf.get_rules()
     existing_rule = next((r for r in rules if r["name"] == policy["policy_name"]), None)
     
     if existing_rule:
-        if existing_rule.get("traffic") == traffic_expr:
+        if existing_rule.get("traffic") == traffic_expr and existing_rule.get("identity") == policy.get("identity_condition"):
             logger.info(f"Firewall rule {policy['policy_name']} unchanged. Skipping update.")
         else:
             cf.update_rule(existing_rule["id"], payload)
