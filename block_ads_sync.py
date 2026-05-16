@@ -30,6 +30,7 @@ class Config:
     SCRUB_TARGETS = [
         "Base", 
         "Pro++", 
+        "Ultimate",
         "Social",
         "Block:",
         "L_"
@@ -48,7 +49,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Upgraded to catch both IPv4 and IPv6 patterns
 IP_PATTERN = re.compile(
     r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|"
     r"^(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}$|"
@@ -71,6 +71,7 @@ _OFFLOAD_KW = {
 BLOCKLIST_URLS = {
     "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.mini-onlydomains.txt",
     "HaGeZi Pro++ Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus.mini-onlydomains.txt",
+    "HaGeZi Ultimate Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate.mini-onlydomains.txt",
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi Safesearch Not Support": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
@@ -131,10 +132,10 @@ POLICIES = [
         "exclude": []
     },
     {
-        "prefix": "L_ProPlus",
-        "policy_name": "Block: HaGeZi Pro++ Mini (Except Secondary)",
+        "prefix": "L_Ultimate",
+        "policy_name": "Block: HaGeZi Ultimate Mini (Except Secondary)",
         "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")',
-        "include": ["HaGeZi Pro++ Mini"],
+        "include": ["HaGeZi Ultimate Mini"],
         "exclude": ["HaGeZi Pro Mini"] 
     },
     {
@@ -192,7 +193,6 @@ class CloudflareAPI:
 # ---------------------------------------------------------------------------
 def is_valid_domain(domain: str) -> str | None:
     domain = domain.strip().strip(".")
-    # Removed ':' from invalid chars to allow IPv6 checks to work properly
     if not domain or any(c in domain for c in "*/[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
         return None
     if Config.ENABLE_TLD_KW_FILTERING:
@@ -315,7 +315,6 @@ def main() -> None:
     Config.validate()
     cf = CloudflareAPI()
     
-    # Establish Session Pool for fast downloads
     download_session = requests.Session()
     dl_retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
     download_session.mount("https://", HTTPAdapter(max_retries=dl_retry))
@@ -347,7 +346,6 @@ def main() -> None:
 
     logger.info(f"Total domains to sync: {total_domains:,}. Proceeding...")
 
-    # Take a single global snapshot to save API calls
     existing_lists = cf.get_lists()
     existing_rules = cf.get_rules()
 
@@ -360,7 +358,6 @@ def main() -> None:
             all_active_list_ids.extend(used_ids)
             all_active_rule_names.append(rule_name)
 
-    # Use the same snapshot for cleanup. New lists aren't in this snapshot, so they are safe from deletion!
     cleanup_orphans(cf, existing_lists, existing_rules, all_active_list_ids, all_active_rule_names)
 
     logger.info(f"Total time: {time.perf_counter() - start:.2f} seconds.")
