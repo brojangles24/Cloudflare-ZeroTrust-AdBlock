@@ -127,14 +127,15 @@ POLICIES = [
     {
         "prefix": "L_ProPlus",
         "policy_name": "Block: HaGeZi Pro++ Mini (Except Kalli)",
-        "identity_condition": 'identity.email != "jorgensenkalli@gmail.com"',
+        # FIXED: Replaced != with not (==) to bypass AST parser error
+        "identity_condition": 'not (identity.email == "jorgensenkalli@gmail.com")',
         "include": ["HaGeZi Pro++ Mini"],
-        "exclude": ["HaGeZi Pro Mini"] # Subtracts overlapping domains to save quota
+        "exclude": ["HaGeZi Pro Mini"] 
     },
     {
         "prefix": "L_Social",
-        "policy_name": "Block: HaGeZi Social (Except Kalli)",
-        "identity_condition": 'identity.email != "jorgensenkalli@gmail.com"',
+        "policy_name": "Block: HaGeZi Social (John Only)",
+        "identity_condition": 'identity.email == "johndoenomore24@gmail.com"', 
         "include": ["HaGeZi Social"],
         "exclude": []
     }
@@ -259,15 +260,21 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> t
         futures = [executor.submit(process_chunk, idx, chunk) for idx, chunk in enumerate(chunks)]
         used_ids = [f.result() for f in concurrent.futures.as_completed(futures)]
 
-    traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
+    # FIXED: Combine identity logic directly into the traffic expression
+    domain_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
+    
+    if policy.get("identity_condition"):
+        traffic_expr = f"({domain_expr}) and ({policy['identity_condition']})"
+    else:
+        traffic_expr = domain_expr
+
     payload = {"name": policy["policy_name"], "action": "block", "enabled": True, "filters": ["dns"], "traffic": traffic_expr}
-    if policy.get("identity_condition"): payload["identity"] = policy["identity_condition"]
     
     rules = cf.get_rules()
     existing_rule = next((r for r in rules if r["name"] == policy["policy_name"]), None)
     
     if existing_rule:
-        if existing_rule.get("traffic") == traffic_expr and existing_rule.get("identity") == policy.get("identity_condition"):
+        if existing_rule.get("traffic") == traffic_expr:
             logger.info(f"Firewall rule {policy['policy_name']} unchanged. Skipping update.")
         else:
             cf.update_rule(existing_rule["id"], payload)
@@ -334,7 +341,7 @@ def main() -> None:
 
     logger.info(f"Total domains to sync: {total_domains:,}. Proceeding...")
 
-    # FIX: Run cleanup BEFORE creating new lists to free up Cloudflare API limits
+    # Pre-cleaning old list structure to make room for the new layout
     logger.info("Pre-cleaning old list structure to make room for the new layout...")
     cleanup_orphans(cf, [], [])
 
