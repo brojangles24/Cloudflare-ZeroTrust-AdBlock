@@ -279,7 +279,7 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> t
     return used_ids, policy["policy_name"]
 
 def cleanup_orphans(cf: CloudflareAPI, active_list_ids: list[str], active_rule_names: list[str]):
-    logger.info("Starting post-sync cleanup of orphaned resources...")
+    logger.info("Running cleanup of orphaned resources...")
     
     for r in cf.get_rules():
         if "IoT Bypass" in r["name"]: continue
@@ -334,15 +334,20 @@ def main() -> None:
 
     logger.info(f"Total domains to sync: {total_domains:,}. Proceeding...")
 
+    # FIX: Run cleanup BEFORE creating new lists to free up Cloudflare API limits
+    logger.info("Pre-cleaning old list structure to make room for the new layout...")
+    cleanup_orphans(cf, [], [])
+
     all_active_list_ids = []
     all_active_rule_names = []
 
     for policy, optimized_domains in compiled_policies:
         used_ids, rule_name = sync_to_cloudflare(cf, optimized_domains, policy)
-        if rule_name:  # Ensures we don't track rules that were skipped due to empty domains
+        if rule_name:  
             all_active_list_ids.extend(used_ids)
             all_active_rule_names.append(rule_name)
 
+    # Post-cleanup for future runs
     cleanup_orphans(cf, all_active_list_ids, all_active_rule_names)
 
     logger.info(f"Total time: {time.perf_counter() - start:.2f} seconds.")
