@@ -8,8 +8,6 @@ on:
 jobs:
   run-sync:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout Repository
@@ -27,16 +25,6 @@ jobs:
         env:
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
-        # Make sure this filename perfectly matches your repo!
-        run: python3 block_ads_sync.py 
-
-      - name: Commit and Push Changes
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # Only adding the text file since stats were removed
-          git add aggregate_blocklist.txt 
-          if ! git diff --cached --quiet; then
-            git commit -m "Full Intelligence Update [skip ci]"
-            git push
-          fi
+          PRIMARY_EMAIL: ${{ secrets.PRIMARY_EMAIL }}
+          SECONDARY_EMAIL: ${{ secrets.SECONDARY_EMAIL }}
+        run: python3 block_ads_sync.py
