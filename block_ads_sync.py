@@ -48,7 +48,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-IP_PATTERN = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+# Upgraded to catch both IPv4 and IPv6 patterns
+IP_PATTERN = re.compile(
+    r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|"
+    r"^(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}$|"
+    r"^(?:[A-Fa-f0-9]{1,4}:)*:[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*$"
+)
 
 _BANNED_TLDS = {
     "tk", "ml", "ga", "cf", "gq", "icu", "top", "xin", "gdn", "bid", "pw", "sbs", 
@@ -75,7 +80,6 @@ BLOCKLIST_URLS = {
     "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
 }
 
-# Individual policies for cleaner Cloudflare Dashboard reporting
 POLICIES = [
     {
         "prefix": "L_Pro",
@@ -188,17 +192,18 @@ class CloudflareAPI:
 # ---------------------------------------------------------------------------
 def is_valid_domain(domain: str) -> str | None:
     domain = domain.strip().strip(".")
-    if not domain or any(c in domain for c in "*/:[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
+    # Removed ':' from invalid chars to allow IPv6 checks to work properly
+    if not domain or any(c in domain for c in "*/[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
         return None
     if Config.ENABLE_TLD_KW_FILTERING:
         if domain.rsplit(".", 1)[-1] in _BANNED_TLDS or any(kw in domain for kw in _OFFLOAD_KW):
             return None
     return domain
 
-def fetch_url(name: str, url: str) -> tuple[str, set[str]]:
+def fetch_url(session: requests.Session, name: str, url: str) -> tuple[str, set[str]]:
     valid_domains = set()
     try:
-        resp = requests.get(url, timeout=Config.REQUEST_TIMEOUT)
+        resp = session.get(url, timeout=Config.REQUEST_TIMEOUT)
         resp.raise_for_status()
         for line in resp.text.splitlines():
             line = line.strip()
@@ -231,20 +236,20 @@ def build_policy_sets(policies_config, fetched_lists):
 # ---------------------------------------------------------------------------
 # 4. Cloudflare Sync & Cleanup
 # ---------------------------------------------------------------------------
-def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> tuple[list[str], str]:
+def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], domains: list[str], policy: dict) -> tuple[list[str], str]:
     if not domains: return [], None
     sorted_domains = sorted(domains)
     chunks = [sorted_domains[i : i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
     
-    existing_lists = sorted([l for l in cf.get_lists() if policy["prefix"] in l["name"]], key=lambda x: x["name"])
+    policy_existing_lists = sorted([l for l in existing_lists if policy["prefix"] in l["name"]], key=lambda x: x["name"])
     
     def process_chunk(idx: int, chunk: list[str]) -> str:
         list_name = f"{policy['prefix']} {idx + 1:03d}"
         chunk_hash = hashlib.sha256(",".join(chunk).encode('utf-8')).hexdigest()
         items = [{"value": d} for d in chunk]
         
-        if idx < len(existing_lists):
-            existing = existing_lists[idx]
+        if idx < len(policy_existing_lists):
+            existing = policy_existing_lists[idx]
             if existing.get("description") == chunk_hash:
                 logger.info(f"Skipped updating list {list_name} (No changes detected)")
                 return existing["id"]
@@ -267,8 +272,7 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> t
     if policy.get("identity_condition"):
         payload["identity"] = policy["identity_condition"]
     
-    rules = cf.get_rules()
-    existing_rule = next((r for r in rules if r["name"] == policy["policy_name"]), None)
+    existing_rule = next((r for r in existing_rules if r["name"] == policy["policy_name"]), None)
     
     if existing_rule:
         if existing_rule.get("traffic") == traffic_expr and existing_rule.get("identity") == policy.get("identity_condition"):
@@ -282,10 +286,10 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> t
 
     return used_ids, policy["policy_name"]
 
-def cleanup_orphans(cf: CloudflareAPI, active_list_ids: list[str], active_rule_names: list[str]):
+def cleanup_orphans(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], active_list_ids: list[str], active_rule_names: list[str]):
     logger.info("Running cleanup of orphaned resources...")
     
-    for r in cf.get_rules():
+    for r in existing_rules:
         if "IoT Bypass" in r["name"]: continue
         if r["name"] not in active_rule_names and any(target in r["name"] for target in Config.SCRUB_TARGETS):
             try:
@@ -294,7 +298,7 @@ def cleanup_orphans(cf: CloudflareAPI, active_list_ids: list[str], active_rule_n
             except Exception as e:
                 logger.error(f"Could not delete rule {r['name']}: {e}")
 
-    for l in cf.get_lists():
+    for l in existing_lists:
         if "IoT Bypass" in l["name"]: continue
         if l["id"] not in active_list_ids and any(target in l["name"] for target in Config.SCRUB_TARGETS):
             try:
@@ -311,9 +315,14 @@ def main() -> None:
     Config.validate()
     cf = CloudflareAPI()
     
+    # Establish Session Pool for fast downloads
+    download_session = requests.Session()
+    dl_retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+    download_session.mount("https://", HTTPAdapter(max_retries=dl_retry))
+
     fetched_lists = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
-        futures = {pool.submit(fetch_url, name, url): name for name, url in BLOCKLIST_URLS.items()}
+        futures = {pool.submit(fetch_url, download_session, name, url): name for name, url in BLOCKLIST_URLS.items()}
         for future in concurrent.futures.as_completed(futures):
             name, valid_set = future.result()
             fetched_lists[name] = valid_set
@@ -333,24 +342,26 @@ def main() -> None:
         total_domains = sum(len(domains) for _, domains in compiled_policies)
         
         if total_domains > Config.TOTAL_QUOTA:
-            logger.error(f"Total domains ({total_domains:,}) STILL exceeds quota after fallback! Aborting script to protect existing setup.")
+            logger.error(f"Total domains ({total_domains:,}) STILL exceeds quota after fallback! Aborting script.")
             return
 
     logger.info(f"Total domains to sync: {total_domains:,}. Proceeding...")
 
-    logger.info("Pre-cleaning old list structure to make room for the new layout...")
-    cleanup_orphans(cf, [], [])
+    # Take a single global snapshot to save API calls
+    existing_lists = cf.get_lists()
+    existing_rules = cf.get_rules()
 
     all_active_list_ids = []
     all_active_rule_names = []
 
     for policy, optimized_domains in compiled_policies:
-        used_ids, rule_name = sync_to_cloudflare(cf, optimized_domains, policy)
+        used_ids, rule_name = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy)
         if rule_name:  
             all_active_list_ids.extend(used_ids)
             all_active_rule_names.append(rule_name)
 
-    cleanup_orphans(cf, all_active_list_ids, all_active_rule_names)
+    # Use the same snapshot for cleanup. New lists aren't in this snapshot, so they are safe from deletion!
+    cleanup_orphans(cf, existing_lists, existing_rules, all_active_list_ids, all_active_rule_names)
 
     logger.info(f"Total time: {time.perf_counter() - start:.2f} seconds.")
 
