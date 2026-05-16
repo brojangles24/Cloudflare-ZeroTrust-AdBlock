@@ -17,6 +17,9 @@ class Config:
     PRIMARY_EMAIL           = os.environ.get("PRIMARY_EMAIL", "")    
     SECONDARY_EMAIL         = os.environ.get("SECONDARY_EMAIL", "")  
     
+    # Reads the tier from GitHub Variables. Defaults to "Ultimate" if missing.
+    ACTIVE_TIER             = os.environ.get("ACTIVE_TIER", "Ultimate").strip().lower()
+    
     # --- TOGGLES ---
     ENABLE_TLD_KW_FILTERING = False
     
@@ -26,10 +29,11 @@ class Config:
     REQUEST_TIMEOUT         = (5, 25)
     MAX_WORKERS             = 5
 
-    # Targets to scrub orphaned rules/lists (Ignores "IoT Bypass")
+    # Targets to scrub orphaned rules/lists
     SCRUB_TARGETS = [
         "Base", 
         "Pro++", 
+        "Ultimate",
         "Social",
         "Block:",
         "L_"
@@ -48,7 +52,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Upgraded to catch both IPv4 and IPv6 patterns
 IP_PATTERN = re.compile(
     r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|"
     r"^(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}$|"
@@ -71,7 +74,7 @@ _OFFLOAD_KW = {
 BLOCKLIST_URLS = {
     "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.mini-onlydomains.txt",
     "HaGeZi Pro++ Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus.mini-onlydomains.txt",
-    "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
+    "HaGeZi Ultimate Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate.mini-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi Safesearch Not Support": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
     "HaGeZi Bypass Block": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
@@ -80,19 +83,13 @@ BLOCKLIST_URLS = {
     "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
 }
 
+# Base policies that ALWAYS apply (NSFW removed)
 POLICIES = [
     {
         "prefix": "L_Pro",
         "policy_name": "Block: HaGeZi Pro Mini",
         "identity_condition": None,
         "include": ["HaGeZi Pro Mini"],
-        "exclude": []
-    },
-    {
-        "prefix": "L_NSFW",
-        "policy_name": "Block: HaGeZi NSFW",
-        "identity_condition": None,
-        "include": ["Hagezi NSFW"],
         "exclude": []
     },
     {
@@ -131,13 +128,6 @@ POLICIES = [
         "exclude": []
     },
     {
-        "prefix": "L_ProPlus",
-        "policy_name": "Block: HaGeZi Pro++ Mini (Except Secondary)",
-        "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")',
-        "include": ["HaGeZi Pro++ Mini"],
-        "exclude": ["HaGeZi Pro Mini"] 
-    },
-    {
         "prefix": "L_Social",
         "policy_name": "Block: HaGeZi Social (Primary Only)",
         "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', 
@@ -145,6 +135,31 @@ POLICIES = [
         "exclude": []
     }
 ]
+
+# Dynamically inject the correct Tier Delta based on GitHub Variables
+if Config.ACTIVE_TIER == "pro++":
+    POLICIES.append({
+        "prefix": "L_ProPlus",
+        "policy_name": "Block: HaGeZi Pro++ Mini (Except Secondary)",
+        "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")',
+        "include": ["HaGeZi Pro++ Mini"],
+        "exclude": ["HaGeZi Pro Mini"] 
+    })
+    logger.info("Active Tier set to: Pro++")
+    
+elif Config.ACTIVE_TIER == "ultimate":
+    POLICIES.append({
+        "prefix": "L_Ultimate",
+        "policy_name": "Block: HaGeZi Ultimate Mini (Except Secondary)",
+        "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")',
+        "include": ["HaGeZi Ultimate Mini"],
+        "exclude": ["HaGeZi Pro Mini"] 
+    })
+    logger.info("Active Tier set to: Ultimate")
+
+else:
+    logger.info("Active Tier set to: Pro. No delta list required.")
+
 
 # ---------------------------------------------------------------------------
 # 2. Cloudflare API Client
@@ -192,7 +207,6 @@ class CloudflareAPI:
 # ---------------------------------------------------------------------------
 def is_valid_domain(domain: str) -> str | None:
     domain = domain.strip().strip(".")
-    # Removed ':' from invalid chars to allow IPv6 checks to work properly
     if not domain or any(c in domain for c in "*/[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
         return None
     if Config.ENABLE_TLD_KW_FILTERING:
@@ -287,7 +301,7 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     return used_ids, policy["policy_name"]
 
 def cleanup_orphans(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], active_list_ids: list[str], active_rule_names: list[str]):
-    logger.info("Running cleanup of orphaned resources...")
+    logger.info("Running post-sync cleanup of orphaned resources...")
     
     for r in existing_rules:
         if "IoT Bypass" in r["name"]: continue
@@ -315,7 +329,6 @@ def main() -> None:
     Config.validate()
     cf = CloudflareAPI()
     
-    # Establish Session Pool for fast downloads
     download_session = requests.Session()
     dl_retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
     download_session.mount("https://", HTTPAdapter(max_retries=dl_retry))
@@ -331,25 +344,42 @@ def main() -> None:
     total_domains = sum(len(domains) for _, domains in compiled_policies)
 
     if total_domains > Config.TOTAL_QUOTA:
-        logger.warning(f"Total domains ({total_domains:,}) exceeds {Config.TOTAL_QUOTA:,} quota! Attempting fallback...")
-        
-        for policy in POLICIES:
-            if "Hagezi NSFW" in policy.get("include", []):
-                policy["include"].remove("Hagezi NSFW")
-                logger.info(f"Removed 'Hagezi NSFW' from {policy['policy_name']}")
-        
-        compiled_policies = build_policy_sets(POLICIES, fetched_lists)
-        total_domains = sum(len(domains) for _, domains in compiled_policies)
-        
-        if total_domains > Config.TOTAL_QUOTA:
-            logger.error(f"Total domains ({total_domains:,}) STILL exceeds quota after fallback! Aborting script.")
-            return
+        logger.error(f"Total domains ({total_domains:,}) exceeds {Config.TOTAL_QUOTA:,} quota! Aborting script.")
+        return
 
     logger.info(f"Total domains to sync: {total_domains:,}. Proceeding...")
 
-    # Take a single global snapshot to save API calls
+    # Take a single global snapshot
     existing_lists = cf.get_lists()
     existing_rules = cf.get_rules()
+
+    # --- SMART PRE-CLEANUP ---
+    valid_prefixes = tuple(p["prefix"] for p in POLICIES)
+    valid_rule_names = set(p["policy_name"] for p in POLICIES)
+
+    logger.info("Scanning for abandoned policies to clear room for new ones...")
+    for rule in existing_rules[:]:
+        if "IoT Bypass" in rule["name"]: continue
+        if any(target in rule["name"] for target in Config.SCRUB_TARGETS):
+            if rule["name"] not in valid_rule_names:
+                try:
+                    cf.delete_rule(rule["id"])
+                    existing_rules.remove(rule)
+                    logger.info(f"Pre-cleaned abandoned rule: {rule['name']}")
+                except Exception as e:
+                    logger.error(f"Could not delete abandoned rule {rule['name']}: {e}")
+
+    for lst in existing_lists[:]:
+        if "IoT Bypass" in lst["name"]: continue
+        if any(target in lst["name"] for target in Config.SCRUB_TARGETS):
+            if not any(lst["name"].startswith(pfx) for pfx in valid_prefixes):
+                try:
+                    cf.delete_list(lst["id"])
+                    existing_lists.remove(lst)
+                    logger.info(f"Pre-cleaned abandoned list: {lst['name']}")
+                except Exception as e:
+                    logger.error(f"Could not delete abandoned list {lst['name']}: {e}")
+    # -------------------------
 
     all_active_list_ids = []
     all_active_rule_names = []
@@ -360,7 +390,6 @@ def main() -> None:
             all_active_list_ids.extend(used_ids)
             all_active_rule_names.append(rule_name)
 
-    # Use the same snapshot for cleanup. New lists aren't in this snapshot, so they are safe from deletion!
     cleanup_orphans(cf, existing_lists, existing_rules, all_active_list_ids, all_active_rule_names)
 
     logger.info(f"Total time: {time.perf_counter() - start:.2f} seconds.")
