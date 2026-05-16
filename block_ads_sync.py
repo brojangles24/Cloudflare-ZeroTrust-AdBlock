@@ -14,6 +14,8 @@ from urllib3.util import Retry
 class Config:
     API_TOKEN               = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID              = os.environ.get("ACCOUNT_ID", "")
+    PRIMARY_EMAIL           = os.environ.get("PRIMARY_EMAIL", "")   
+    SECONDARY_EMAIL         = os.environ.get("SECONDARY_EMAIL", "") 
     
     # --- TOGGLES ---
     ENABLE_TLD_KW_FILTERING = False
@@ -35,7 +37,7 @@ class Config:
 
     @classmethod
     def validate(cls):
-        missing = [k for k in ("API_TOKEN", "ACCOUNT_ID") if not getattr(cls, k)]
+        missing = [k for k in ("API_TOKEN", "ACCOUNT_ID", "PRIMARY_EMAIL", "SECONDARY_EMAIL") if not getattr(cls, k)]
         if missing:
             raise EnvironmentError(f"Missing environment variables: {', '.join(missing)}")
 
@@ -127,15 +129,14 @@ POLICIES = [
     {
         "prefix": "L_ProPlus",
         "policy_name": "Block: HaGeZi Pro++ Mini (Except Kalli)",
-        # FIXED: Replaced != with not (==) to bypass AST parser error
-        "identity_condition": 'not (identity.email == "jorgensenkalli@gmail.com")',
+        "identity_condition": f'not (identity.email == "{Config.SECONDARY_EMAIL}")',
         "include": ["HaGeZi Pro++ Mini"],
         "exclude": ["HaGeZi Pro Mini"] 
     },
     {
         "prefix": "L_Social",
         "policy_name": "Block: HaGeZi Social (John Only)",
-        "identity_condition": 'identity.email == "johndoenomore24@gmail.com"', 
+        "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', 
         "include": ["HaGeZi Social"],
         "exclude": []
     }
@@ -260,7 +261,6 @@ def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> t
         futures = [executor.submit(process_chunk, idx, chunk) for idx, chunk in enumerate(chunks)]
         used_ids = [f.result() for f in concurrent.futures.as_completed(futures)]
 
-    # FIXED: Combine identity logic directly into the traffic expression
     domain_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
     
     if policy.get("identity_condition"):
@@ -341,7 +341,6 @@ def main() -> None:
 
     logger.info(f"Total domains to sync: {total_domains:,}. Proceeding...")
 
-    # Pre-cleaning old list structure to make room for the new layout
     logger.info("Pre-cleaning old list structure to make room for the new layout...")
     cleanup_orphans(cf, [], [])
 
@@ -354,7 +353,6 @@ def main() -> None:
             all_active_list_ids.extend(used_ids)
             all_active_rule_names.append(rule_name)
 
-    # Post-cleanup for future runs
     cleanup_orphans(cf, all_active_list_ids, all_active_rule_names)
 
     logger.info(f"Total time: {time.perf_counter() - start:.2f} seconds.")
