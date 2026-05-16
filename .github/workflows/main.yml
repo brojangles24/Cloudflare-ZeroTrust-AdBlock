@@ -27,4 +27,5 @@ jobs:
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
           PRIMARY_EMAIL: ${{ secrets.PRIMARY_EMAIL }}
           SECONDARY_EMAIL: ${{ secrets.SECONDARY_EMAIL }}
+          ACTIVE_TIER: ${{ vars.ACTIVE_TIER }}
         run: python3 block_ads_sync.py
