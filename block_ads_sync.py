@@ -19,17 +19,18 @@ class Config:
     ENABLE_TLD_KW_FILTERING = False
     
     MAX_LIST_SIZE           = 1000
-    MAX_RETRIES             = 3
+    MAX_RETRIES             = 5
     TOTAL_QUOTA             = 300_000
     REQUEST_TIMEOUT         = (5, 25)
-    MAX_WORKERS             = 10
+    MAX_WORKERS             = 5
 
-    # Names to scrub to free up the 100-list limit (Will ignore "IoT Bypass")
+    # Targets to scrub orphaned rules/lists (Ignores "IoT Bypass")
     SCRUB_TARGETS = [
-        "Ads, Tracker", 
         "Base", 
         "Pro++", 
-        "Social Block"
+        "Social",
+        "Block:",
+        "L_"
     ]
 
     @classmethod
@@ -72,20 +73,70 @@ BLOCKLIST_URLS = {
     "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
 }
 
+# Individual policies for cleaner Cloudflare Dashboard reporting
 POLICIES = [
     {
-        "prefix": "Base Normal",
-        "policy_name": "Base Ads & NSFW (Global Network Fallback)",
-        "identity_condition": None,  # No identity requirement; applies to everything unsigned
-        "include": ["HaGeZi Pro Mini", "Hagezi NSFW", "HaGeZi Fake", "HaGeZi Safesearch Not Support", "HaGeZi Bypass Block", "HaGeZi Anti Piracy", "HaGeZi Dynamic DNS"],
+        "prefix": "L_Pro",
+        "policy_name": "Block: HaGeZi Pro Mini",
+        "identity_condition": None,
+        "include": ["HaGeZi Pro Mini"],
         "exclude": []
     },
     {
-        "prefix": "Pro++ Extra",
-        "policy_name": "Pro++ Extra & Social Blocks (Non-Kalli Users)",
-        "identity_condition": 'identity.email != "jorgensenkalli@gmail.com"',  # Applies to all users EXCEPT Kalli
-        "include": ["HaGeZi Pro++ Mini", "HaGeZi Social"],
-        "exclude": ["HaGeZi Pro Mini"] 
+        "prefix": "L_NSFW",
+        "policy_name": "Block: HaGeZi NSFW",
+        "identity_condition": None,
+        "include": ["Hagezi NSFW"],
+        "exclude": []
+    },
+    {
+        "prefix": "L_Fake",
+        "policy_name": "Block: HaGeZi Fake",
+        "identity_condition": None,
+        "include": ["HaGeZi Fake"],
+        "exclude": []
+    },
+    {
+        "prefix": "L_NoSafe",
+        "policy_name": "Block: HaGeZi Safesearch Not Support",
+        "identity_condition": None,
+        "include": ["HaGeZi Safesearch Not Support"],
+        "exclude": []
+    },
+    {
+        "prefix": "L_Bypass",
+        "policy_name": "Block: HaGeZi Bypass Block",
+        "identity_condition": None,
+        "include": ["HaGeZi Bypass Block"],
+        "exclude": []
+    },
+    {
+        "prefix": "L_AntiPiracy",
+        "policy_name": "Block: HaGeZi Anti Piracy",
+        "identity_condition": None,
+        "include": ["HaGeZi Anti Piracy"],
+        "exclude": []
+    },
+    {
+        "prefix": "L_DynDNS",
+        "policy_name": "Block: HaGeZi Dynamic DNS",
+        "identity_condition": None,
+        "include": ["HaGeZi Dynamic DNS"],
+        "exclude": []
+    },
+    {
+        "prefix": "L_ProPlus",
+        "policy_name": "Block: HaGeZi Pro++ Mini (Except Kalli)",
+        "identity_condition": 'identity.email != "jorgensenkalli@gmail.com"',
+        "include": ["HaGeZi Pro++ Mini"],
+        "exclude": ["HaGeZi Pro Mini"] # Subtracts overlapping domains to save quota
+    },
+    {
+        "prefix": "L_Social",
+        "policy_name": "Block: HaGeZi Social (Except Kalli)",
+        "identity_condition": 'identity.email != "jorgensenkalli@gmail.com"',
+        "include": ["HaGeZi Social"],
+        "exclude": []
     }
 ]
 
@@ -97,15 +148,29 @@ class CloudflareAPI:
         self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{Config.ACCOUNT_ID}/gateway"
         self.headers = {"Authorization": f"Bearer {Config.API_TOKEN}", "Content-Type": "application/json"}
         self.session = requests.Session()
-        retry = Retry(total=Config.MAX_RETRIES, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+        retry = Retry(total=Config.MAX_RETRIES, backoff_factor=2, status_forcelist=[500, 502, 503, 504])
         self.session.mount("https://", HTTPAdapter(max_retries=retry))
 
     def _request(self, method, endpoint, **kwargs):
-        resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, timeout=Config.REQUEST_TIMEOUT, **kwargs)
-        if not resp.ok:
-            logger.error(f"Cloudflare API Error [{resp.status_code}]: {resp.text}")
-        resp.raise_for_status()
-        return resp.json()
+        retries = Config.MAX_RETRIES
+        delay = 2
+        
+        while retries > 0:
+            resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, timeout=Config.REQUEST_TIMEOUT, **kwargs)
+            
+            if resp.status_code == 429:
+                retries -= 1
+                logger.warning(f"Rate limited (429) on {endpoint}. Retrying in {delay}s... ({retries} left)")
+                time.sleep(delay)
+                delay *= 2 
+                continue
+                
+            if not resp.ok:
+                logger.error(f"Cloudflare API Error [{resp.status_code}]: {resp.text}")
+            resp.raise_for_status()
+            return resp.json()
+            
+        raise requests.exceptions.HTTPError("Exhausted retries due to Cloudflare API rate limits (429).", response=resp)
 
     def get_lists(self):                                      return self._request("GET",    "lists").get("result") or []
     def get_rules(self):                                      return self._request("GET",    "rules").get("result") or []
@@ -152,12 +217,20 @@ def optimize_domains(domains: set[str]) -> list[str]:
         last_kept = rev
     return [d[::-1] for d in optimized]
 
+def build_policy_sets(policies_config, fetched_lists):
+    sets = []
+    for policy in policies_config:
+        p_set = set()
+        for inc in policy.get("include", []): p_set |= fetched_lists.get(inc, set())
+        for exc in policy.get("exclude", []): p_set -= fetched_lists.get(exc, set())
+        sets.append((policy, optimize_domains(p_set)))
+    return sets
+
 # ---------------------------------------------------------------------------
 # 4. Cloudflare Sync & Cleanup
 # ---------------------------------------------------------------------------
 def sync_to_cloudflare(cf: CloudflareAPI, domains: list[str], policy: dict) -> tuple[list[str], str]:
     if not domains: return [], None
-    domains = domains[:Config.TOTAL_QUOTA]
     sorted_domains = sorted(domains)
     chunks = [sorted_domains[i : i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
     
@@ -241,17 +314,34 @@ def main() -> None:
             name, valid_set = future.result()
             fetched_lists[name] = valid_set
 
+    compiled_policies = build_policy_sets(POLICIES, fetched_lists)
+    total_domains = sum(len(domains) for _, domains in compiled_policies)
+
+    if total_domains > Config.TOTAL_QUOTA:
+        logger.warning(f"Total domains ({total_domains:,}) exceeds {Config.TOTAL_QUOTA:,} quota! Attempting fallback...")
+        
+        for policy in POLICIES:
+            if "Hagezi NSFW" in policy.get("include", []):
+                policy["include"].remove("Hagezi NSFW")
+                logger.info(f"Removed 'Hagezi NSFW' from {policy['policy_name']}")
+        
+        compiled_policies = build_policy_sets(POLICIES, fetched_lists)
+        total_domains = sum(len(domains) for _, domains in compiled_policies)
+        
+        if total_domains > Config.TOTAL_QUOTA:
+            logger.error(f"Total domains ({total_domains:,}) STILL exceeds quota after fallback! Aborting script to protect existing setup.")
+            return
+
+    logger.info(f"Total domains to sync: {total_domains:,}. Proceeding...")
+
     all_active_list_ids = []
     all_active_rule_names = []
 
-    for policy in POLICIES:
-        policy_domain_set = set()
-        for inc in policy.get("include", []): policy_domain_set |= fetched_lists.get(inc, set())
-        for exc in policy.get("exclude", []): policy_domain_set -= fetched_lists.get(exc, set())
-        
-        used_ids, rule_name = sync_to_cloudflare(cf, optimize_domains(policy_domain_set), policy)
-        all_active_list_ids.extend(used_ids)
-        all_active_rule_names.append(rule_name)
+    for policy, optimized_domains in compiled_policies:
+        used_ids, rule_name = sync_to_cloudflare(cf, optimized_domains, policy)
+        if rule_name:  # Ensures we don't track rules that were skipped due to empty domains
+            all_active_list_ids.extend(used_ids)
+            all_active_rule_names.append(rule_name)
 
     cleanup_orphans(cf, all_active_list_ids, all_active_rule_names)
 
