@@ -25,7 +25,7 @@ class Config:
     ACTIVE_TIER             = os.environ.get("ACTIVE_TIER", "pro++").strip().lower()
     
     # --- TOGGLES ---
-    ENABLE_TLD_KW_FILTERING = True
+    ENABLE_TLD_KW_FILTERING = False
     
     # Static custom explicit keywords used to drop matching domains locally (saves Cloudflare quota)
     OFFLOAD_KEYWORDS = [
