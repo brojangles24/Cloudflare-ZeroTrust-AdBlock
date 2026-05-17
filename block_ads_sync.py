@@ -21,7 +21,7 @@ class Config:
     PRIMARY_EMAIL           = os.environ.get("PRIMARY_EMAIL", "")   
     SECONDARY_EMAIL         = os.environ.get("SECONDARY_EMAIL", "")  
     
-    # Reads the tier from GitHub Variables. Defaults to "pro++" if missing.
+    # Reads the tier from GitHub Variables. Defaults to pro++ if missing.
     ACTIVE_TIER             = os.environ.get("ACTIVE_TIER", "pro++").strip().lower()
     
     # --- TOGGLES ---
@@ -251,7 +251,6 @@ def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tlds: list[str]
     expr_parts = []
     for chunk in tld_chunks:
         regex_str = "|".join(chunk)
-        # Correctly formatted: Domain -> matches regex -> exact single backslash \.
         expr_parts.append(f'any(dns.domains[*] matches "(?i)\\.(?:{regex_str})$")')
         
     traffic_expr = " or ".join(expr_parts)
@@ -278,7 +277,8 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     sorted_domains = sorted(domains)
     chunks = [sorted_domains[i : i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
     
-    policy_existing_lists = sorted([l for l in existing_lists if policy["prefix"] in l["name"]], key=lambda x: x["name"])
+    # Enforce strict trailing space boundary matching to separate L_Pro from L_ProPlus
+    policy_existing_lists = sorted([l for l in existing_lists if l["name"].startswith(policy["prefix"] + " ")], key=lambda x: x["name"])
     
     def process_chunk(idx: int, chunk: list[str]) -> str:
         list_name = f"{policy['prefix']} {idx + 1:03d}"
@@ -300,7 +300,6 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
         futures = [executor.submit(process_chunk, idx, chunk) for idx, chunk in enumerate(chunks)]
         used_ids = [f.result() for f in concurrent.futures.as_completed(futures)]
 
-    # Consolidated into a single rule string execution block
     traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
     final_rule_name = policy['policy_name']
     active_rule_names = [final_rule_name]
@@ -353,8 +352,6 @@ def enforce_tld_rule_order(cf: CloudflareAPI):
         return
         
     block_prec = block_rule["precedence"]
-    
-    # Check if any Allow rule has a higher precedence number (evaluates after block)
     out_of_order = any(r["precedence"] > block_prec for r in allow_rules)
     
     if out_of_order:
@@ -373,11 +370,11 @@ def enforce_tld_rule_order(cf: CloudflareAPI):
                 payload["identity"] = block_rule["identity"]
                 
             cf.create_rule(payload)
-            logger.info("✅ Successfully fixed rule precedence.")
+            logger.info("Successfully fixed rule precedence.")
         except Exception as e:
             logger.error(f"Could not reorder rule: {e}")
     else:
-        logger.info("✅ Rule precedence is already correct.")
+        logger.info("Rule precedence is already correct.")
 
 # ---------------------------------------------------------------------------
 # 5. Main Execution
@@ -391,8 +388,10 @@ def main() -> None:
     dl_retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
     download_session.mount("https://", HTTPAdapter(max_retries=dl_retry))
 
-    # 1. Fetch and Parse the complex AdGuard TLD database (populates ALLOWED_DOMAINS)
-    tlds_list = parse_adguard_tld_list(download_session)
+    # 1. Fetch and Parse the complex AdGuard TLD database only if enabled by configuration toggle
+    tlds_list = []
+    if Config.ENABLE_TLD_KW_FILTERING:
+        tlds_list = parse_adguard_tld_list(download_session)
     tld_regex_str = "|".join(tlds_list) if tlds_list else ""
     
     # 2. Build global regex filter engines
@@ -438,11 +437,13 @@ def main() -> None:
     existing_rules = cf.get_rules()
 
     # --- SMART PRE-CLEANUP ---
-    valid_prefixes = tuple(p["prefix"] for p in POLICIES) + ("L_AllowTLD",)
-    
+    valid_prefixes = tuple(p["prefix"] for p in POLICIES)
     valid_rule_bases = {p["policy_name"] for p in POLICIES}
-    valid_rule_bases.add("Block: HaGeZi Most Abused TLDs")
-    valid_rule_bases.add("Allow: HaGeZi TLD Exceptions")
+    
+    if Config.ENABLE_TLD_KW_FILTERING:
+        valid_prefixes += ("L_AllowTLD",)
+        valid_rule_bases.add("Block: HaGeZi Most Abused TLDs")
+        valid_rule_bases.add("Allow: HaGeZi TLD Exceptions")
 
     logger.info("Scanning for abandoned policies to clear room for new ones...")
     for rule in existing_rules[:]:
@@ -459,7 +460,7 @@ def main() -> None:
     for lst in existing_lists[:]:
         if "IoT Bypass" in lst["name"]: continue
         if any(target in lst["name"] for target in Config.SCRUB_TARGETS):
-            if not any(lst["name"].startswith(pfx) for pfx in valid_prefixes):
+            if not any(lst["name"].startswith(pfx + " ") for pfx in valid_prefixes):
                 try:
                     cf.delete_list(lst["id"])
                     existing_lists.remove(lst)
@@ -470,8 +471,8 @@ def main() -> None:
     all_active_list_ids = []
     all_active_rule_names = []
 
-    # Sync TLD Allow Exceptions
-    if optimized_allow_domains:
+    # Sync TLD Allow Exceptions if enabled
+    if Config.ENABLE_TLD_KW_FILTERING and optimized_allow_domains:
         allow_policy = {
             "prefix": "L_AllowTLD",
             "policy_name": "Allow: HaGeZi TLD Exceptions",
@@ -481,8 +482,8 @@ def main() -> None:
         all_active_list_ids.extend(used_ids)
         all_active_rule_names.extend(rule_names)
 
-    # Push zero-quota native TLD firewall rules
-    if tlds_list:
+    # Push zero-quota native TLD firewall rules if enabled
+    if Config.ENABLE_TLD_KW_FILTERING and tlds_list:
         tld_rule_name = sync_tld_regex_rule(cf, existing_rules, tlds_list)
         if tld_rule_name:
             all_active_rule_names.append(tld_rule_name)
@@ -495,8 +496,9 @@ def main() -> None:
 
     cleanup_orphans(cf, existing_lists, existing_rules, all_active_list_ids, all_active_rule_names)
     
-    # Post-sync verification: Enforce Rule Order
-    enforce_tld_rule_order(cf)
+    # Post-sync verification: Enforce Rule Order if enabled
+    if Config.ENABLE_TLD_KW_FILTERING:
+        enforce_tld_rule_order(cf)
 
     logger.info(f"✅ Sync completed in {time.perf_counter() - start:.2f} seconds.")
 
