@@ -159,16 +159,12 @@ def parse_adguard_tld_list(session: requests.Session) -> list[str]:
             if not line or line.startswith("!"): 
                 continue
                 
-            # Process AdGuard syntax lines like: ||*.africa^$denyallow=nation.africa
             if line.startswith("||*."):
                 parts = line.split("^$denyallow=")
-                
-                # Extract the pure TLD token string
                 raw_tld = parts[0].replace("||*.", "").replace("^", "")
                 if raw_tld:
                     tlds.append(raw_tld)
                 
-                # Extract allowed domain rules safely if present
                 if len(parts) > 1:
                     allowed_parts = parts[1].split("|")
                     for dom in allowed_parts:
@@ -188,7 +184,6 @@ def is_valid_domain(domain: str) -> tuple[str | None, bool]:
     if not domain or any(c in domain for c in "*/[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
         return None, False
         
-    # If a domain was explicitly whitelisted by HaGeZi via $denyallow, skip filtering entirely!
     if domain in ALLOWED_DOMAINS or any(domain.endswith("." + allowed) for allowed in ALLOWED_DOMAINS):
         return domain, False
     
@@ -215,6 +210,7 @@ def fetch_url(session: requests.Session, name: str, url: str) -> tuple[str, set[
         logger.info(f"Fetched {name}: {len(valid_domains):,} domains (Offloaded: {offloaded_count:,})")
     except Exception as exc:
         logger.error(f"Error fetching {name}: {exc}")
+    # Fixed NameError bug here by referencing valid_domains instead of valid_set
     return name, valid_domains, offloaded_count
 
 def optimize_domains(domains: set[str]) -> list[str]:
@@ -243,8 +239,6 @@ def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tlds: list[str]
         return ""
         
     rule_name = "Block: HaGeZi Most Abused TLDs"
-    
-    # Cloudflare's regex engine rejects massive alternations. We chunk by 30.
     chunk_size = 30
     tld_chunks = [tlds[i:i + chunk_size] for i in range(0, len(tlds), chunk_size)]
     
@@ -254,7 +248,6 @@ def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tlds: list[str]
         expr_parts.append(f'any(dns.domains[*] matches "(?i)\\.(?:{regex_str})$")')
         
     traffic_expr = " or ".join(expr_parts)
-    
     existing_rule = next((r for r in existing_rules if r["name"] == rule_name), None)
     is_enabled = existing_rule.get("enabled", True) if existing_rule else True
 
@@ -277,7 +270,6 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     sorted_domains = sorted(domains)
     chunks = [sorted_domains[i : i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
     
-    # Enforce strict trailing space boundary matching to separate L_Pro from L_ProPlus
     policy_existing_lists = sorted([l for l in existing_lists if l["name"].startswith(policy["prefix"] + " ")], key=lambda x: x["name"])
     
     def process_chunk(idx: int, chunk: list[str]) -> str:
@@ -388,13 +380,11 @@ def main() -> None:
     dl_retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
     download_session.mount("https://", HTTPAdapter(max_retries=dl_retry))
 
-    # 1. Fetch and Parse the complex AdGuard TLD database only if enabled by configuration toggle
     tlds_list = []
     if Config.ENABLE_TLD_KW_FILTERING:
         tlds_list = parse_adguard_tld_list(download_session)
     tld_regex_str = "|".join(tlds_list) if tlds_list else ""
     
-    # 2. Build global regex filter engines
     global FILTER_PATTERN
     local_offload_pattern = ""
     if tld_regex_str:
@@ -410,7 +400,6 @@ def main() -> None:
     if local_offload_pattern:
         FILTER_PATTERN = re.compile(f"(?i){local_offload_pattern}")
 
-    # 3. Concurrently fetch and filter upstream lists
     fetched_lists = {}
     total_offloaded = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
@@ -421,8 +410,6 @@ def main() -> None:
             total_offloaded += offloaded_count
 
     compiled_policies = build_policy_sets(POLICIES, fetched_lists)
-    
-    # Add ALLOWED_DOMAINS to total domain calculation if they exist
     optimized_allow_domains = optimize_domains(ALLOWED_DOMAINS) if ALLOWED_DOMAINS else []
     total_domains = sum(len(domains) for _, domains in compiled_policies) + len(optimized_allow_domains)
 
@@ -440,6 +427,7 @@ def main() -> None:
     valid_prefixes = tuple(p["prefix"] for p in POLICIES)
     valid_rule_bases = {p["policy_name"] for p in POLICIES}
     
+    # Conditional inclusion ensures rules get identified as orphans when disabled
     if Config.ENABLE_TLD_KW_FILTERING:
         valid_prefixes += ("L_AllowTLD",)
         valid_rule_bases.add("Block: HaGeZi Most Abused TLDs")
@@ -471,7 +459,6 @@ def main() -> None:
     all_active_list_ids = []
     all_active_rule_names = []
 
-    # Sync TLD Allow Exceptions if enabled
     if Config.ENABLE_TLD_KW_FILTERING and optimized_allow_domains:
         allow_policy = {
             "prefix": "L_AllowTLD",
@@ -482,13 +469,11 @@ def main() -> None:
         all_active_list_ids.extend(used_ids)
         all_active_rule_names.extend(rule_names)
 
-    # Push zero-quota native TLD firewall rules if enabled
     if Config.ENABLE_TLD_KW_FILTERING and tlds_list:
         tld_rule_name = sync_tld_regex_rule(cf, existing_rules, tlds_list)
         if tld_rule_name:
             all_active_rule_names.append(tld_rule_name)
 
-    # Sync primary chunks
     for policy, optimized_domains in compiled_policies:
         used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy)
         all_active_list_ids.extend(used_ids)
@@ -496,11 +481,10 @@ def main() -> None:
 
     cleanup_orphans(cf, existing_lists, existing_rules, all_active_list_ids, all_active_rule_names)
     
-    # Post-sync verification: Enforce Rule Order if enabled
     if Config.ENABLE_TLD_KW_FILTERING:
         enforce_tld_rule_order(cf)
 
-    logger.info(f"✅ Sync completed in {time.perf_counter() - start:.2f} seconds.")
+    logger.info(f"Sync completed in {time.perf_counter() - start:.2f} seconds.")
 
 if __name__ == "__main__":
     main()
