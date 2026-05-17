@@ -300,36 +300,27 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
         futures = [executor.submit(process_chunk, idx, chunk) for idx, chunk in enumerate(chunks)]
         used_ids = [f.result() for f in concurrent.futures.as_completed(futures)]
 
-    # Split into multiple rules if over 75 lists (4096 char limit)
-    MAX_LISTS_PER_RULE = 75
-    id_batches = [used_ids[i:i + MAX_LISTS_PER_RULE] for i in range(0, len(used_ids), MAX_LISTS_PER_RULE)]
-    active_rule_names = []
+    # Consolidated into a single rule string execution block
+    traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
+    final_rule_name = policy['policy_name']
+    active_rule_names = [final_rule_name]
     
-    # Check if policy defines a specific action (e.g. allow), default to block
     action = policy.get("action", "block")
+    existing_rule = next((r for r in existing_rules if r["name"] == final_rule_name), None)
+    is_enabled = existing_rule.get("enabled", True) if existing_rule else True
 
-    for index, batch in enumerate(id_batches):
-        traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in batch])
-        
-        rule_name_suffix = f" (Part {index + 1})" if len(id_batches) > 1 else ""
-        final_rule_name = f"{policy['policy_name']}{rule_name_suffix}"
-        active_rule_names.append(final_rule_name)
-        
-        existing_rule = next((r for r in existing_rules if r["name"] == final_rule_name), None)
-        is_enabled = existing_rule.get("enabled", True) if existing_rule else True
-
-        payload = {"name": final_rule_name, "action": action, "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
-        if policy.get("identity_condition"): payload["identity"] = policy["identity_condition"]
-        
-        if existing_rule:
-            if existing_rule.get("traffic") == traffic_expr and existing_rule.get("identity") == policy.get("identity_condition") and existing_rule.get("enabled") == is_enabled:
-                logger.info(f"Firewall rule {final_rule_name} unchanged. Skipping update.")
-            else:
-                cf.update_rule(existing_rule["id"], payload)
-                logger.info(f"Firewall rule updated: {final_rule_name}")
-        else: 
-            cf.create_rule(payload)
-            logger.info(f"Firewall rule created: {final_rule_name}")
+    payload = {"name": final_rule_name, "action": action, "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
+    if policy.get("identity_condition"): payload["identity"] = policy["identity_condition"]
+    
+    if existing_rule:
+        if existing_rule.get("traffic") == traffic_expr and existing_rule.get("identity") == policy.get("identity_condition") and existing_rule.get("enabled") == is_enabled:
+            logger.info(f"Firewall rule {final_rule_name} unchanged. Skipping update.")
+        else:
+            cf.update_rule(existing_rule["id"], payload)
+            logger.info(f"Firewall rule updated: {final_rule_name}")
+    else: 
+        cf.create_rule(payload)
+        logger.info(f"Firewall rule created: {final_rule_name}")
             
     return used_ids, active_rule_names
 
@@ -352,7 +343,6 @@ def cleanup_orphans(cf: CloudflareAPI, existing_lists: list[dict], existing_rule
             except Exception as e: logger.error(f"Could not delete list {l['name']}: {e}")
 
 def enforce_tld_rule_order(cf: CloudflareAPI):
-    """Ensures the Allow TLD Exceptions rule sits logically above the Block TLD rule."""
     logger.info("Verifying rule precedence order...")
     rules = cf.get_rules()
     
@@ -364,7 +354,7 @@ def enforce_tld_rule_order(cf: CloudflareAPI):
         
     block_prec = block_rule["precedence"]
     
-    # Check if any Allow rule has a higher precedence number (which means it evaluates AFTER the block rule)
+    # Check if any Allow rule has a higher precedence number (evaluates after block)
     out_of_order = any(r["precedence"] > block_prec for r in allow_rules)
     
     if out_of_order:
@@ -450,7 +440,6 @@ def main() -> None:
     # --- SMART PRE-CLEANUP ---
     valid_prefixes = tuple(p["prefix"] for p in POLICIES) + ("L_AllowTLD",)
     
-    # Track base names, we will check if rules start with these (to account for "Part 1", etc.)
     valid_rule_bases = {p["policy_name"] for p in POLICIES}
     valid_rule_bases.add("Block: HaGeZi Most Abused TLDs")
     valid_rule_bases.add("Allow: HaGeZi TLD Exceptions")
@@ -459,7 +448,6 @@ def main() -> None:
     for rule in existing_rules[:]:
         if "IoT Bypass" in rule["name"] or "Custom" in rule["name"] or "Keywords" in rule["name"]: continue
         if any(target in rule["name"] for target in Config.SCRUB_TARGETS):
-            # If the rule doesn't start with any of our active policy bases, it's abandoned
             is_valid_base = any(rule["name"].startswith(base) for base in valid_rule_bases)
             if not is_valid_base:
                 try:
