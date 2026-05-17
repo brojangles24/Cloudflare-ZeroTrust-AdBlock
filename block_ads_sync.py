@@ -251,7 +251,8 @@ def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tlds: list[str]
     expr_parts = []
     for chunk in tld_chunks:
         regex_str = "|".join(chunk)
-        expr_parts.append(f'dns.fqdn matches "(?i)\\\\.(?:{regex_str})$"')
+        # CHANGED: Switch to dns.domains array search
+        expr_parts.append(f'any(dns.domains[*] matches "(?i)\\\\.(?:{regex_str})$")')
         
     traffic_expr = " or ".join(expr_parts)
     
