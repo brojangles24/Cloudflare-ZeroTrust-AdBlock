@@ -73,7 +73,8 @@ BLOCKLIST_URLS = {
     "HaGeZi Bypass Block": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
     "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt", 
     "HaGeZi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-    "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
+    "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
+    "HaGeZi TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
 }
 
 # Base policies that ALWAYS apply (NSFW Added Back In)
@@ -133,8 +134,16 @@ POLICIES = [
         "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', 
         "include": ["HaGeZi Social"],
         "exclude": []
-    }
+    },
+    {
+        "prefix": "L_TIF",
+        "policy_name": "Block: HaGeZi TIF Mini",
+        "identity_condition": None,
+        "include": ["HaGeZi TIF Mini"],
+        "exclude": []
+    },
 ]
+
 
 # Dynamically inject the correct Tier Delta based on GitHub Variables
 if Config.ACTIVE_TIER == "pro++":
