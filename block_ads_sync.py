@@ -9,7 +9,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
 # Global variables for the dynamically compiled filters
-FILTER_PATTERN = None
+TLD_PATTERN = None
+KW_PATTERN = None
 ALLOWED_DOMAINS = set()
 
 # ---------------------------------------------------------------------------
@@ -25,7 +26,7 @@ class Config:
     ACTIVE_TIER             = os.environ.get("ACTIVE_TIER", "pro++").strip().lower()
     
     # --- TOGGLES ---
-    ENABLE_TLD_KW_FILTERING = True
+    ENABLE_TLD_KW_FILTERING = False
     
     # Static custom explicit keywords used to drop matching domains locally (saves Cloudflare quota)
     OFFLOAD_KEYWORDS = [
@@ -179,39 +180,43 @@ def parse_adguard_tld_list(session: requests.Session) -> list[str]:
         logger.error(f"Failed to fetch or parse AdGuard TLD database: {exc}")
     return []
 
-def is_valid_domain(domain: str) -> tuple[str | None, bool]:
+def is_valid_domain(domain: str) -> tuple[str | None, str | None]:
     domain = domain.strip().strip(".")
     if not domain or any(c in domain for c in "*/[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
-        return None, False
+        return None, None
         
     if domain in ALLOWED_DOMAINS or any(domain.endswith("." + allowed) for allowed in ALLOWED_DOMAINS):
-        return domain, False
+        return domain, None
     
-    if Config.ENABLE_TLD_KW_FILTERING and FILTER_PATTERN:
-        if FILTER_PATTERN.search(domain):
-            return None, True 
+    if Config.ENABLE_TLD_KW_FILTERING:
+        if TLD_PATTERN and TLD_PATTERN.search(domain):
+            return None, "tld"
+        if KW_PATTERN and KW_PATTERN.search(domain):
+            return None, "kw"
             
-    return domain, False
+    return domain, None
 
-def fetch_url(session: requests.Session, name: str, url: str) -> tuple[str, set[str], int]:
+def fetch_url(session: requests.Session, name: str, url: str) -> tuple[str, set[str], int, int]:
     valid_domains = set()
-    offloaded_count = 0
+    tld_offloaded_count = 0
+    kw_offloaded_count = 0
     try:
         resp = session.get(url, timeout=Config.REQUEST_TIMEOUT)
         resp.raise_for_status()
         for line in resp.text.splitlines():
             line = line.strip()
             if not line or line[0] in ("#", "!", "/"): continue
-            cleaned, is_offloaded = is_valid_domain(line.split()[-1].lower())
+            cleaned, offload_reason = is_valid_domain(line.split()[-1].lower())
             if cleaned: 
                 valid_domains.add(cleaned)
-            elif is_offloaded:
-                offloaded_count += 1
-        logger.info(f"Fetched {name}: {len(valid_domains):,} domains (Offloaded: {offloaded_count:,})")
+            elif offload_reason == "tld":
+                tld_offloaded_count += 1
+            elif offload_reason == "kw":
+                kw_offloaded_count += 1
+        logger.info(f"Fetched {name}: {len(valid_domains):,} domains (Offloaded TLD: {tld_offloaded_count:,}, KW: {kw_offloaded_count:,})")
     except Exception as exc:
         logger.error(f"Error fetching {name}: {exc}")
-    # Fixed NameError bug here by referencing valid_domains instead of valid_set
-    return name, valid_domains, offloaded_count
+    return name, valid_domains, tld_offloaded_count, kw_offloaded_count
 
 def optimize_domains(domains: set[str]) -> list[str]:
     reversed_sorted = sorted(d[::-1] for d in domains)
@@ -383,31 +388,29 @@ def main() -> None:
     tlds_list = []
     if Config.ENABLE_TLD_KW_FILTERING:
         tlds_list = parse_adguard_tld_list(download_session)
-    tld_regex_str = "|".join(tlds_list) if tlds_list else ""
     
-    global FILTER_PATTERN
-    local_offload_pattern = ""
-    if tld_regex_str:
-        local_offload_pattern = f"(\\.(?:{tld_regex_str})$)"
+    # 2. Compile structural offload rules separately into target engine components
+    global TLD_PATTERN, KW_PATTERN
+    if tlds_list:
+        tld_regex_str = "|".join(tlds_list)
+        TLD_PATTERN = re.compile(f"(?i)\\.(?:{tld_regex_str})$")
         
     kw_str = "|".join(Config.OFFLOAD_KEYWORDS)
     if kw_str:
-        if local_offload_pattern:
-            local_offload_pattern += f"|({kw_str})"
-        else:
-            local_offload_pattern = f"({kw_str})"
-            
-    if local_offload_pattern:
-        FILTER_PATTERN = re.compile(f"(?i){local_offload_pattern}")
+        KW_PATTERN = re.compile(f"(?i){kw_str}")
 
+    # 3. Concurrently fetch and filter upstream lists tracking independent telemetry
     fetched_lists = {}
-    total_offloaded = 0
+    total_tld_offloaded = 0
+    total_kw_offloaded = 0
+    
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
         futures = {pool.submit(fetch_url, download_session, name, url): name for name, url in BLOCKLIST_URLS.items()}
         for future in concurrent.futures.as_completed(futures):
-            name, valid_set, offloaded_count = future.result()
+            name, valid_set, tld_count, kw_count = future.result()
             fetched_lists[name] = valid_set
-            total_offloaded += offloaded_count
+            total_tld_offloaded += tld_count
+            total_kw_offloaded += kw_count
 
     compiled_policies = build_policy_sets(POLICIES, fetched_lists)
     optimized_allow_domains = optimize_domains(ALLOWED_DOMAINS) if ALLOWED_DOMAINS else []
@@ -417,7 +420,8 @@ def main() -> None:
         logger.error(f"Total domains ({total_domains:,}) exceeds quota! Aborting.")
         return
 
-    logger.info(f"Total domains offloaded by Regex engine: {total_offloaded:,}")
+    logger.info(f"Total domains offloaded by TLD rule: {total_tld_offloaded:,}")
+    logger.info(f"Total domains offloaded by Keyword rule: {total_kw_offloaded:,}")
     logger.info(f"Total domains to sync to Cloudflare: {total_domains:,}. Proceeding...")
 
     existing_lists = cf.get_lists()
@@ -427,7 +431,6 @@ def main() -> None:
     valid_prefixes = tuple(p["prefix"] for p in POLICIES)
     valid_rule_bases = {p["policy_name"] for p in POLICIES}
     
-    # Conditional inclusion ensures rules get identified as orphans when disabled
     if Config.ENABLE_TLD_KW_FILTERING:
         valid_prefixes += ("L_AllowTLD",)
         valid_rule_bases.add("Block: HaGeZi Most Abused TLDs")
