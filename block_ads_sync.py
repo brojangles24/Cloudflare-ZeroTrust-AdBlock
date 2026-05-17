@@ -351,7 +351,7 @@ def cleanup_orphans(cf: CloudflareAPI, existing_lists: list[dict], existing_rule
             except Exception as e: logger.error(f"Could not delete list {l['name']}: {e}")
 
 def enforce_tld_rule_order(cf: CloudflareAPI):
-    """Ensures the Allow TLD Exceptions rule sits logically above the Block TLD rule in precedence."""
+    """Ensures the Allow TLD Exceptions rule sits logically above the Block TLD rule."""
     logger.info("Verifying rule precedence order...")
     rules = cf.get_rules()
     
@@ -363,35 +363,31 @@ def enforce_tld_rule_order(cf: CloudflareAPI):
         
     block_prec = block_rule["precedence"]
     
-    # Cloudflare evaluates lower precedence numbers first.
-    # Find any allow rules that are evaluated AFTER the block rule (higher precedence number)
-    out_of_order = [r for r in allow_rules if r["precedence"] > block_prec]
+    # Check if any Allow rule has a higher precedence number (which means it evaluates AFTER the block rule)
+    out_of_order = any(r["precedence"] > block_prec for r in allow_rules)
     
-    for rule in out_of_order:
-        logger.info(f"Reordering: Bumping '{rule['name']}' above the TLD Block rule...")
-        payload = {
-            "name": rule["name"],
-            "action": rule["action"],
-            "traffic": rule["traffic"],
-            "enabled": rule.get("enabled", True),
-            "filters": rule.get("filters", ["dns"]),
-            "precedence": block_prec # Bumping it to the exact block spot automatically forces the block rule down
-        }
-        if "identity" in rule:
-            payload["identity"] = rule["identity"]
-            
-        try:
-            cf.update_rule(rule["id"], payload)
-            
-            # Re-fetch state so subsequent loop iterations (if any) have accurate precedence targets
-            rules = cf.get_rules()
-            block_rule = next((r for r in rules if r["name"] == "Block: HaGeZi Most Abused TLDs"), None)
-            block_prec = block_rule["precedence"]
-        except Exception as e:
-            logger.error(f"Could not reorder rule {rule['name']}: {e}")
-            
     if out_of_order:
-        logger.info("✅ Successfully fixed rule precedence.")
+        logger.info("Reordering: Moving TLD Block rule below Allow exceptions...")
+        try:
+            # Safest approach: Delete and recreate the Block rule.
+            # Cloudflare natively appends new rules at the bottom of the list, automatically
+            # assigning it the highest precedence number without causing API conflicts.
+            cf.delete_rule(block_rule["id"])
+            
+            payload = {
+                "name": block_rule["name"],
+                "action": block_rule["action"],
+                "traffic": block_rule["traffic"],
+                "enabled": block_rule.get("enabled", True),
+                "filters": block_rule.get("filters", ["dns"])
+            }
+            if "identity" in block_rule and block_rule["identity"]:
+                payload["identity"] = block_rule["identity"]
+                
+            cf.create_rule(payload)
+            logger.info("✅ Successfully fixed rule precedence.")
+        except Exception as e:
+            logger.error(f"Could not reorder rule: {e}")
     else:
         logger.info("✅ Rule precedence is already correct.")
 
