@@ -251,8 +251,8 @@ def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tlds: list[str]
     expr_parts = []
     for chunk in tld_chunks:
         regex_str = "|".join(chunk)
-        # CHANGED: Switch to dns.domains array search
-        expr_parts.append(f'any(dns.domains[*] matches "(?i)\\\\.(?:{regex_str})$")')
+        # Correctly formatted: Domain -> matches regex -> exact single backslash \.
+        expr_parts.append(f'any(dns.domains[*] matches "(?i)\\.(?:{regex_str})$")')
         
     traffic_expr = " or ".join(expr_parts)
     
@@ -370,9 +370,6 @@ def enforce_tld_rule_order(cf: CloudflareAPI):
     if out_of_order:
         logger.info("Reordering: Moving TLD Block rule below Allow exceptions...")
         try:
-            # Safest approach: Delete and recreate the Block rule.
-            # Cloudflare natively appends new rules at the bottom of the list, automatically
-            # assigning it the highest precedence number without causing API conflicts.
             cf.delete_rule(block_rule["id"])
             
             payload = {
