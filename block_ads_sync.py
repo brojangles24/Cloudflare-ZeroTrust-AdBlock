@@ -47,6 +47,7 @@ class Config:
         "Ultimate",
         "Social",
         "Block:",
+        "Allow:",
         "L_"
     ]
 
@@ -86,21 +87,21 @@ BLOCKLIST_URLS = {
 }
 
 POLICIES = [
-    {"prefix": "L_Pro", "policy_name": "Block: HaGeZi Pro Mini", "identity_condition": None, "include": ["HaGeZi Pro Mini"], "exclude": []},
-    {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "identity_condition": None, "include": ["Hagezi NSFW"], "exclude": []},
-    {"prefix": "L_Fake", "policy_name": "Block: HaGeZi Fake", "identity_condition": None, "include": ["HaGeZi Fake"], "exclude": []},
-    {"prefix": "L_NoSafe", "policy_name": "Block: HaGeZi Safesearch Not Support", "identity_condition": None, "include": ["HaGeZi Safesearch Not Support"], "exclude": []},
-    {"prefix": "L_Bypass", "policy_name": "Block: HaGeZi Bypass Block", "identity_condition": None, "include": ["HaGeZi Bypass Block"], "exclude": []},
-    {"prefix": "L_AntiPiracy", "policy_name": "Block: HaGeZi Anti Piracy", "identity_condition": None, "include": ["HaGeZi Anti Piracy"], "exclude": []},
-    {"prefix": "L_DynDNS", "policy_name": "Block: HaGeZi Dynamic DNS", "identity_condition": None, "include": ["HaGeZi Dynamic DNS"], "exclude": []},
-    {"prefix": "L_Social", "policy_name": "Block: HaGeZi Social (Primary Only)", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "include": ["HaGeZi Social"], "exclude": []}
+    {"prefix": "L_Pro", "policy_name": "Block: HaGeZi Pro Mini", "action": "block", "identity_condition": None, "include": ["HaGeZi Pro Mini"], "exclude": []},
+    {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "include": ["Hagezi NSFW"], "exclude": []},
+    {"prefix": "L_Fake", "policy_name": "Block: HaGeZi Fake", "action": "block", "identity_condition": None, "include": ["HaGeZi Fake"], "exclude": []},
+    {"prefix": "L_NoSafe", "policy_name": "Block: HaGeZi Safesearch Not Support", "action": "block", "identity_condition": None, "include": ["HaGeZi Safesearch Not Support"], "exclude": []},
+    {"prefix": "L_Bypass", "policy_name": "Block: HaGeZi Bypass Block", "action": "block", "identity_condition": None, "include": ["HaGeZi Bypass Block"], "exclude": []},
+    {"prefix": "L_AntiPiracy", "policy_name": "Block: HaGeZi Anti Piracy", "action": "block", "identity_condition": None, "include": ["HaGeZi Anti Piracy"], "exclude": []},
+    {"prefix": "L_DynDNS", "policy_name": "Block: HaGeZi Dynamic DNS", "action": "block", "identity_condition": None, "include": ["HaGeZi Dynamic DNS"], "exclude": []},
+    {"prefix": "L_Social", "policy_name": "Block: HaGeZi Social (Primary Only)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "include": ["HaGeZi Social"], "exclude": []}
 ]
 
 if Config.ACTIVE_TIER == "pro++":
-    POLICIES.append({"prefix": "L_ProPlus", "policy_name": "Block: HaGeZi Pro++ Mini (Except Secondary)", "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")', "include": ["HaGeZi Pro++ Mini"], "exclude": ["HaGeZi Pro Mini"]})
+    POLICIES.append({"prefix": "L_ProPlus", "policy_name": "Block: HaGeZi Pro++ Mini (Except Secondary)", "action": "block", "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")', "include": ["HaGeZi Pro++ Mini"], "exclude": ["HaGeZi Pro Mini"]})
     logger.info("Active Tier set to: Pro++")
 elif Config.ACTIVE_TIER == "ultimate":
-    POLICIES.append({"prefix": "L_Ultimate", "policy_name": "Block: HaGeZi Ultimate Mini (Except Secondary)", "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")', "include": ["HaGeZi Ultimate Mini"], "exclude": ["HaGeZi Pro Mini"]})
+    POLICIES.append({"prefix": "L_Ultimate", "policy_name": "Block: HaGeZi Ultimate Mini (Except Secondary)", "action": "block", "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")', "include": ["HaGeZi Ultimate Mini"], "exclude": ["HaGeZi Pro Mini"]})
     logger.info("Active Tier set to: Ultimate")
 else:
     logger.info("Active Tier set to: Pro. No delta list required.")
@@ -302,6 +303,9 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     MAX_LISTS_PER_RULE = 75
     id_batches = [used_ids[i:i + MAX_LISTS_PER_RULE] for i in range(0, len(used_ids), MAX_LISTS_PER_RULE)]
     active_rule_names = []
+    
+    # Check if policy defines a specific action (e.g. allow), default to block
+    action = policy.get("action", "block")
 
     for index, batch in enumerate(id_batches):
         traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in batch])
@@ -313,7 +317,7 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
         existing_rule = next((r for r in existing_rules if r["name"] == final_rule_name), None)
         is_enabled = existing_rule.get("enabled", True) if existing_rule else True
 
-        payload = {"name": final_rule_name, "action": "block", "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
+        payload = {"name": final_rule_name, "action": action, "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
         if policy.get("identity_condition"): payload["identity"] = policy["identity_condition"]
         
         if existing_rule:
@@ -389,7 +393,10 @@ def main() -> None:
             total_offloaded += offloaded_count
 
     compiled_policies = build_policy_sets(POLICIES, fetched_lists)
-    total_domains = sum(len(domains) for _, domains in compiled_policies)
+    
+    # Add ALLOWED_DOMAINS to total domain calculation if they exist
+    optimized_allow_domains = optimize_domains(ALLOWED_DOMAINS) if ALLOWED_DOMAINS else []
+    total_domains = sum(len(domains) for _, domains in compiled_policies) + len(optimized_allow_domains)
 
     if total_domains > Config.TOTAL_QUOTA:
         logger.error(f"Total domains ({total_domains:,}) exceeds quota! Aborting.")
@@ -402,11 +409,12 @@ def main() -> None:
     existing_rules = cf.get_rules()
 
     # --- SMART PRE-CLEANUP ---
-    valid_prefixes = tuple(p["prefix"] for p in POLICIES)
+    valid_prefixes = tuple(p["prefix"] for p in POLICIES) + ("L_AllowTLD",)
     
     # Track base names, we will check if rules start with these (to account for "Part 1", etc.)
     valid_rule_bases = {p["policy_name"] for p in POLICIES}
     valid_rule_bases.add("Block: HaGeZi Most Abused TLDs")
+    valid_rule_bases.add("Allow: HaGeZi TLD Exceptions")
 
     logger.info("Scanning for abandoned policies to clear room for new ones...")
     for rule in existing_rules[:]:
@@ -434,6 +442,17 @@ def main() -> None:
 
     all_active_list_ids = []
     all_active_rule_names = []
+
+    # Sync TLD Allow Exceptions
+    if optimized_allow_domains:
+        allow_policy = {
+            "prefix": "L_AllowTLD",
+            "policy_name": "Allow: HaGeZi TLD Exceptions",
+            "action": "allow"
+        }
+        used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_allow_domains, allow_policy)
+        all_active_list_ids.extend(used_ids)
+        all_active_rule_names.extend(rule_names)
 
     # Push zero-quota native TLD firewall rules
     if tlds_list:
