@@ -17,8 +17,8 @@ class Config:
     PRIMARY_EMAIL           = os.environ.get("PRIMARY_EMAIL", "")    
     SECONDARY_EMAIL         = os.environ.get("SECONDARY_EMAIL", "")  
     
-    # Reads the tier from GitHub Variables. Defaults to "Ultimate" if missing.
-    ACTIVE_TIER             = os.environ.get("ACTIVE_TIER", "Ultimate").strip().lower()
+    # Reads the tier from GitHub Variables. Defaults to "pro++" if missing.
+    ACTIVE_TIER             = os.environ.get("ACTIVE_TIER", "pro++").strip().lower()
     
     # --- TOGGLES ---
     ENABLE_TLD_KW_FILTERING = False
@@ -75,6 +75,7 @@ BLOCKLIST_URLS = {
     "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.mini-onlydomains.txt",
     "HaGeZi Pro++ Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus.mini-onlydomains.txt",
     "HaGeZi Ultimate Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate.mini-onlydomains.txt",
+    "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi Safesearch Not Support": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
     "HaGeZi Bypass Block": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
@@ -83,13 +84,20 @@ BLOCKLIST_URLS = {
     "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
 }
 
-# Base policies that ALWAYS apply (NSFW removed)
+# Base policies that ALWAYS apply (NSFW Added Back In)
 POLICIES = [
     {
         "prefix": "L_Pro",
         "policy_name": "Block: HaGeZi Pro Mini",
         "identity_condition": None,
         "include": ["HaGeZi Pro Mini"],
+        "exclude": []
+    },
+    {
+        "prefix": "L_NSFW",
+        "policy_name": "Block: HaGeZi NSFW",
+        "identity_condition": None,
+        "include": ["Hagezi NSFW"],
         "exclude": []
     },
     {
