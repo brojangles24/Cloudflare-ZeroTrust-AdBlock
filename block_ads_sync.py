@@ -241,7 +241,7 @@ def build_policy_sets(policies_config, fetched_lists):
 # ---------------------------------------------------------------------------
 def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tld_regex: str) -> str:
     rule_name = "Block: HaGeZi Most Abused TLDs"
-    traffic_expr = f'matches(dns.fqdn, "(?i)\\\\.({tld_regex})$")'
+    traffic_expr = f'dns.fqdn matches "(?i)\\\\\\.(?:{tld_regex})$"'
     
     existing_rule = next((r for r in existing_rules if r["name"] == rule_name), None)
     is_enabled = existing_rule.get("enabled", True) if existing_rule else True
