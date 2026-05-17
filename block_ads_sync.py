@@ -205,29 +205,40 @@ class CloudflareAPI:
 # ---------------------------------------------------------------------------
 # 3. Domain Logic
 # ---------------------------------------------------------------------------
-def is_valid_domain(domain: str) -> str | None:
+def is_valid_domain(domain: str) -> tuple[str | None, bool]:
     domain = domain.strip().strip(".")
     if not domain or any(c in domain for c in "*/[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
-        return None
+        return None, False
+    
     if Config.ENABLE_TLD_KW_FILTERING:
         if FILTER_PATTERN.search(domain):
-            return None
-    return domain
+            return None, True # Returns True indicating it was successfully offloaded by our custom filter
+            
+    return domain, False
 
-def fetch_url(session: requests.Session, name: str, url: str) -> tuple[str, set[str]]:
+def fetch_url(session: requests.Session, name: str, url: str) -> tuple[str, set[str], int]:
     valid_domains = set()
+    offloaded_count = 0
+    
     try:
         resp = session.get(url, timeout=Config.REQUEST_TIMEOUT)
         resp.raise_for_status()
         for line in resp.text.splitlines():
             line = line.strip()
             if not line or line[0] in ("#", "!", "/"): continue
-            cleaned = is_valid_domain(line.split()[-1].lower())
-            if cleaned: valid_domains.add(cleaned)
-        logger.info(f"Fetched {name}: {len(valid_domains):,} domains")
+            
+            cleaned, is_offloaded = is_valid_domain(line.split()[-1].lower())
+            
+            if cleaned: 
+                valid_domains.add(cleaned)
+            elif is_offloaded:
+                offloaded_count += 1
+                
+        logger.info(f"Fetched {name}: {len(valid_domains):,} domains (Offloaded: {offloaded_count:,})")
     except Exception as exc:
         logger.error(f"Error fetching {name}: {exc}")
-    return name, valid_domains
+        
+    return name, valid_domains, offloaded_count
 
 def optimize_domains(domains: set[str]) -> list[str]:
     reversed_sorted = sorted(d[::-1] for d in domains)
@@ -265,7 +276,6 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
         if idx < len(policy_existing_lists):
             existing = policy_existing_lists[idx]
             if existing.get("description") == chunk_hash:
-                logger.info(f"Skipped updating list {list_name} (No changes detected)")
                 return existing["id"]
             
             cf.update_list(existing["id"], list_name, items, desc=chunk_hash)
@@ -336,11 +346,14 @@ def main() -> None:
     download_session.mount("https://", HTTPAdapter(max_retries=dl_retry))
 
     fetched_lists = {}
+    total_offloaded = 0
+    
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
         futures = {pool.submit(fetch_url, download_session, name, url): name for name, url in BLOCKLIST_URLS.items()}
         for future in concurrent.futures.as_completed(futures):
-            name, valid_set = future.result()
+            name, valid_set, offloaded_count = future.result()
             fetched_lists[name] = valid_set
+            total_offloaded += offloaded_count
 
     compiled_policies = build_policy_sets(POLICIES, fetched_lists)
     total_domains = sum(len(domains) for _, domains in compiled_policies)
@@ -349,7 +362,8 @@ def main() -> None:
         logger.error(f"Total domains ({total_domains:,}) exceeds {Config.TOTAL_QUOTA:,} quota! Aborting script.")
         return
 
-    logger.info(f"Total domains to sync: {total_domains:,}. Proceeding...")
+    logger.info(f"Total domains offloaded by Regex filter: {total_offloaded:,}")
+    logger.info(f"Total domains to sync to Cloudflare: {total_domains:,}. Proceeding...")
 
     # Take a single global snapshot
     existing_lists = cf.get_lists()
