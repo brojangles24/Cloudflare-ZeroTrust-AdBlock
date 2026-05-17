@@ -31,8 +31,7 @@ class Config:
     # Static custom explicit keywords used to drop matching domains locally (saves Cloudflare quota)
     OFFLOAD_KEYWORDS = [
         "blowjob", "threesome", "gangbang", "deepthroat", "bukkake", 
-        "tits", "fuck", "onlyfans", "porn", "xxx", "sex", "dick", 
-        "anal", "ass",
+        "tits", "fuck", "onlyfans", "porn", "xxx", "sex",
     ]
     
     MAX_LIST_SIZE           = 1000
