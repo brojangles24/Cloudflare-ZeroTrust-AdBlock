@@ -251,7 +251,6 @@ def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tlds: list[str]
     expr_parts = []
     for chunk in tld_chunks:
         regex_str = "|".join(chunk)
-        # CHANGED: Use the correct operator syntax `dns.fqdn matches "regex"`
         expr_parts.append(f'dns.fqdn matches "(?i)\\\\.(?:{regex_str})$"')
         
     traffic_expr = " or ".join(expr_parts)
@@ -350,6 +349,51 @@ def cleanup_orphans(cf: CloudflareAPI, existing_lists: list[dict], existing_rule
                 cf.delete_list(l["id"])
                 logger.info(f"Deleted Orphaned List: {l['name']}")
             except Exception as e: logger.error(f"Could not delete list {l['name']}: {e}")
+
+def enforce_tld_rule_order(cf: CloudflareAPI):
+    """Ensures the Allow TLD Exceptions rule sits logically above the Block TLD rule in precedence."""
+    logger.info("Verifying rule precedence order...")
+    rules = cf.get_rules()
+    
+    allow_rules = [r for r in rules if r["name"].startswith("Allow: HaGeZi TLD Exceptions")]
+    block_rule = next((r for r in rules if r["name"] == "Block: HaGeZi Most Abused TLDs"), None)
+    
+    if not allow_rules or not block_rule:
+        return
+        
+    block_prec = block_rule["precedence"]
+    
+    # Cloudflare evaluates lower precedence numbers first.
+    # Find any allow rules that are evaluated AFTER the block rule (higher precedence number)
+    out_of_order = [r for r in allow_rules if r["precedence"] > block_prec]
+    
+    for rule in out_of_order:
+        logger.info(f"Reordering: Bumping '{rule['name']}' above the TLD Block rule...")
+        payload = {
+            "name": rule["name"],
+            "action": rule["action"],
+            "traffic": rule["traffic"],
+            "enabled": rule.get("enabled", True),
+            "filters": rule.get("filters", ["dns"]),
+            "precedence": block_prec # Bumping it to the exact block spot automatically forces the block rule down
+        }
+        if "identity" in rule:
+            payload["identity"] = rule["identity"]
+            
+        try:
+            cf.update_rule(rule["id"], payload)
+            
+            # Re-fetch state so subsequent loop iterations (if any) have accurate precedence targets
+            rules = cf.get_rules()
+            block_rule = next((r for r in rules if r["name"] == "Block: HaGeZi Most Abused TLDs"), None)
+            block_prec = block_rule["precedence"]
+        except Exception as e:
+            logger.error(f"Could not reorder rule {rule['name']}: {e}")
+            
+    if out_of_order:
+        logger.info("✅ Successfully fixed rule precedence.")
+    else:
+        logger.info("✅ Rule precedence is already correct.")
 
 # ---------------------------------------------------------------------------
 # 5. Main Execution
@@ -468,6 +512,10 @@ def main() -> None:
         all_active_rule_names.extend(rule_names)
 
     cleanup_orphans(cf, existing_lists, existing_rules, all_active_list_ids, all_active_rule_names)
+    
+    # Post-sync verification: Enforce Rule Order
+    enforce_tld_rule_order(cf)
+
     logger.info(f"✅ Sync completed in {time.perf_counter() - start:.2f} seconds.")
 
 if __name__ == "__main__":
