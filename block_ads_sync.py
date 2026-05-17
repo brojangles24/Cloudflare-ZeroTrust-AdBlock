@@ -8,6 +8,9 @@ import hashlib
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
+# Global variable for the dynamically compiled offload engine
+FILTER_PATTERN = None
+
 # ---------------------------------------------------------------------------
 # 1. Config & Lists
 # ---------------------------------------------------------------------------
@@ -19,6 +22,16 @@ class Config:
     
     # Reads the tier from GitHub Variables. Defaults to "pro++" if missing.
     ACTIVE_TIER             = os.environ.get("ACTIVE_TIER", "pro++").strip().lower()
+    
+    # --- TOGGLES ---
+    ENABLE_TLD_KW_FILTERING = True
+    
+    # Your manual explicit keywords. The script uses these to drop domains locally, saving Cloudflare quota.
+    OFFLOAD_KEYWORDS = [
+        "blowjob", "threesome", "gangbang", "deepthroat", "bukkake", 
+        "titfuck", "shemale", "onlyfans", "pornhub", "xvideos", "xnxx", 
+        "porn", "xxx", "sex", "adult", "casino"
+    ]
     
     MAX_LIST_SIZE           = 1000
     MAX_RETRIES             = 5
@@ -68,67 +81,21 @@ BLOCKLIST_URLS = {
     "HaGeZi Bypass Block": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
     "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt", 
     "HaGeZi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-    "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
+    "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
+    "HaGeZi TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt"
 }
 
 # Base policies that ALWAYS apply
 POLICIES = [
-    {
-        "prefix": "L_Pro",
-        "policy_name": "Block: HaGeZi Pro Mini",
-        "identity_condition": None,
-        "include": ["HaGeZi Pro Mini"],
-        "exclude": []
-    },
-    {
-        "prefix": "L_NSFW",
-        "policy_name": "Block: HaGeZi NSFW",
-        "identity_condition": None,
-        "include": ["Hagezi NSFW"],
-        "exclude": []
-    },
-    {
-        "prefix": "L_Fake",
-        "policy_name": "Block: HaGeZi Fake",
-        "identity_condition": None,
-        "include": ["HaGeZi Fake"],
-        "exclude": []
-    },
-    {
-        "prefix": "L_NoSafe",
-        "policy_name": "Block: HaGeZi Safesearch Not Support",
-        "identity_condition": None,
-        "include": ["HaGeZi Safesearch Not Support"],
-        "exclude": []
-    },
-    {
-        "prefix": "L_Bypass",
-        "policy_name": "Block: HaGeZi Bypass Block",
-        "identity_condition": None,
-        "include": ["HaGeZi Bypass Block"],
-        "exclude": []
-    },
-    {
-        "prefix": "L_AntiPiracy",
-        "policy_name": "Block: HaGeZi Anti Piracy",
-        "identity_condition": None,
-        "include": ["HaGeZi Anti Piracy"],
-        "exclude": []
-    },
-    {
-        "prefix": "L_DynDNS",
-        "policy_name": "Block: HaGeZi Dynamic DNS",
-        "identity_condition": None,
-        "include": ["HaGeZi Dynamic DNS"],
-        "exclude": []
-    },
-    {
-        "prefix": "L_Social",
-        "policy_name": "Block: HaGeZi Social (Primary Only)",
-        "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', 
-        "include": ["HaGeZi Social"],
-        "exclude": []
-    }
+    {"prefix": "L_Pro", "policy_name": "Block: HaGeZi Pro Mini", "identity_condition": None, "include": ["HaGeZi Pro Mini"], "exclude": []},
+    {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "identity_condition": None, "include": ["Hagezi NSFW"], "exclude": []},
+    {"prefix": "L_Fake", "policy_name": "Block: HaGeZi Fake", "identity_condition": None, "include": ["HaGeZi Fake"], "exclude": []},
+    {"prefix": "L_NoSafe", "policy_name": "Block: HaGeZi Safesearch Not Support", "identity_condition": None, "include": ["HaGeZi Safesearch Not Support"], "exclude": []},
+    {"prefix": "L_Bypass", "policy_name": "Block: HaGeZi Bypass Block", "identity_condition": None, "include": ["HaGeZi Bypass Block"], "exclude": []},
+    {"prefix": "L_AntiPiracy", "policy_name": "Block: HaGeZi Anti Piracy", "identity_condition": None, "include": ["HaGeZi Anti Piracy"], "exclude": []},
+    {"prefix": "L_DynDNS", "policy_name": "Block: HaGeZi Dynamic DNS", "identity_condition": None, "include": ["HaGeZi Dynamic DNS"], "exclude": []},
+    {"prefix": "L_TIF", "policy_name": "Block: HaGeZi TIF Mini", "identity_condition": None, "include": ["HaGeZi TIF Mini"], "exclude": []},
+    {"prefix": "L_Social", "policy_name": "Block: HaGeZi Social (Primary Only)", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "include": ["HaGeZi Social"], "exclude": []}
 ]
 
 # Dynamically inject the correct Tier Delta
@@ -141,7 +108,6 @@ if Config.ACTIVE_TIER == "pro++":
         "exclude": ["HaGeZi Pro Mini"] 
     })
     logger.info("Active Tier set to: Pro++")
-    
 elif Config.ACTIVE_TIER == "ultimate":
     POLICIES.append({
         "prefix": "L_Ultimate",
@@ -151,10 +117,8 @@ elif Config.ACTIVE_TIER == "ultimate":
         "exclude": ["HaGeZi Pro Mini"] 
     })
     logger.info("Active Tier set to: Ultimate")
-
 else:
     logger.info("Active Tier set to: Pro. No delta list required.")
-
 
 # ---------------------------------------------------------------------------
 # 2. Cloudflare API Client
@@ -170,22 +134,18 @@ class CloudflareAPI:
     def _request(self, method, endpoint, **kwargs):
         retries = Config.MAX_RETRIES
         delay = 2
-        
         while retries > 0:
             resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, timeout=Config.REQUEST_TIMEOUT, **kwargs)
-            
             if resp.status_code == 429:
                 retries -= 1
                 logger.warning(f"Rate limited (429) on {endpoint}. Retrying in {delay}s... ({retries} left)")
                 time.sleep(delay)
                 delay *= 2 
                 continue
-                
             if not resp.ok:
                 logger.error(f"Cloudflare API Error [{resp.status_code}]: {resp.text}")
             resp.raise_for_status()
             return resp.json()
-            
         raise requests.exceptions.HTTPError("Exhausted retries due to Cloudflare API rate limits (429).", response=resp)
 
     def get_lists(self):                                      return self._request("GET",    "lists").get("result") or []
@@ -200,29 +160,37 @@ class CloudflareAPI:
 # ---------------------------------------------------------------------------
 # 3. Domain Logic
 # ---------------------------------------------------------------------------
-def is_valid_domain(domain: str) -> str | None:
+def is_valid_domain(domain: str) -> tuple[str | None, bool]:
     domain = domain.strip().strip(".")
     if not domain or any(c in domain for c in "*/[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
-        return None
-    return domain
+        return None, False
+    
+    if Config.ENABLE_TLD_KW_FILTERING and FILTER_PATTERN:
+        if FILTER_PATTERN.search(domain):
+            return None, True # Returns True indicating it was successfully offloaded
+            
+    return domain, False
 
-def fetch_url(session: requests.Session, name: str, url: str) -> tuple[str, set[str]]:
+def fetch_url(session: requests.Session, name: str, url: str) -> tuple[str, set[str], int]:
     valid_domains = set()
+    offloaded_count = 0
     try:
         resp = session.get(url, timeout=Config.REQUEST_TIMEOUT)
         resp.raise_for_status()
         for line in resp.text.splitlines():
             line = line.strip()
             if not line or line[0] in ("#", "!", "/"): continue
-            cleaned = is_valid_domain(line.split()[-1].lower())
-            if cleaned: valid_domains.add(cleaned)
-        logger.info(f"Fetched {name}: {len(valid_domains):,} domains")
+            cleaned, is_offloaded = is_valid_domain(line.split()[-1].lower())
+            if cleaned: 
+                valid_domains.add(cleaned)
+            elif is_offloaded:
+                offloaded_count += 1
+        logger.info(f"Fetched {name}: {len(valid_domains):,} domains (Offloaded: {offloaded_count:,})")
     except Exception as exc:
         logger.error(f"Error fetching {name}: {exc}")
-    return name, valid_domains
+    return name, valid_domains, offloaded_count
 
 def fetch_spam_tlds(session: requests.Session) -> str | None:
-    """Downloads HaGeZi's TLD list and formats it into a regex OR string."""
     try:
         resp = session.get(TLD_LIST_URL, timeout=Config.REQUEST_TIMEOUT)
         resp.raise_for_status()
@@ -230,15 +198,11 @@ def fetch_spam_tlds(session: requests.Session) -> str | None:
         for line in resp.text.splitlines():
             line = line.strip()
             if not line or line.startswith("#"): continue
-            # Extract just the TLD string, removing any leading dots
             cleaned_tld = line.replace(".", "")
-            if cleaned_tld:
-                tlds.append(cleaned_tld)
-        
+            if cleaned_tld: tlds.append(cleaned_tld)
         if tlds:
-            tld_joined = "|".join(tlds)
             logger.info(f"Fetched HaGeZi Most Abused TLDs: {len(tlds)} TLDs")
-            return tld_joined
+            return "|".join(tlds)
     except Exception as exc:
         logger.error(f"Failed to fetch Spam TLDs: {exc}")
     return None
@@ -265,10 +229,7 @@ def build_policy_sets(policies_config, fetched_lists):
 # 4. Cloudflare Sync & Cleanup
 # ---------------------------------------------------------------------------
 def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tld_regex: str) -> str:
-    """Directly pushes the TLD regex to a Firewall Policy (Uses 0 quota)"""
     rule_name = "Block: HaGeZi Most Abused TLDs"
-    
-    # We escape the backslash so Cloudflare Wirefilter correctly receives \.
     traffic_expr = f'matches(dns.fqdn, "(?i)\\\\.({tld_regex})$")'
     
     existing_rule = next((r for r in existing_rules if r["name"] == rule_name), None)
@@ -285,7 +246,6 @@ def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tld_regex: str)
     else: 
         cf.create_rule(payload)
         logger.info(f"Firewall rule created: {rule_name}")
-        
     return rule_name
 
 def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], domains: list[str], policy: dict) -> tuple[list[str], str]:
@@ -302,9 +262,7 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
         
         if idx < len(policy_existing_lists):
             existing = policy_existing_lists[idx]
-            if existing.get("description") == chunk_hash:
-                return existing["id"]
-            
+            if existing.get("description") == chunk_hash: return existing["id"]
             cf.update_list(existing["id"], list_name, items, desc=chunk_hash)
             logger.info(f"Updated list {list_name} ({len(chunk):,} domains)")
             return existing["id"]
@@ -318,14 +276,11 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
         used_ids = [f.result() for f in concurrent.futures.as_completed(futures)]
 
     traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
-    
     existing_rule = next((r for r in existing_rules if r["name"] == policy["policy_name"]), None)
     is_enabled = existing_rule.get("enabled", True) if existing_rule else True
 
     payload = {"name": policy["policy_name"], "action": "block", "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
-    
-    if policy.get("identity_condition"):
-        payload["identity"] = policy["identity_condition"]
+    if policy.get("identity_condition"): payload["identity"] = policy["identity_condition"]
     
     if existing_rule:
         if existing_rule.get("traffic") == traffic_expr and existing_rule.get("identity") == policy.get("identity_condition") and existing_rule.get("enabled") == is_enabled:
@@ -336,20 +291,17 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     else: 
         cf.create_rule(payload)
         logger.info(f"Firewall rule created: {policy['policy_name']}")
-
     return used_ids, policy["policy_name"]
 
 def cleanup_orphans(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], active_list_ids: list[str], active_rule_names: list[str]):
     logger.info("Running post-sync cleanup of orphaned resources...")
-    
     for r in existing_rules:
-        if "IoT Bypass" in r["name"]: continue
+        if "IoT Bypass" in r["name"] or "Custom" in r["name"]: continue
         if r["name"] not in active_rule_names and any(target in r["name"] for target in Config.SCRUB_TARGETS):
             try:
                 cf.delete_rule(r["id"])
                 logger.info(f"Deleted Orphaned Rule: {r['name']}")
-            except Exception as e:
-                logger.error(f"Could not delete rule {r['name']}: {e}")
+            except Exception as e: logger.error(f"Could not delete rule {r['name']}: {e}")
 
     for l in existing_lists:
         if "IoT Bypass" in l["name"]: continue
@@ -357,8 +309,7 @@ def cleanup_orphans(cf: CloudflareAPI, existing_lists: list[dict], existing_rule
             try:
                 cf.delete_list(l["id"])
                 logger.info(f"Deleted Orphaned List: {l['name']}")
-            except Exception as e:
-                logger.error(f"Could not delete list {l['name']}: {e}")
+            except Exception as e: logger.error(f"Could not delete list {l['name']}: {e}")
 
 # ---------------------------------------------------------------------------
 # 5. Main
@@ -372,46 +323,63 @@ def main() -> None:
     dl_retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
     download_session.mount("https://", HTTPAdapter(max_retries=dl_retry))
 
-    fetched_lists = {}
+    # 1. Fetch the dynamic TLDs BEFORE we start multithreading
+    tld_regex_str = fetch_spam_tlds(download_session)
     
+    # 2. Build the global Offload Engine (combines dynamic TLDs + static keywords)
+    global FILTER_PATTERN
+    local_offload_pattern = ""
+    if tld_regex_str:
+        local_offload_pattern = f"(\\.(?:{tld_regex_str})$)"
+        
+    kw_str = "|".join(Config.OFFLOAD_KEYWORDS)
+    if kw_str:
+        if local_offload_pattern:
+            local_offload_pattern += f"|({kw_str})"
+        else:
+            local_offload_pattern = f"({kw_str})"
+            
+    if local_offload_pattern:
+        FILTER_PATTERN = re.compile(f"(?i){local_offload_pattern}")
+
+    # 3. Fire the thread pool to download lists (threads will use the global FILTER_PATTERN)
+    fetched_lists = {}
+    total_offloaded = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
         futures = {pool.submit(fetch_url, download_session, name, url): name for name, url in BLOCKLIST_URLS.items()}
         for future in concurrent.futures.as_completed(futures):
-            name, valid_set = future.result()
+            name, valid_set, offloaded_count = future.result()
             fetched_lists[name] = valid_set
-
-    # Fetch the raw TLDs for the Regex Policy
-    tld_regex_str = fetch_spam_tlds(download_session)
+            total_offloaded += offloaded_count
 
     compiled_policies = build_policy_sets(POLICIES, fetched_lists)
     total_domains = sum(len(domains) for _, domains in compiled_policies)
 
     if total_domains > Config.TOTAL_QUOTA:
-        logger.error(f"Total domains ({total_domains:,}) exceeds {Config.TOTAL_QUOTA:,} quota! Aborting script.")
+        logger.error(f"Total domains ({total_domains:,}) exceeds {Config.TOTAL_QUOTA:,} quota! Aborting.")
         return
 
+    logger.info(f"Total domains offloaded by Regex filter: {total_offloaded:,}")
     logger.info(f"Total domains to sync to Cloudflare: {total_domains:,}. Proceeding...")
 
-    # Take a single global snapshot
     existing_lists = cf.get_lists()
     existing_rules = cf.get_rules()
 
     # --- SMART PRE-CLEANUP ---
     valid_prefixes = tuple(p["prefix"] for p in POLICIES)
-    valid_rule_names = set(p["policy_name"] for p in POLICIES)
-    valid_rule_names.add("Block: HaGeZi Most Abused TLDs") # Protect the TLD rule from pre-cleanup
+    valid_rule_names = {p["policy_name"] for p in POLICIES}
+    valid_rule_names.add("Block: HaGeZi Most Abused TLDs")
 
     logger.info("Scanning for abandoned policies to clear room for new ones...")
     for rule in existing_rules[:]:
-        if "IoT Bypass" in rule["name"]: continue
+        if "IoT Bypass" in rule["name"] or "Custom" in rule["name"]: continue
         if any(target in rule["name"] for target in Config.SCRUB_TARGETS):
             if rule["name"] not in valid_rule_names:
                 try:
                     cf.delete_rule(rule["id"])
                     existing_rules.remove(rule)
                     logger.info(f"Pre-cleaned abandoned rule: {rule['name']}")
-                except Exception as e:
-                    logger.error(f"Could not delete abandoned rule {rule['name']}: {e}")
+                except Exception as e: logger.error(f"Could not delete rule {rule['name']}: {e}")
 
     for lst in existing_lists[:]:
         if "IoT Bypass" in lst["name"]: continue
@@ -421,18 +389,18 @@ def main() -> None:
                     cf.delete_list(lst["id"])
                     existing_lists.remove(lst)
                     logger.info(f"Pre-cleaned abandoned list: {lst['name']}")
-                except Exception as e:
-                    logger.error(f"Could not delete abandoned list {lst['name']}: {e}")
+                except Exception as e: logger.error(f"Could not delete abandoned list {lst['name']}: {e}")
     # -------------------------
 
     all_active_list_ids = []
     all_active_rule_names = []
 
-    # Inject the TLD Regex Policy first
+    # Sync the TLD Firewall Regex rule first
     if tld_regex_str:
         tld_rule_name = sync_tld_regex_rule(cf, existing_rules, tld_regex_str)
         all_active_rule_names.append(tld_rule_name)
 
+    # Sync custom lists
     for policy, optimized_domains in compiled_policies:
         used_ids, rule_name = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy)
         if rule_name:  
@@ -440,8 +408,7 @@ def main() -> None:
             all_active_rule_names.append(rule_name)
 
     cleanup_orphans(cf, existing_lists, existing_rules, all_active_list_ids, all_active_rule_names)
-
-    logger.info(f"Total time: {time.perf_counter() - start:.2f} seconds.")
+    logger.info(f"✅ Sync completed in {time.perf_counter() - start:.2f} seconds.")
 
 if __name__ == "__main__":
     main()
