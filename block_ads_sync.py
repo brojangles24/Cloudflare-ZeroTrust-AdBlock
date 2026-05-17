@@ -82,8 +82,7 @@ BLOCKLIST_URLS = {
     "HaGeZi Bypass Block": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
     "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt", 
     "HaGeZi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-    "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
-    "HaGeZi TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt"
+    "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
 }
 
 POLICIES = [
@@ -94,7 +93,6 @@ POLICIES = [
     {"prefix": "L_Bypass", "policy_name": "Block: HaGeZi Bypass Block", "identity_condition": None, "include": ["HaGeZi Bypass Block"], "exclude": []},
     {"prefix": "L_AntiPiracy", "policy_name": "Block: HaGeZi Anti Piracy", "identity_condition": None, "include": ["HaGeZi Anti Piracy"], "exclude": []},
     {"prefix": "L_DynDNS", "policy_name": "Block: HaGeZi Dynamic DNS", "identity_condition": None, "include": ["HaGeZi Dynamic DNS"], "exclude": []},
-    {"prefix": "L_TIF", "policy_name": "Block: HaGeZi TIF Mini", "identity_condition": None, "include": ["HaGeZi TIF Mini"], "exclude": []},
     {"prefix": "L_Social", "policy_name": "Block: HaGeZi Social (Primary Only)", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "include": ["HaGeZi Social"], "exclude": []}
 ]
 
@@ -252,7 +250,6 @@ def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tlds: list[str]
     expr_parts = []
     for chunk in tld_chunks:
         regex_str = "|".join(chunk)
-        # We also switch to a non-capturing group (?:) for better API compliance
         expr_parts.append(f'matches(dns.fqdn, "(?i)\\\\.(?:{regex_str})$")')
         
     traffic_expr = " or ".join(expr_parts)
