@@ -20,9 +20,6 @@ class Config:
     # Reads the tier from GitHub Variables. Defaults to "pro++" if missing.
     ACTIVE_TIER             = os.environ.get("ACTIVE_TIER", "pro++").strip().lower()
     
-    # --- TOGGLES ---
-    ENABLE_TLD_KW_FILTERING = True
-    
     MAX_LIST_SIZE           = 1000
     MAX_RETRIES             = 5
     TOTAL_QUOTA             = 300_000
@@ -58,10 +55,8 @@ IP_PATTERN = re.compile(
     r"^(?:[A-Fa-f0-9]{1,4}:)*:[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*$"
 )
 
-# User-Defined Regex for aggressive TLD and anywhere-keyword filtering
-FILTER_PATTERN = re.compile(
-    r"(?i)(\.(tk|ml|ga|cf|gq|pw|sbs|icu|top|xin|gdn|bid|cfd|monster|stream|webcam|download|zip|mov|bond|lol|quest|surf|casa|date)$)|(blowjob|threesome|gangbang|deepthroat|bukkake|titfuck|shemale|onlyfans|pornhub|xvideos|xnxx|porn|xxx|sex|adult)"
-)
+# Raw URL for HaGeZi's Most Abused TLDs list
+TLD_LIST_URL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/spam-tlds.txt"
 
 BLOCKLIST_URLS = {
     "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.mini-onlydomains.txt",
@@ -73,11 +68,10 @@ BLOCKLIST_URLS = {
     "HaGeZi Bypass Block": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
     "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt", 
     "HaGeZi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-    "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
-    "HaGeZi TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
+    "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
 }
 
-# Base policies that ALWAYS apply (NSFW Added Back In)
+# Base policies that ALWAYS apply
 POLICIES = [
     {
         "prefix": "L_Pro",
@@ -134,18 +128,10 @@ POLICIES = [
         "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', 
         "include": ["HaGeZi Social"],
         "exclude": []
-    },
-    {
-        "prefix": "L_TIF",
-        "policy_name": "Block: HaGeZi TIF Mini",
-        "identity_condition": None,
-        "include": ["HaGeZi TIF Mini"],
-        "exclude": []
-    },
+    }
 ]
 
-
-# Dynamically inject the correct Tier Delta based on GitHub Variables
+# Dynamically inject the correct Tier Delta
 if Config.ACTIVE_TIER == "pro++":
     POLICIES.append({
         "prefix": "L_ProPlus",
@@ -214,40 +200,48 @@ class CloudflareAPI:
 # ---------------------------------------------------------------------------
 # 3. Domain Logic
 # ---------------------------------------------------------------------------
-def is_valid_domain(domain: str) -> tuple[str | None, bool]:
+def is_valid_domain(domain: str) -> str | None:
     domain = domain.strip().strip(".")
     if not domain or any(c in domain for c in "*/[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
-        return None, False
-    
-    if Config.ENABLE_TLD_KW_FILTERING:
-        if FILTER_PATTERN.search(domain):
-            return None, True # Returns True indicating it was successfully offloaded by our custom filter
-            
-    return domain, False
+        return None
+    return domain
 
-def fetch_url(session: requests.Session, name: str, url: str) -> tuple[str, set[str], int]:
+def fetch_url(session: requests.Session, name: str, url: str) -> tuple[str, set[str]]:
     valid_domains = set()
-    offloaded_count = 0
-    
     try:
         resp = session.get(url, timeout=Config.REQUEST_TIMEOUT)
         resp.raise_for_status()
         for line in resp.text.splitlines():
             line = line.strip()
             if not line or line[0] in ("#", "!", "/"): continue
-            
-            cleaned, is_offloaded = is_valid_domain(line.split()[-1].lower())
-            
-            if cleaned: 
-                valid_domains.add(cleaned)
-            elif is_offloaded:
-                offloaded_count += 1
-                
-        logger.info(f"Fetched {name}: {len(valid_domains):,} domains (Offloaded: {offloaded_count:,})")
+            cleaned = is_valid_domain(line.split()[-1].lower())
+            if cleaned: valid_domains.add(cleaned)
+        logger.info(f"Fetched {name}: {len(valid_domains):,} domains")
     except Exception as exc:
         logger.error(f"Error fetching {name}: {exc}")
+    return name, valid_domains
+
+def fetch_spam_tlds(session: requests.Session) -> str | None:
+    """Downloads HaGeZi's TLD list and formats it into a regex OR string."""
+    try:
+        resp = session.get(TLD_LIST_URL, timeout=Config.REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        tlds = []
+        for line in resp.text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"): continue
+            # Extract just the TLD string, removing any leading dots
+            cleaned_tld = line.replace(".", "")
+            if cleaned_tld:
+                tlds.append(cleaned_tld)
         
-    return name, valid_domains, offloaded_count
+        if tlds:
+            tld_joined = "|".join(tlds)
+            logger.info(f"Fetched HaGeZi Most Abused TLDs: {len(tlds)} TLDs")
+            return tld_joined
+    except Exception as exc:
+        logger.error(f"Failed to fetch Spam TLDs: {exc}")
+    return None
 
 def optimize_domains(domains: set[str]) -> list[str]:
     reversed_sorted = sorted(d[::-1] for d in domains)
@@ -270,6 +264,30 @@ def build_policy_sets(policies_config, fetched_lists):
 # ---------------------------------------------------------------------------
 # 4. Cloudflare Sync & Cleanup
 # ---------------------------------------------------------------------------
+def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tld_regex: str) -> str:
+    """Directly pushes the TLD regex to a Firewall Policy (Uses 0 quota)"""
+    rule_name = "Block: HaGeZi Most Abused TLDs"
+    
+    # We escape the backslash so Cloudflare Wirefilter correctly receives \.
+    traffic_expr = f'matches(dns.fqdn, "(?i)\\\\.({tld_regex})$")'
+    
+    existing_rule = next((r for r in existing_rules if r["name"] == rule_name), None)
+    is_enabled = existing_rule.get("enabled", True) if existing_rule else True
+
+    payload = {"name": rule_name, "action": "block", "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
+    
+    if existing_rule:
+        if existing_rule.get("traffic") == traffic_expr and existing_rule.get("enabled") == is_enabled:
+            logger.info(f"Firewall rule {rule_name} unchanged. Skipping update.")
+        else:
+            cf.update_rule(existing_rule["id"], payload)
+            logger.info(f"Firewall rule updated: {rule_name}")
+    else: 
+        cf.create_rule(payload)
+        logger.info(f"Firewall rule created: {rule_name}")
+        
+    return rule_name
+
 def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], domains: list[str], policy: dict) -> tuple[list[str], str]:
     if not domains: return [], None
     sorted_domains = sorted(domains)
@@ -355,14 +373,15 @@ def main() -> None:
     download_session.mount("https://", HTTPAdapter(max_retries=dl_retry))
 
     fetched_lists = {}
-    total_offloaded = 0
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
         futures = {pool.submit(fetch_url, download_session, name, url): name for name, url in BLOCKLIST_URLS.items()}
         for future in concurrent.futures.as_completed(futures):
-            name, valid_set, offloaded_count = future.result()
+            name, valid_set = future.result()
             fetched_lists[name] = valid_set
-            total_offloaded += offloaded_count
+
+    # Fetch the raw TLDs for the Regex Policy
+    tld_regex_str = fetch_spam_tlds(download_session)
 
     compiled_policies = build_policy_sets(POLICIES, fetched_lists)
     total_domains = sum(len(domains) for _, domains in compiled_policies)
@@ -371,7 +390,6 @@ def main() -> None:
         logger.error(f"Total domains ({total_domains:,}) exceeds {Config.TOTAL_QUOTA:,} quota! Aborting script.")
         return
 
-    logger.info(f"Total domains offloaded by Regex filter: {total_offloaded:,}")
     logger.info(f"Total domains to sync to Cloudflare: {total_domains:,}. Proceeding...")
 
     # Take a single global snapshot
@@ -381,6 +399,7 @@ def main() -> None:
     # --- SMART PRE-CLEANUP ---
     valid_prefixes = tuple(p["prefix"] for p in POLICIES)
     valid_rule_names = set(p["policy_name"] for p in POLICIES)
+    valid_rule_names.add("Block: HaGeZi Most Abused TLDs") # Protect the TLD rule from pre-cleanup
 
     logger.info("Scanning for abandoned policies to clear room for new ones...")
     for rule in existing_rules[:]:
@@ -408,6 +427,11 @@ def main() -> None:
 
     all_active_list_ids = []
     all_active_rule_names = []
+
+    # Inject the TLD Regex Policy first
+    if tld_regex_str:
+        tld_rule_name = sync_tld_regex_rule(cf, existing_rules, tld_regex_str)
+        all_active_rule_names.append(tld_rule_name)
 
     for policy, optimized_domains in compiled_policies:
         used_ids, rule_name = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy)
