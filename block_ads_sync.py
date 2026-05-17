@@ -21,7 +21,7 @@ class Config:
     ACTIVE_TIER             = os.environ.get("ACTIVE_TIER", "pro++").strip().lower()
     
     # --- TOGGLES ---
-    ENABLE_TLD_KW_FILTERING = False
+    ENABLE_TLD_KW_FILTERING = True
     
     MAX_LIST_SIZE           = 1000
     MAX_RETRIES             = 5
@@ -58,18 +58,10 @@ IP_PATTERN = re.compile(
     r"^(?:[A-Fa-f0-9]{1,4}:)*:[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*$"
 )
 
-_BANNED_TLDS = {
-    "tk", "ml", "ga", "cf", "gq", "icu", "top", "xin", "gdn", "bid", "pw", "sbs", 
-    "cfd", "monster", "stream", "webcam", "download", "win", "party", "racing", 
-    "trade", "loan", "faith", "review", "accountant", "accountants", "cricket",
-    "zip", "mov", "xxx", "casino"
-}
-
-_OFFLOAD_KW = { 
-    "blowjob", "threesome", "gangbang", "handjob", "deepthroat", 
-    "bukkake", "titfuck", "shemale", 
-    "porn", "redtube", "brazzers", "xnxx", "xvideo", "xxvideo", "omegle", "xxx"
-}
+# User-Defined Regex for aggressive TLD and anywhere-keyword filtering
+FILTER_PATTERN = re.compile(
+    r"(?i)(\.(tk|ml|ga|cf|gq|pw|sbs|icu|top|xin|gdn|bid|cfd|monster|stream|webcam|download|zip|mov|bond|lol|quest|surf|casa|date)$)|(blowjob|threesome|gangbang|deepthroat|bukkake|titfuck|shemale|onlyfans|pornhub|xvideos|xnxx|porn|xxx|sex|adult)"
+)
 
 BLOCKLIST_URLS = {
     "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.mini-onlydomains.txt",
@@ -218,7 +210,7 @@ def is_valid_domain(domain: str) -> str | None:
     if not domain or any(c in domain for c in "*/[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
         return None
     if Config.ENABLE_TLD_KW_FILTERING:
-        if domain.rsplit(".", 1)[-1] in _BANNED_TLDS or any(kw in domain for kw in _OFFLOAD_KW):
+        if FILTER_PATTERN.search(domain):
             return None
     return domain
 
@@ -289,15 +281,17 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
         used_ids = [f.result() for f in concurrent.futures.as_completed(futures)]
 
     traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
-    payload = {"name": policy["policy_name"], "action": "block", "enabled": True, "filters": ["dns"], "traffic": traffic_expr}
+    
+    existing_rule = next((r for r in existing_rules if r["name"] == policy["policy_name"]), None)
+    is_enabled = existing_rule.get("enabled", True) if existing_rule else True
+
+    payload = {"name": policy["policy_name"], "action": "block", "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
     
     if policy.get("identity_condition"):
         payload["identity"] = policy["identity_condition"]
     
-    existing_rule = next((r for r in existing_rules if r["name"] == policy["policy_name"]), None)
-    
     if existing_rule:
-        if existing_rule.get("traffic") == traffic_expr and existing_rule.get("identity") == policy.get("identity_condition"):
+        if existing_rule.get("traffic") == traffic_expr and existing_rule.get("identity") == policy.get("identity_condition") and existing_rule.get("enabled") == is_enabled:
             logger.info(f"Firewall rule {policy['policy_name']} unchanged. Skipping update.")
         else:
             cf.update_rule(existing_rule["id"], payload)
