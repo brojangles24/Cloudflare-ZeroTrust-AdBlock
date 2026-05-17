@@ -18,7 +18,7 @@ ALLOWED_DOMAINS = set()
 class Config:
     API_TOKEN               = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID              = os.environ.get("ACCOUNT_ID", "")
-    PRIMARY_EMAIL           = os.environ.get("PRIMARY_EMAIL", "")    
+    PRIMARY_EMAIL           = os.environ.get("PRIMARY_EMAIL", "")   
     SECONDARY_EMAIL         = os.environ.get("SECONDARY_EMAIL", "")  
     
     # Reads the tier from GitHub Variables. Defaults to "pro++" if missing.
@@ -147,7 +147,7 @@ class CloudflareAPI:
 # ---------------------------------------------------------------------------
 # 3. Parsing & Domain Logic
 # ---------------------------------------------------------------------------
-def parse_adguard_tld_list(session: requests.Session) -> str | None:
+def parse_adguard_tld_list(session: requests.Session) -> list[str]:
     """Parses AdGuard syntax to dynamically extract structural blocked TLDs and exceptions."""
     global ALLOWED_DOMAINS
     try:
@@ -179,10 +179,10 @@ def parse_adguard_tld_list(session: requests.Session) -> str | None:
                             
         if tlds:
             logger.info(f"Parsed AdGuard TLDs: {len(tlds)} TLD blocks, extracted {len(ALLOWED_DOMAINS)} whitelisted domains.")
-            return "|".join(tlds)
+            return tlds
     except Exception as exc:
         logger.error(f"Failed to fetch or parse AdGuard TLD database: {exc}")
-    return None
+    return []
 
 def is_valid_domain(domain: str) -> tuple[str | None, bool]:
     domain = domain.strip().strip(".")
@@ -239,9 +239,23 @@ def build_policy_sets(policies_config, fetched_lists):
 # ---------------------------------------------------------------------------
 # 4. Cloudflare Sync & Cleanup
 # ---------------------------------------------------------------------------
-def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tld_regex: str) -> str:
+def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tlds: list[str]) -> str:
+    if not tlds:
+        return ""
+        
     rule_name = "Block: HaGeZi Most Abused TLDs"
-    traffic_expr = f'dns.fqdn matches "(?i)\\\\\\.(?:{tld_regex})$"'
+    
+    # Cloudflare's regex engine rejects massive alternations. We chunk by 30.
+    chunk_size = 30
+    tld_chunks = [tlds[i:i + chunk_size] for i in range(0, len(tlds), chunk_size)]
+    
+    expr_parts = []
+    for chunk in tld_chunks:
+        regex_str = "|".join(chunk)
+        # We also switch to a non-capturing group (?:) for better API compliance
+        expr_parts.append(f'matches(dns.fqdn, "(?i)\\\\.(?:{regex_str})$")')
+        
+    traffic_expr = " or ".join(expr_parts)
     
     existing_rule = next((r for r in existing_rules if r["name"] == rule_name), None)
     is_enabled = existing_rule.get("enabled", True) if existing_rule else True
@@ -257,10 +271,11 @@ def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tld_regex: str)
     else: 
         cf.create_rule(payload)
         logger.info(f"Firewall rule created: {rule_name}")
+        
     return rule_name
 
-def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], domains: list[str], policy: dict) -> tuple[list[str], str]:
-    if not domains: return [], None
+def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], domains: list[str], policy: dict) -> tuple[list[str], list[str]]:
+    if not domains: return [], []
     sorted_domains = sorted(domains)
     chunks = [sorted_domains[i : i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
     
@@ -286,23 +301,35 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
         futures = [executor.submit(process_chunk, idx, chunk) for idx, chunk in enumerate(chunks)]
         used_ids = [f.result() for f in concurrent.futures.as_completed(futures)]
 
-    traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
-    existing_rule = next((r for r in existing_rules if r["name"] == policy["policy_name"]), None)
-    is_enabled = existing_rule.get("enabled", True) if existing_rule else True
+    # Split into multiple rules if over 75 lists (4096 char limit)
+    MAX_LISTS_PER_RULE = 75
+    id_batches = [used_ids[i:i + MAX_LISTS_PER_RULE] for i in range(0, len(used_ids), MAX_LISTS_PER_RULE)]
+    active_rule_names = []
 
-    payload = {"name": policy["policy_name"], "action": "block", "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
-    if policy.get("identity_condition"): payload["identity"] = policy["identity_condition"]
-    
-    if existing_rule:
-        if existing_rule.get("traffic") == traffic_expr and existing_rule.get("identity") == policy.get("identity_condition") and existing_rule.get("enabled") == is_enabled:
-            logger.info(f"Firewall rule {policy['policy_name']} unchanged. Skipping update.")
-        else:
-            cf.update_rule(existing_rule["id"], payload)
-            logger.info(f"Firewall rule updated: {policy['policy_name']}")
-    else: 
-        cf.create_rule(payload)
-        logger.info(f"Firewall rule created: {policy['policy_name']}")
-    return used_ids, policy["policy_name"]
+    for index, batch in enumerate(id_batches):
+        traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in batch])
+        
+        rule_name_suffix = f" (Part {index + 1})" if len(id_batches) > 1 else ""
+        final_rule_name = f"{policy['policy_name']}{rule_name_suffix}"
+        active_rule_names.append(final_rule_name)
+        
+        existing_rule = next((r for r in existing_rules if r["name"] == final_rule_name), None)
+        is_enabled = existing_rule.get("enabled", True) if existing_rule else True
+
+        payload = {"name": final_rule_name, "action": "block", "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
+        if policy.get("identity_condition"): payload["identity"] = policy["identity_condition"]
+        
+        if existing_rule:
+            if existing_rule.get("traffic") == traffic_expr and existing_rule.get("identity") == policy.get("identity_condition") and existing_rule.get("enabled") == is_enabled:
+                logger.info(f"Firewall rule {final_rule_name} unchanged. Skipping update.")
+            else:
+                cf.update_rule(existing_rule["id"], payload)
+                logger.info(f"Firewall rule updated: {final_rule_name}")
+        else: 
+            cf.create_rule(payload)
+            logger.info(f"Firewall rule created: {final_rule_name}")
+            
+    return used_ids, active_rule_names
 
 def cleanup_orphans(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], active_list_ids: list[str], active_rule_names: list[str]):
     logger.info("Running post-sync cleanup of orphaned resources...")
@@ -335,7 +362,8 @@ def main() -> None:
     download_session.mount("https://", HTTPAdapter(max_retries=dl_retry))
 
     # 1. Fetch and Parse the complex AdGuard TLD database (populates ALLOWED_DOMAINS)
-    tld_regex_str = parse_adguard_tld_list(download_session)
+    tlds_list = parse_adguard_tld_list(download_session)
+    tld_regex_str = "|".join(tlds_list) if tlds_list else ""
     
     # 2. Build global regex filter engines
     global FILTER_PATTERN
@@ -378,14 +406,18 @@ def main() -> None:
 
     # --- SMART PRE-CLEANUP ---
     valid_prefixes = tuple(p["prefix"] for p in POLICIES)
-    valid_rule_names = {p["policy_name"] for p in POLICIES}
-    valid_rule_names.add("Block: HaGeZi Most Abused TLDs")
+    
+    # Track base names, we will check if rules start with these (to account for "Part 1", etc.)
+    valid_rule_bases = {p["policy_name"] for p in POLICIES}
+    valid_rule_bases.add("Block: HaGeZi Most Abused TLDs")
 
     logger.info("Scanning for abandoned policies to clear room for new ones...")
     for rule in existing_rules[:]:
         if "IoT Bypass" in rule["name"] or "Custom" in rule["name"] or "Keywords" in rule["name"]: continue
         if any(target in rule["name"] for target in Config.SCRUB_TARGETS):
-            if rule["name"] not in valid_rule_names:
+            # If the rule doesn't start with any of our active policy bases, it's abandoned
+            is_valid_base = any(rule["name"].startswith(base) for base in valid_rule_bases)
+            if not is_valid_base:
                 try:
                     cf.delete_rule(rule["id"])
                     existing_rules.remove(rule)
@@ -407,16 +439,16 @@ def main() -> None:
     all_active_rule_names = []
 
     # Push zero-quota native TLD firewall rules
-    if tld_regex_str:
-        tld_rule_name = sync_tld_regex_rule(cf, existing_rules, tld_regex_str)
-        all_active_rule_names.append(tld_rule_name)
+    if tlds_list:
+        tld_rule_name = sync_tld_regex_rule(cf, existing_rules, tlds_list)
+        if tld_rule_name:
+            all_active_rule_names.append(tld_rule_name)
 
     # Sync primary chunks
     for policy, optimized_domains in compiled_policies:
-        used_ids, rule_name = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy)
-        if rule_name:  
-            all_active_list_ids.extend(used_ids)
-            all_active_rule_names.append(rule_name)
+        used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy)
+        all_active_list_ids.extend(used_ids)
+        all_active_rule_names.extend(rule_names)
 
     cleanup_orphans(cf, existing_lists, existing_rules, all_active_list_ids, all_active_rule_names)
     logger.info(f"✅ Sync completed in {time.perf_counter() - start:.2f} seconds.")
