@@ -9,11 +9,13 @@ from collections import Counter
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-# Global regex patterns compiled at runtime
+# Global regex patterns compiled at runtime for local quota-saving
 TLD_PATTERN = None
 NSFW_NUCLEAR_PATTERN = None
 NSFW_BOUNDARY_PATTERN = None
 DYNAMIC_DOMAIN_PATTERN = None
+STRUCTURAL_PATTERN = None
+AGGRESSIVE_TLD_PATTERN = None
 ALLOWED_DOMAINS = set()
 
 # ---------------------------------------------------------------------------
@@ -28,31 +30,46 @@ class Config:
     ACTIVE_TIER             = os.environ.get("ACTIVE_TIER", "pro++").strip().lower()
     ENABLE_TLD_KW_FILTERING = True
 
-    # --- TIER 1: NUCLEAR NSFW (Pure Wildcard) ---
-    # Highly specific strings that will never appear in a legitimate domain.
+    # --- TIER 1: NUCLEAR NSFW & TELEMETRY (Pure Wildcard) ---
     # Dropped instantly if they match ANY part of the domain string.
     NSFW_NUCLEAR_KEYWORDS = [
         "pornhub", "onlyfans", "xvideos", "chaturbate", "bukkake", 
-        "deepthroat", "camgirl", "hentai", "xnxx", "xhamster", "rule34"
+        "deepthroat", "camgirl", "hentai", "xnxx", "xhamster", "rule34",
+        "adsystem", "telemetry", "tracking", "adlog", "pixeltrack", 
+        "user-metrics", "adserver", "click-tracker", "ad-delivery"
     ]
 
     # --- TIER 2: BOUNDARY NSFW (Anchored Match) ---
-    # Shorter/ambiguous terms. Wrapped in token anchors to prevent 
-    # breaking neutral sites like essex.gov.uk or popcorn.com.
+    # Wrapped in token anchors to prevent breaking neutral sites like essex.gov.uk
     NSFW_BOUNDARY_KEYWORDS = [
         "sex", "xxx", "porn", "nude", "milf", "slut", "fetish", "adult"
     ]
 
     # --- TIER 3: DYNAMIC SPECIFICITY ENGINE (Ad/Tracker Learning) ---
-    # Identifies root domains spawning massive sub-allocations across lists.
     BASE_EXACT_DOMAINS = [
         "doubleclick.net", "appsflyersdk.com", "amazon-adsystem.com", 
         "scorecardresearch.com", "crashlytics.com", "datadoghq.com"
     ]
     DYNAMIC_DOMAIN_MIN_FREQ = 15 
+
+    # --- TIER 4: STRUCTURAL HEURISTICS (Pattern Matching) ---
+    STRUCTURAL_REGEX_PATTERNS = [
+        r"(?:.*-){4,}",           # Drops ANY domain with 4 or more hyphens
+        r"[0-9]{8,}",             # Drops ANY domain with 8 consecutive numbers
+        r"[a-z0-9]{30,}\.",       # Drops ANY domain where a single word is 30+ chars long
+        r"^(?:xn--).*(?:xn--)",   # Drops domains hiding multiple punycode subdomains (Phishing)
+        r"\.xn--[a-z0-9\-]+$"     # THE TLD NUKE: Drops ALL Punycode/Internationalized TLDs
+    ]
+
+    # --- TIER 5: SCORCHED-EARTH TLDs ---
+    AGGRESSIVE_TLDS = [
+        "zip", "review", "country", "kim", "cricket", "science", 
+        "work", "party", "gq", "link", "cam", "xyz", "tk", "ml", "ga", "cf"
+    ]
+
     CLOUDFLARE_REGEX_MAX_CHAR = 3500
 
-    # Explicit protection layer to bypass potential downstream upstream poisoning
+    # Explicit protection layer to bypass potential upstream poisoning
     SAFE_INFRA_DOMAINS = {
         "github.com", "google.com", "apple.com", "microsoft.com", 
         "windows.com", "amazonaws.com", "cloudflare.com", "fastly.net", "azure.com"
@@ -146,8 +163,11 @@ class CloudflareAPI:
     def get_rules(self): return self._paginate("rules")
     def delete_list(self, lid): return self._request("DELETE", f"lists/{lid}")
     def delete_rule(self, rid): return self._request("DELETE", f"rules/{rid}")
+    
+    # Corrected keyword arguments to match API spec
     def create_list(self, name, items, desc=""): return self._request("POST", "lists", json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
     def update_list(self, lid, name, items, desc=""): return self._request("PUT", f"lists/{lid}", json={"name": name, "items": items, "description": desc})
+    
     def create_rule(self, data): return self._request("POST", "rules", json=data)
     def update_rule(self, rid, data): return self._request("PUT", f"rules/{rid}", json=data)
 
@@ -193,6 +213,8 @@ def is_valid_domain(domain: str) -> tuple[str | None, str | None]:
         
     if Config.ENABLE_TLD_KW_FILTERING:
         if TLD_PATTERN and TLD_PATTERN.search(domain): return None, "tld"
+        if AGGRESSIVE_TLD_PATTERN and AGGRESSIVE_TLD_PATTERN.search(domain): return None, "aggressive_tld"
+        if STRUCTURAL_PATTERN and STRUCTURAL_PATTERN.search(domain): return None, "structural"
         if NSFW_NUCLEAR_PATTERN and NSFW_NUCLEAR_PATTERN.search(domain): return None, "nsfw_nuclear"
         if NSFW_BOUNDARY_PATTERN and NSFW_BOUNDARY_PATTERN.search(domain): return None, "nsfw_boundary"
         if DYNAMIC_DOMAIN_PATTERN and DYNAMIC_DOMAIN_PATTERN.search(domain): return None, "dynamic_tracker"
@@ -232,6 +254,11 @@ def sync_regex_rule(cf, existing_rules, items, rule_name, rule_type):
         regex_str = "|".join(escaped_items)
         expr_parts.append(f'any(dns.domains[*] matches "(?i)(^|\\\\.)({regex_str})$")')
         
+    elif rule_type == "structural":
+        # Items are already regex strings
+        for pat in items:
+            expr_parts.append(f'any(dns.domains[*] matches "(?i){pat}")')
+            
     traffic_expr = " or ".join(expr_parts)
     existing_rule = next((r for r in existing_rules if r["name"] == rule_name), None)
     
@@ -293,6 +320,10 @@ def main() -> None:
                 if line.startswith("||*."):
                     parts = line.split("^$denyallow=")
                     raw = parts[0].replace("||*.", "").replace("^", "")
+                    
+                    # Punycode Optimization: Skip downloading because Structural Regex handles them
+                    if raw.startswith("xn--"): continue
+                    
                     if raw: tlds_list.append(raw)
                     if len(parts) > 1:
                         for d in parts[1].split("|"): ALLOWED_DOMAINS.add(d.strip().lower())
@@ -319,8 +350,11 @@ def main() -> None:
 
     if Config.ENABLE_TLD_KW_FILTERING: Config.OFFLOAD_DOMAINS = extract_dynamic_domains(all_raw_domains)
 
-    global TLD_PATTERN, NSFW_NUCLEAR_PATTERN, NSFW_BOUNDARY_PATTERN, DYNAMIC_DOMAIN_PATTERN
-    if tlds_list: TLD_PATTERN = re.compile(f"(?i)\\.(?:{'|'.join(tlds_list)})$")
+    # Compile Runtime Local Regex Patterns for Quota Offloading
+    global TLD_PATTERN, NSFW_NUCLEAR_PATTERN, NSFW_BOUNDARY_PATTERN, DYNAMIC_DOMAIN_PATTERN, STRUCTURAL_PATTERN, AGGRESSIVE_TLD_PATTERN
+    
+    if tlds_list: 
+        TLD_PATTERN = re.compile(f"(?i)\\.(?:{'|'.join(tlds_list)})$")
     
     if Config.NSFW_NUCLEAR_KEYWORDS:
         NSFW_NUCLEAR_PATTERN = re.compile(f"(?i){'|'.join(re.escape(kw) for kw in Config.NSFW_NUCLEAR_KEYWORDS)}")
@@ -331,9 +365,15 @@ def main() -> None:
     if Config.OFFLOAD_DOMAINS:
         escaped_domains = [d.replace(".", r"\.") for d in Config.OFFLOAD_DOMAINS]
         DYNAMIC_DOMAIN_PATTERN = re.compile(f"(?i)(?:^|\\.)(?:{'|'.join(escaped_domains)})$")
+        
+    if Config.STRUCTURAL_REGEX_PATTERNS:
+        STRUCTURAL_PATTERN = re.compile(f"(?i)(?:{'|'.join(Config.STRUCTURAL_REGEX_PATTERNS)})")
+        
+    if Config.AGGRESSIVE_TLDS:
+        AGGRESSIVE_TLD_PATTERN = re.compile(f"(?i)\\.(?:{'|'.join(Config.AGGRESSIVE_TLDS)})$")
 
     fetched_lists = {}
-    offloaded = {"tld": 0, "nuclear": 0, "boundary": 0, "tracker": 0}
+    offloaded = {"tld": 0, "nuclear": 0, "boundary": 0, "tracker": 0, "structural": 0, "agg_tld": 0}
     
     for name, raw_domains in raw_lists.items():
         filtered_set = set()
@@ -344,6 +384,8 @@ def main() -> None:
             elif reason == "nsfw_nuclear": offloaded["nuclear"] += 1
             elif reason == "nsfw_boundary": offloaded["boundary"] += 1
             elif reason == "dynamic_tracker": offloaded["tracker"] += 1
+            elif reason == "structural": offloaded["structural"] += 1
+            elif reason == "aggressive_tld": offloaded["agg_tld"] += 1
         fetched_lists[name] = filtered_set
 
     compiled_policies = []
@@ -360,7 +402,8 @@ def main() -> None:
         logger.error(f"Quota Exceeded: {total_doms:,} domains")
         return
 
-    logger.info(f"Offloads -> TLDs: {offloaded['tld']:,} | Trackers: {offloaded['tracker']:,} | Nuclear NSFW: {offloaded['nuclear']:,} | Boundary NSFW: {offloaded['boundary']:,}")
+    logger.info(f"Offloads -> Abuse TLDs: {offloaded['tld']:,} | Trackers: {offloaded['tracker']:,} | Nuclear NSFW: {offloaded['nuclear']:,}")
+    logger.info(f"Offloads -> Boundary NSFW: {offloaded['boundary']:,} | Structural DGA/Puny: {offloaded['structural']:,} | Aggressive TLDs: {offloaded['agg_tld']:,}")
     logger.info(f"Syncing {total_doms:,} domains to Cloudflare.")
 
     existing_lists, existing_rules = cf.get_lists(), cf.get_rules()
@@ -370,7 +413,8 @@ def main() -> None:
         valid_rule_bases.update({
             "Block: HaGeZi Most Abused TLDs", "Allow: HaGeZi TLD Exceptions", 
             "Block: Dynamic Exact Base Domains", "Block: NSFW Nuclear Keywords", 
-            "Block: NSFW Boundary Keywords"
+            "Block: NSFW Boundary Keywords", "Block: Structural Heuristics",
+            "Block: Aggressive TLDs"
         })
 
     all_ids, all_rules = [], []
@@ -384,6 +428,8 @@ def main() -> None:
         if Config.OFFLOAD_DOMAINS: all_rules.append(sync_regex_rule(cf, existing_rules, Config.OFFLOAD_DOMAINS, "Block: Dynamic Exact Base Domains", "base_domain"))
         if Config.NSFW_NUCLEAR_KEYWORDS: all_rules.append(sync_regex_rule(cf, existing_rules, Config.NSFW_NUCLEAR_KEYWORDS, "Block: NSFW Nuclear Keywords", "nsfw_nuclear"))
         if Config.NSFW_BOUNDARY_KEYWORDS: all_rules.append(sync_regex_rule(cf, existing_rules, Config.NSFW_BOUNDARY_KEYWORDS, "Block: NSFW Boundary Keywords", "nsfw_boundary"))
+        if Config.STRUCTURAL_REGEX_PATTERNS: all_rules.append(sync_regex_rule(cf, existing_rules, Config.STRUCTURAL_REGEX_PATTERNS, "Block: Structural Heuristics", "structural"))
+        if Config.AGGRESSIVE_TLDS: all_rules.append(sync_regex_rule(cf, existing_rules, Config.AGGRESSIVE_TLDS, "Block: Aggressive TLDs", "tld"))
 
     for pol, doms in compiled_policies:
         ids, rns = sync_to_cloudflare(cf, existing_lists, existing_rules, doms, pol)
