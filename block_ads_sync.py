@@ -1,16 +1,3 @@
-Here is the fixed and improved version of your Cloudflare Zero Trust syncing script.
-
-### Key Fixes & Improvements:
-
-1. **Implemented the Categorization Logic:** Fixed the massive `# Logic stub for categorization` bug. The script now correctly aggregates domains on a per-list basis, so the `include` and `exclude` directives in your `POLICIES` config actually work.
-2. **Fixed Regex Rule Generation:** Cloudflare requires valid RE2 syntax strings. Instead of doing 100 individual `any(...)` evaluations (which is inefficient and hits limits), it now combines the terms into a single efficient regex check: `any(dns.domains[*] matches "(?i)(term1|term2|term3)")`.
-3. **Removed Unsafe Global State Update:** Moved pattern compilation out of global definitions so it securely passes through the functions, avoiding namespace collision and evaluation bugs.
-4. **List Cleanup (Garbage Collection):** Added logic to delete "orphaned" lists. If a policy shrinks from 5 lists to 4, the old script left the 5th list sitting there forever. It now actively deletes lists no longer needed by a policy.
-5. **Memory and Speed Optimization:** Applied set differences correctly during policy processing and optimized loop comprehensions for faster string evaluation.
-
-### The Improved Code
-
-```python
 import os
 import re
 import logging
@@ -358,5 +345,3 @@ def main():
 
 if __name__ == "__main__": 
     main()
-
-```
