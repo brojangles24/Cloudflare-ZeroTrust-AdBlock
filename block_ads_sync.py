@@ -76,7 +76,7 @@ IP_PATTERN = re.compile(
 ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/spam-tlds.txt"
 
 BLOCKLIST_URLS = {
-    "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+    "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/normal-onlydomains.txt",
     "HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
@@ -92,11 +92,8 @@ POLICIES = [
     # Normal applies to ALL users (Base layer)
     {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (All Users)", "action": "block", "identity_condition": None, "include": ["HaGeZi Normal"], "exclude": []},
     
-    # Ultimate Delta (Ultimate minus Normal) applies to everyone EXCEPT Secondary
-    {"prefix": "L_Ultimate", "policy_name": "Block: HaGeZi Ultimate Delta (Except Secondary)", "action": "block", "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")', "include": ["HaGeZi Ultimate"], "exclude": ["HaGeZi Normal"]},
-    
-    # Social applies to Primary Only
-    {"prefix": "L_Social", "policy_name": "Block: HaGeZi Social (Primary Only)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "include": ["HaGeZi Social"], "exclude": []},
+    # Combined Ultimate & Social Delta (minus Normal) applies to everyone EXCEPT Secondary
+    {"prefix": "L_UltSoc", "policy_name": "Block: HaGeZi Ultimate & Social (Except Secondary)", "action": "block", "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")', "include": ["HaGeZi Ultimate", "HaGeZi Social"], "exclude": ["HaGeZi Normal"]},
     
     # Generic Blocklists (Apply to all)
     {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "include": ["Hagezi NSFW"], "exclude": []},
