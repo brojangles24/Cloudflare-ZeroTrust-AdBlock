@@ -76,7 +76,7 @@ IP_PATTERN = re.compile(
 ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/spam-tlds.txt"
 
 BLOCKLIST_URLS = {
-    "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/normal-onlydomains.txt",
+    "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
     "HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
@@ -89,18 +89,22 @@ BLOCKLIST_URLS = {
 }
 
 POLICIES = [
-    # Primary mapped to Normal, Secondary mapped to Ultimate
-    {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (Primary)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "include": ["HaGeZi Normal"], "exclude": []},
-    {"prefix": "L_Ultimate", "policy_name": "Block: HaGeZi Ultimate (Secondary)", "action": "block", "identity_condition": f'identity.email == "{Config.SECONDARY_EMAIL}"', "include": ["HaGeZi Ultimate"], "exclude": []},
+    # Normal applies to ALL users (Base layer)
+    {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (All Users)", "action": "block", "identity_condition": None, "include": ["HaGeZi Normal"], "exclude": []},
     
-    # Generic Blocklists
+    # Ultimate Delta (Ultimate minus Normal) applies to everyone EXCEPT Secondary
+    {"prefix": "L_Ultimate", "policy_name": "Block: HaGeZi Ultimate Delta (Except Secondary)", "action": "block", "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")', "include": ["HaGeZi Ultimate"], "exclude": ["HaGeZi Normal"]},
+    
+    # Social applies to Primary Only
+    {"prefix": "L_Social", "policy_name": "Block: HaGeZi Social (Primary Only)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "include": ["HaGeZi Social"], "exclude": []},
+    
+    # Generic Blocklists (Apply to all)
     {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "include": ["Hagezi NSFW"], "exclude": []},
     {"prefix": "L_Fake", "policy_name": "Block: HaGeZi Fake", "action": "block", "identity_condition": None, "include": ["HaGeZi Fake"], "exclude": []},
     {"prefix": "L_NoSafe", "policy_name": "Block: HaGeZi Safesearch Not Support", "action": "block", "identity_condition": None, "include": ["HaGeZi Safesearch Not Support"], "exclude": []},
     {"prefix": "L_Bypass", "policy_name": "Block: HaGeZi Bypass Block", "action": "block", "identity_condition": None, "include": ["HaGeZi Bypass Block"], "exclude": []},
     {"prefix": "L_AntiPiracy", "policy_name": "Block: HaGeZi Anti Piracy", "action": "block", "identity_condition": None, "include": ["HaGeZi Anti Piracy"], "exclude": []},
     {"prefix": "L_DynDNS", "policy_name": "Block: HaGeZi Dynamic DNS", "action": "block", "identity_condition": None, "include": ["HaGeZi Dynamic DNS"], "exclude": []},
-    {"prefix": "L_Social", "policy_name": "Block: HaGeZi Social (Secondary Only)", "action": "block", "identity_condition": f'identity.email == "{Config.SECONDARY_EMAIL}"', "include": ["HaGeZi Social"], "exclude": []},
 ]
 
 if Config.ENABLE_TIF_MINI:
