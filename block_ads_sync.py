@@ -123,7 +123,6 @@ class CloudflareAPI:
 # ---------------------------------------------------------------------------
 def get_base_domain(domain):
     parts = domain.split('.')
-    # Simple heuristic to catch .co.uk, .com.au, etc.
     return ".".join(parts[-3:]) if len(parts) > 2 and len(parts[-2]) <= 3 and len(parts[-1]) <= 2 else ".".join(parts[-2:])
 
 def run_autonomous_profiling(all_domains):
@@ -146,7 +145,6 @@ def run_autonomous_profiling(all_domains):
         """Keep combined regex length strictly under Cloudflare limits."""
         acc, current_len = [], 0
         for i in items:
-            # +1 accounts for the '|' separator
             if current_len + len(i) + 1 > Config.CLOUDFLARE_REGEX_MAX_CHAR: 
                 break
             acc.append(i)
@@ -187,7 +185,6 @@ def sync_regex_rule(cf, existing_rules, items, rule_name, rule_type):
     if not items: 
         return ""
     
-    # RE2 matching strings optimized to use a single 'matches' check vs multiple arrays
     if rule_type == "nuclear":
         joined = "|".join(re.escape(k) for k in items)
         traffic = f'any(dns.domains[*] matches "(?i)({joined})")'
@@ -221,7 +218,6 @@ def sync_to_cloudflare(cf, existing_lists, existing_rules, domains, policy):
     sorted_domains = sorted(domains)
     chunks = [sorted_domains[i : i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
     
-    # Identify lists already prefixed by this policy
     policy_existing_lists = sorted([l for l in existing_lists if l["name"].startswith(policy["prefix"] + " ")], key=lambda x: x["name"])
     used_ids = []
 
@@ -240,19 +236,16 @@ def sync_to_cloudflare(cf, existing_lists, existing_rules, domains, policy):
         res = cf.create_list(list_name, items, desc=chunk_hash)
         return res["result"]["id"]
 
-    # Concurrently update lists
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as executor:
         futures = [executor.submit(process_chunk, i, c) for i, c in enumerate(chunks)]
         for f in concurrent.futures.as_completed(futures):
             used_ids.append(f.result())
 
-    # Garbage collection: Delete old lists from Cloudflare that are no longer needed
     unused_lists = [l for l in policy_existing_lists if l["id"] not in used_ids]
     for old_list in unused_lists:
         logger.info(f"Deleting unused list: {old_list['name']}")
         cf.delete_list(old_list["id"])
 
-    # Update or Create the Rule wrapping these lists
     traffic = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
     payload = {"name": policy['policy_name'], "action": policy.get("action", "block"), "enabled": True, "filters": ["dns"], "traffic": traffic}
     
@@ -279,7 +272,6 @@ def main():
     domains_by_list = {}
     all_raw_domains = set()
 
-    # 1. Fetch Lists independently so we can assign them to policies correctly
     logger.info("Fetching blocklists...")
     def fetch_url(url):
         try:
@@ -302,7 +294,6 @@ def main():
     nuc, bnd, bases = run_autonomous_profiling(all_raw_domains)
     burner_subdomains = set()
     
-    # 2. Setup the Domain Filter and filter individual sets
     domain_filter = DomainFilter(nuc, bnd, bases, burner_subdomains)
     
     filtered_domains_by_list = {}
@@ -317,24 +308,19 @@ def main():
     existing_lists = cf.get_lists()
     existing_rules = cf.get_rules()
     
-    # 3. Sync Regex Global Rules
     sync_regex_rule(cf, existing_rules, nuc, "Block: AI Nuclear Keywords", "nuclear")
     sync_regex_rule(cf, existing_rules, bnd, "Block: AI Boundary Keywords", "boundary")
     sync_regex_rule(cf, existing_rules, bases, "Block: AI Dynamic Base Domains", "base")
     sync_regex_rule(cf, existing_rules, Config.STRUCTURAL_REGEX, "Block: AI Structural Heuristics", "structural")
     
     if burner_subdomains:
-        # Taking top 50 burners to ensure we respect RE2 length rules.
         sync_regex_rule(cf, existing_rules, sorted(list(burner_subdomains))[:50], "Block: AI Dynamic Burners", "base")
 
-    # 4. Process Categorized Policies
     for pol in POLICIES:
         policy_domains = set()
-        # Combine includes
         for inc in pol.get("include", []):
             policy_domains.update(filtered_domains_by_list.get(inc, set()))
             
-        # Subtract excludes
         for exc in pol.get("exclude", []):
             policy_domains.difference_update(filtered_domains_by_list.get(exc, set()))
             
