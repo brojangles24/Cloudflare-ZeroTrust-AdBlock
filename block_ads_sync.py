@@ -5,6 +5,9 @@ import requests
 import concurrent.futures
 import time
 import hashlib
+import io
+import zipfile
+import gzip
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
@@ -22,13 +25,11 @@ class Config:
     PRIMARY_EMAIL           = os.environ.get("PRIMARY_EMAIL", "")   
     SECONDARY_EMAIL         = os.environ.get("SECONDARY_EMAIL", "")  
     
-    # Reads the tier from GitHub Variables. Defaults to pro++ if missing.
-    ACTIVE_TIER             = os.environ.get("ACTIVE_TIER", "pro++").strip().lower()
-    
     # --- TOGGLES ---
     ENABLE_TLD_KW_FILTERING = True
+    ENABLE_TIF_MINI         = False # Toggle for adding TIF Mini
     
-    # Static custom explicit keywords used to drop matching domains locally (saves Cloudflare quota)
+    # Static custom explicit keywords used to drop matching domains locally
     OFFLOAD_KEYWORDS = [
         "blowjob", "threesome", "gangbang", "deepthroat", "bukkake", 
         "tits", "fuck", "onlyfans", "porn", "xxx", "sex",
@@ -45,6 +46,7 @@ class Config:
         "Base", 
         "Pro++", 
         "Ultimate",
+        "Normal",
         "Social",
         "Block:",
         "Allow:",
@@ -74,9 +76,8 @@ IP_PATTERN = re.compile(
 ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/spam-tlds.txt"
 
 BLOCKLIST_URLS = {
-    "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.mini-onlydomains.txt",
-    "HaGeZi Pro++ Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus.mini-onlydomains.txt",
-    "HaGeZi Ultimate Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate.mini-onlydomains.txt",
+    "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/normal-onlydomains.txt",
+    "HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi Safesearch Not Support": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
@@ -88,25 +89,22 @@ BLOCKLIST_URLS = {
 }
 
 POLICIES = [
-    {"prefix": "L_Pro", "policy_name": "Block: HaGeZi Pro Mini", "action": "block", "identity_condition": None, "include": ["HaGeZi Pro Mini"], "exclude": []},
+    # Primary mapped to Normal, Secondary mapped to Ultimate
+    {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (Primary)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "include": ["HaGeZi Normal"], "exclude": []},
+    {"prefix": "L_Ultimate", "policy_name": "Block: HaGeZi Ultimate (Secondary)", "action": "block", "identity_condition": f'identity.email == "{Config.SECONDARY_EMAIL}"', "include": ["HaGeZi Ultimate"], "exclude": []},
+    
+    # Generic Blocklists
     {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "include": ["Hagezi NSFW"], "exclude": []},
     {"prefix": "L_Fake", "policy_name": "Block: HaGeZi Fake", "action": "block", "identity_condition": None, "include": ["HaGeZi Fake"], "exclude": []},
     {"prefix": "L_NoSafe", "policy_name": "Block: HaGeZi Safesearch Not Support", "action": "block", "identity_condition": None, "include": ["HaGeZi Safesearch Not Support"], "exclude": []},
     {"prefix": "L_Bypass", "policy_name": "Block: HaGeZi Bypass Block", "action": "block", "identity_condition": None, "include": ["HaGeZi Bypass Block"], "exclude": []},
     {"prefix": "L_AntiPiracy", "policy_name": "Block: HaGeZi Anti Piracy", "action": "block", "identity_condition": None, "include": ["HaGeZi Anti Piracy"], "exclude": []},
     {"prefix": "L_DynDNS", "policy_name": "Block: HaGeZi Dynamic DNS", "action": "block", "identity_condition": None, "include": ["HaGeZi Dynamic DNS"], "exclude": []},
-    {"prefix": "L_Social", "policy_name": "Block: HaGeZi Social (Primary Only)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "include": ["HaGeZi Social"], "exclude": []},
-    {"prefix": "L_TIF", "policy_name": "Block: HaGeZi TIF Mini", "action": "block", "identity_condition": None, "include": ["HaGeZi TIF Mini"], "exclude": []},
+    {"prefix": "L_Social", "policy_name": "Block: HaGeZi Social (Secondary Only)", "action": "block", "identity_condition": f'identity.email == "{Config.SECONDARY_EMAIL}"', "include": ["HaGeZi Social"], "exclude": []},
 ]
 
-if Config.ACTIVE_TIER == "pro++":
-    POLICIES.append({"prefix": "L_ProPlus", "policy_name": "Block: HaGeZi Pro++ Mini (Except Secondary)", "action": "block", "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")', "include": ["HaGeZi Pro++ Mini"], "exclude": ["HaGeZi Pro Mini"]})
-    logger.info("Active Tier set to: Pro++")
-elif Config.ACTIVE_TIER == "ultimate":
-    POLICIES.append({"prefix": "L_Ultimate", "policy_name": "Block: HaGeZi Ultimate Mini (Except Secondary)", "action": "block", "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")', "include": ["HaGeZi Ultimate Mini"], "exclude": ["HaGeZi Pro Mini"]})
-    logger.info("Active Tier set to: Ultimate")
-else:
-    logger.info("Active Tier set to: Pro. No delta list required.")
+if Config.ENABLE_TIF_MINI:
+    POLICIES.append({"prefix": "L_TIF", "policy_name": "Block: HaGeZi TIF Mini", "action": "block", "identity_condition": None, "include": ["HaGeZi TIF Mini"], "exclude": []})
 
 # ---------------------------------------------------------------------------
 # 2. Cloudflare API Client
@@ -140,14 +138,82 @@ class CloudflareAPI:
     def get_rules(self):                                      return self._request("GET",    "rules").get("result") or []
     def delete_list(self, lid):                               return self._request("DELETE", f"lists/{lid}")
     def delete_rule(self, rid):                               return self._request("DELETE", f"rules/{rid}")
-    def create_list(self, name, items, desc=""):              return self._request("POST",   "lists",          json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
-    def update_list(self, lid, name, items, desc=""):         return self._request("PUT",    f"lists/{lid}",   json={"name": name, "items": items, "description": desc})
-    def create_rule(self, data):                              return self._request("POST",   "rules",          json=data)
-    def update_rule(self, rid, data):                         return self._request("PUT",    f"rules/{rid}",   json=data)
+    def create_list(self, name, items, desc=""):              return self._request("POST",   "lists",         json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
+    def update_list(self, lid, name, items, desc=""):         return self._request("PUT",    f"lists/{lid}",  json={"name": name, "items": items, "description": desc})
+    def create_rule(self, data):                              return self._request("POST",   "rules",         json=data)
+    def update_rule(self, rid, data):                         return self._request("PUT",    f"rules/{rid}",  json=data)
+
 
 # ---------------------------------------------------------------------------
-# 3. Parsing & Domain Logic
+# 3. Relevance Filtering & Domain Logic
 # ---------------------------------------------------------------------------
+TOP_LISTS = [
+    ("https://tranco-list.eu/top-1m.csv.zip", 1, False, "zip"),
+    ("http://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip", 1, False, "zip"),
+    ("https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz", 0, True, "gzip"),
+    ("https://downloads.majestic.com/majestic_million.csv", 2, True, "raw"),
+    ("https://www.domcop.com/files/top/top10milliondomains.csv.zip", 1, True, "zip"),
+    ("https://builtwith.com/dl/builtwith-top1m.zip", 0, False, "zip"),
+]
+
+def has_suffix_match(host: str, lookup_set: set[str]) -> bool:
+    if host in lookup_set: return True
+    idx = host.find('.')
+    while idx != -1:
+        if host[idx+1:] in lookup_set: return True
+        idx = host.find('.', idx + 1)
+    return False
+
+def _parse_csv_lines(iterable, col_idx: int, skip_header: bool) -> set[str]:
+    domains = set()
+    for i, line in enumerate(iterable):
+        if skip_header and i == 0: continue
+        parts = line.split(',')
+        if len(parts) > col_idx:
+            dom = parts[col_idx].strip().lower().strip('"')
+            if dom and "." in dom: domains.add(dom)
+    return domains
+
+def fetch_top_list(url: str, col_idx: int, skip_header: bool, compression: str, session: requests.Session) -> set[str]:
+    try:
+        r = session.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=90)
+        r.raise_for_status()
+        if compression == "zip":
+            with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                with io.TextIOWrapper(z.open(z.namelist()[0]), encoding='utf-8', errors='ignore') as f:
+                    return _parse_csv_lines(f, col_idx, skip_header)
+        elif compression == "gzip":
+            with gzip.GzipFile(fileobj=io.BytesIO(r.content)) as gz:
+                with io.TextIOWrapper(gz, encoding='utf-8', errors='ignore') as f:
+                    return _parse_csv_lines(f, col_idx, skip_header)
+        else:
+            return _parse_csv_lines(r.text.splitlines(), col_idx, skip_header)
+    except Exception as e:
+        logger.error(f"Error fetching top list {url}: {e}")
+    return set()
+
+class RelevanceChecker:
+    def __init__(self, session: requests.Session):
+        self.master_allowlist: set[str] = set()
+        self.session = session
+
+    def build_dataset(self, max_workers: int = 5) -> None:
+        logger.info(f"Building relevance dataset using {max_workers} threads...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(fetch_top_list, url, col, skip, comp, self.session)
+                for url, col, skip, comp in TOP_LISTS
+            ]
+            for future in concurrent.futures.as_completed(futures):
+                self.master_allowlist.update(future.result())
+        logger.info(f"Relevance dataset built. Total unique root domains: {len(self.master_allowlist):,}")
+
+    def is_relevant(self, domain: str) -> bool:
+        clean_domain = domain.lower().strip('.')
+        if clean_domain.startswith("www."):
+            clean_domain = clean_domain[4:]
+        return has_suffix_match(clean_domain, self.master_allowlist)
+
 def parse_adguard_tld_list(session: requests.Session) -> list[str]:
     """Parses AdGuard syntax to dynamically extract structural blocked TLDs and exceptions."""
     global ALLOWED_DOMAINS
@@ -197,10 +263,11 @@ def is_valid_domain(domain: str) -> tuple[str | None, str | None]:
             
     return domain, None
 
-def fetch_url(session: requests.Session, name: str, url: str) -> tuple[str, set[str], int, int]:
+def fetch_url(session: requests.Session, name: str, url: str, checker: RelevanceChecker = None) -> tuple[str, set[str], int, int, int]:
     valid_domains = set()
     tld_offloaded_count = 0
     kw_offloaded_count = 0
+    irrelevant_count = 0
     try:
         resp = session.get(url, timeout=Config.REQUEST_TIMEOUT)
         resp.raise_for_status()
@@ -208,16 +275,21 @@ def fetch_url(session: requests.Session, name: str, url: str) -> tuple[str, set[
             line = line.strip()
             if not line or line[0] in ("#", "!", "/"): continue
             cleaned, offload_reason = is_valid_domain(line.split()[-1].lower())
+            
             if cleaned: 
-                valid_domains.add(cleaned)
+                # Run through Relevance Filter
+                if checker and not checker.is_relevant(cleaned):
+                    irrelevant_count += 1
+                else:
+                    valid_domains.add(cleaned)
             elif offload_reason == "tld":
                 tld_offloaded_count += 1
             elif offload_reason == "kw":
                 kw_offloaded_count += 1
-        logger.info(f"Fetched {name}: {len(valid_domains):,} domains (Offloaded TLD: {tld_offloaded_count:,}, KW: {kw_offloaded_count:,})")
+        logger.info(f"Fetched {name}: {len(valid_domains):,} kept (Offloaded TLD: {tld_offloaded_count:,}, KW: {kw_offloaded_count:,}, Irrelevant: {irrelevant_count:,})")
     except Exception as exc:
         logger.error(f"Error fetching {name}: {exc}")
-    return name, valid_domains, tld_offloaded_count, kw_offloaded_count
+    return name, valid_domains, tld_offloaded_count, kw_offloaded_count, irrelevant_count
 
 def optimize_domains(domains: set[str]) -> list[str]:
     reversed_sorted = sorted(d[::-1] for d in domains)
@@ -386,11 +458,15 @@ def main() -> None:
     dl_retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
     download_session.mount("https://", HTTPAdapter(max_retries=dl_retry))
 
+    # Initialize Relevance Checker & build allowance list from top 1M datasets
+    checker = RelevanceChecker(download_session)
+    checker.build_dataset(max_workers=Config.MAX_WORKERS)
+
     tlds_list = []
     if Config.ENABLE_TLD_KW_FILTERING:
         tlds_list = parse_adguard_tld_list(download_session)
     
-    # 2. Compile structural offload rules separately into target engine components
+    # Compile structural offload rules separately into target engine components
     global TLD_PATTERN, KW_PATTERN
     if tlds_list:
         tld_regex_str = "|".join(tlds_list)
@@ -400,18 +476,20 @@ def main() -> None:
     if kw_str:
         KW_PATTERN = re.compile(f"(?i){kw_str}")
 
-    # 3. Concurrently fetch and filter upstream lists tracking independent telemetry
+    # Concurrently fetch and filter upstream lists tracking independent telemetry
     fetched_lists = {}
     total_tld_offloaded = 0
     total_kw_offloaded = 0
+    total_irrelevant_pruned = 0
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
-        futures = {pool.submit(fetch_url, download_session, name, url): name for name, url in BLOCKLIST_URLS.items()}
+        futures = {pool.submit(fetch_url, download_session, name, url, checker): name for name, url in BLOCKLIST_URLS.items()}
         for future in concurrent.futures.as_completed(futures):
-            name, valid_set, tld_count, kw_count = future.result()
+            name, valid_set, tld_count, kw_count, irrelevant_count = future.result()
             fetched_lists[name] = valid_set
             total_tld_offloaded += tld_count
             total_kw_offloaded += kw_count
+            total_irrelevant_pruned += irrelevant_count
 
     compiled_policies = build_policy_sets(POLICIES, fetched_lists)
     optimized_allow_domains = optimize_domains(ALLOWED_DOMAINS) if ALLOWED_DOMAINS else []
@@ -423,6 +501,7 @@ def main() -> None:
 
     logger.info(f"Total domains offloaded by TLD rule: {total_tld_offloaded:,}")
     logger.info(f"Total domains offloaded by Keyword rule: {total_kw_offloaded:,}")
+    logger.info(f"Total domains pruned by Relevance Filter: {total_irrelevant_pruned:,}")
     logger.info(f"Total domains to sync to Cloudflare: {total_domains:,}. Proceeding...")
 
     existing_lists = cf.get_lists()
