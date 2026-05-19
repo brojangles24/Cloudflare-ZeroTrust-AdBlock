@@ -27,7 +27,7 @@ class Config:
     
     # --- TOGGLES ---
     ENABLE_TLD_KW_FILTERING = True
-    ENABLE_TIF_MINI         = False # Toggle for adding TIF Mini
+    ENABLE_TIF_MINI         = True # Toggle for adding TIF Mini
     
     # Static custom explicit keywords used to drop matching domains locally
     OFFLOAD_KEYWORDS = [
