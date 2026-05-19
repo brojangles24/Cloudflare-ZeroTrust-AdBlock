@@ -29,22 +29,22 @@ class Config:
     ENABLE_TLD_KW_FILTERING = True
 
     # --- TIER 1: NUCLEAR NSFW (Pure Wildcard) ---
-    # These terms are highly specific and will NEVER appear in a legitimate domain.
-    # Blocked if they appear ANYWHERE (e.g., tracking-pornhub-metrics.com -> Blocked)
+    # Highly specific strings that will never appear in a legitimate domain.
+    # Dropped instantly if they match ANY part of the domain string.
     NSFW_NUCLEAR_KEYWORDS = [
         "pornhub", "onlyfans", "xvideos", "chaturbate", "bukkake", 
         "deepthroat", "camgirl", "hentai", "xnxx", "xhamster", "rule34"
     ]
 
-    # --- TIER 2: BOUNDARY NSFW (Anchored) ---
-    # Shorter/risky terms. Anchored to prevent blocking "essex.com" or "popcorn.com"
-    # Blocked ONLY if standalone (e.g., sex.com, bad-sex-tracker.net)
+    # --- TIER 2: BOUNDARY NSFW (Anchored Match) ---
+    # Shorter/ambiguous terms. Wrapped in token anchors to prevent 
+    # breaking neutral sites like essex.gov.uk or popcorn.com.
     NSFW_BOUNDARY_KEYWORDS = [
         "sex", "xxx", "porn", "nude", "milf", "slut", "fetish", "adult"
     ]
 
     # --- TIER 3: DYNAMIC SPECIFICITY ENGINE (Ad/Tracker Learning) ---
-    # Learns dynamic root domains (like doubleclick.net) from the threat feeds
+    # Identifies root domains spawning massive sub-allocations across lists.
     BASE_EXACT_DOMAINS = [
         "doubleclick.net", "appsflyersdk.com", "amazon-adsystem.com", 
         "scorecardresearch.com", "crashlytics.com", "datadoghq.com"
@@ -52,7 +52,7 @@ class Config:
     DYNAMIC_DOMAIN_MIN_FREQ = 15 
     CLOUDFLARE_REGEX_MAX_CHAR = 3500
 
-    # Domains that should NEVER be dynamically blocked by the AI
+    # Explicit protection layer to bypass potential downstream upstream poisoning
     SAFE_INFRA_DOMAINS = {
         "github.com", "google.com", "apple.com", "microsoft.com", 
         "windows.com", "amazonaws.com", "cloudflare.com", "fastly.net", "azure.com"
@@ -69,7 +69,7 @@ class Config:
     @classmethod
     def validate(cls):
         missing = [k for k in ("API_TOKEN", "ACCOUNT_ID", "PRIMARY_EMAIL", "SECONDARY_EMAIL") if not getattr(cls, k)]
-        if missing: raise EnvironmentError(f"Missing env vars: {', '.join(missing)}")
+        if missing: raise EnvironmentError(f"Missing environment variables: {', '.join(missing)}")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", datefmt="%H:%M:%S")
 logger = logging.getLogger(__name__)
@@ -146,10 +146,10 @@ class CloudflareAPI:
     def get_rules(self): return self._paginate("rules")
     def delete_list(self, lid): return self._request("DELETE", f"lists/{lid}")
     def delete_rule(self, rid): return self._request("DELETE", f"rules/{rid}")
-    def create_list(self, n, i, d=""): return self._request("POST", "lists", json={"name": n, "type": "DOMAIN", "items": i, "description": d})
-    def update_list(self, l, n, i, d=""): return self._request("PUT", f"lists/{l}", json={"name": n, "items": i, "description": d})
-    def create_rule(self, d): return self._request("POST", "rules", json=d)
-    def update_rule(self, r, d): return self._request("PUT", f"rules/{r}", json=d)
+    def create_list(self, name, items, desc=""): return self._request("POST", "lists", json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
+    def update_list(self, lid, name, items, desc=""): return self._request("PUT", f"lists/{lid}", json={"name": name, "items": items, "description": desc})
+    def create_rule(self, data): return self._request("POST", "rules", json=data)
+    def update_rule(self, rid, data): return self._request("PUT", f"rules/{rid}", json=data)
 
 # ---------------------------------------------------------------------------
 # 3. Dynamic Base Domain Engine
@@ -193,11 +193,8 @@ def is_valid_domain(domain: str) -> tuple[str | None, str | None]:
         
     if Config.ENABLE_TLD_KW_FILTERING:
         if TLD_PATTERN and TLD_PATTERN.search(domain): return None, "tld"
-        # Match Nuclear Wildcards
         if NSFW_NUCLEAR_PATTERN and NSFW_NUCLEAR_PATTERN.search(domain): return None, "nsfw_nuclear"
-        # Match Boundary Wildcards
         if NSFW_BOUNDARY_PATTERN and NSFW_BOUNDARY_PATTERN.search(domain): return None, "nsfw_boundary"
-        # Match Dynamic Exact Tracker Domains
         if DYNAMIC_DOMAIN_PATTERN and DYNAMIC_DOMAIN_PATTERN.search(domain): return None, "dynamic_tracker"
         
     return domain, None
@@ -223,17 +220,14 @@ def sync_regex_rule(cf, existing_rules, items, rule_name, rule_type):
         for chunk in chunks: expr_parts.append(f'any(dns.domains[*] matches "(?i)\\.(?:{"|".join(chunk)})$")')
         
     elif rule_type == "nsfw_nuclear":
-        # Pure aggressive wildcard match 
         regex_str = "|".join(re.escape(kw) for kw in items)
         expr_parts.append(f'any(dns.domains[*] matches "(?i)({regex_str})")')
         
     elif rule_type == "nsfw_boundary":
-        # Safer boundary match for short/risky words
         regex_str = "|".join(re.escape(kw) for kw in items)
         expr_parts.append(f'any(dns.domains[*] matches "(?i)(?:^|[\\\\.\\\\-])({regex_str})(?:[\\\\.\\\\-]|$)")')
         
     elif rule_type == "base_domain":
-        # Exact match for dynamic base domains
         escaped_items = [d.replace(".", r"\.") for d in items]
         regex_str = "|".join(escaped_items)
         expr_parts.append(f'any(dns.domains[*] matches "(?i)(^|\\\\.)({regex_str})$")')
