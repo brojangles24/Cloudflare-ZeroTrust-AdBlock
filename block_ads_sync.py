@@ -26,15 +26,18 @@ class Config:
     
     ACTIVE_TIER             = os.environ.get("ACTIVE_TIER", "pro++").strip().lower()
     
-    # --- TOGGLES & AGGRESSIVE OFFLOAD THRESHOLDS ---
     ENABLE_TLD_KW_FILTERING = True
-    HEURISTIC_THRESHOLD     = 30   # Converts base domains with 30+ subdomains to regex
-    DYNAMIC_KEYWORD_COUNT   = 35   # Extracts top 35 tracking/spam keywords globally
-    IGNORE_KEYWORDS         = {
-        "www", "com", "net", "org", "info", "site", "co", "xyz", "online", "top", "web", 
-        "app", "link", "cam", "video", "free", "api", "cdn", "status", "edge", "static", 
-        "cloud", "dns", "srv", "dev", "hub", "sys", "net", "ad", "ads"
-    }
+    HEURISTIC_THRESHOLD     = 20   # Compress into regex if 20+ subdomains share a base
+    
+    # Highly specific ad-tech, tracking, and telemetry keywords to offload via Regex
+    TARGETED_AD_KEYWORDS    = [
+        "doubleclick", "pixel", "adsystem", "adservice", "taboola", "outbrain", 
+        "criteo", "rubicon", "appnexus", "bidswitch", "pubmatic", "moatads", 
+        "scorecardresearch", "zedo", "omtrdc", "mixpanel", "appsflyer", "crashlytics",
+        "raygun", "newrelic", "datadog", "telemetry", "analytics", "metrics",
+        "tracking", "tracker", "sentry", "matomo", "hotjar", "clarity", "posthog", 
+        "segment", "optimizely", "branch", "adsense", "adzerk", "adtech"
+    ]
     
     MAX_LIST_SIZE           = 1000
     MAX_RETRIES             = 5
@@ -143,21 +146,6 @@ def extract_heuristics(domains: set[str]) -> tuple[set[str], list[str]]:
     optimized_domains = {d for d in domains if not regex_pattern.search(d)}
     return optimized_domains, frequent_bases
 
-def extract_dynamic_keywords(fetched_lists: dict) -> list[str]:
-    """Extracts the most common words across ALL fetched lists to maximize offloading."""
-    word_counts = Counter()
-    for name, domain_set in fetched_lists.items():
-        if "Social" in name or "Bypass" in name or "Safesearch" in name: continue
-        for dom in domain_set:
-            for part in re.split(r'[\.\-0-9]', dom):
-                part = part.lower()
-                if len(part) >= 4 and part not in Config.IGNORE_KEYWORDS and part.isalpha():
-                    word_counts[part] += 1
-                    
-    top_keywords = [w for w, c in word_counts.most_common(Config.DYNAMIC_KEYWORD_COUNT)]
-    logger.info(f"Dynamically identified top {len(top_keywords)} global blocking keywords: {top_keywords}")
-    return top_keywords
-
 def parse_adguard_tld_list(session: requests.Session) -> list[str]:
     global ALLOWED_DOMAINS
     try:
@@ -223,12 +211,20 @@ def optimize_domains(domains: set[str]) -> list[str]:
     return [d[::-1] for d in optimized]
 
 def build_policy_sets(policies_config, fetched_lists):
+    """Builds lists and enforces global deduplication so domains aren't uploaded multiple times."""
     sets = []
+    global_seen = set()
+    
     for policy in policies_config:
         p_set = set()
         for inc in policy.get("include", []): p_set |= fetched_lists.get(inc, set())
         for exc in policy.get("exclude", []): p_set -= fetched_lists.get(exc, set())
-        sets.append((policy, optimize_domains(p_set)))
+        
+        # Deduplicate: Only keep domains we haven't already assigned to a higher-priority policy
+        unique_p_set = p_set - global_seen
+        global_seen |= unique_p_set
+        
+        sets.append((policy, optimize_domains(unique_p_set)))
     return sets
 
 # ---------------------------------------------------------------------------
@@ -365,7 +361,9 @@ def main() -> None:
     # 3. Sequential Filtering Pipeline & Telemetry Tracking
     # ---------------------------------------------------------------------------
     tld_regex = re.compile(f"(?i)\\.(?:{'|'.join(tlds_list)})$") if tlds_list else None
-    top_keywords = extract_dynamic_keywords(fetched_lists) if Config.ENABLE_TLD_KW_FILTERING else []
+    
+    # Use Targeted Ad-Tech Regex instead of dynamic generic terms
+    top_keywords = Config.TARGETED_AD_KEYWORDS if Config.ENABLE_TLD_KW_FILTERING else []
     kw_regex = re.compile(f"(?i)(?:^|[.-])(?:{'|'.join(top_keywords)})(?:[.-]|$)") if top_keywords else None
 
     all_heuristic_patterns = set()
@@ -377,6 +375,7 @@ def main() -> None:
     global_heur = 0
     global_final = 0
 
+    logger.info(f"Targeting specific ad networks: {top_keywords}")
     logger.info("Entering multi-layer optimization pipeline...")
 
     for name, domain_set in fetched_lists.items():
@@ -391,7 +390,7 @@ def main() -> None:
             set_after_tld = domain_set
             tld_dropped = 0
             
-        # Stage 2: Dynamic Keyword Filtering
+        # Stage 2: Targeted Keyword Filtering (Ad/Tracking Specific)
         if kw_regex:
             set_after_kw = {d for d in set_after_tld if not kw_regex.search(d)}
             kw_dropped = len(set_after_tld) - len(set_after_kw)
@@ -420,6 +419,7 @@ def main() -> None:
             "final": final_len
         }
 
+    # Policy generation using global deduplication
     compiled_policies = build_policy_sets(POLICIES, fetched_lists)
     optimized_allow_domains = optimize_domains(ALLOWED_DOMAINS) if ALLOWED_DOMAINS else []
     total_domains = sum(len(domains) for _, domains in compiled_policies) + len(optimized_allow_domains)
@@ -433,14 +433,15 @@ def main() -> None:
         print(f"{list_name:<32} | {data['raw']:<8,} | {data['tld']:<9,} | {data['kw']:<9,} | {data['heur']:<10,} | {data['final']:<8,}")
     print("-" * 95)
     print(f"{'TOTALS':<32} | {global_raw:<8,} | {global_tld:<9,} | {global_kw:<9,} | {global_heur:<10,} | {global_final:<8,}")
-    print("="*95 + "\n")
+    print("="*95)
+    print(f"Final Deduplicated Upload Payload: {total_domains:,} domains\n" + "="*95 + "\n")
 
     if total_domains > Config.TOTAL_QUOTA:
         logger.error(f"Quota exceeded! Total calculated unique domains across policy deployment: {total_domains:,}")
         send_webhook(f"⚠️ **Sync Failed:** Quota exceeded ({total_domains:,} domains).")
         return
 
-    logger.info(f"Total domains to sync: {total_domains:,}. Proceeding with Cloudflare deployment...")
+    logger.info(f"Total domains to sync after cross-list deduplication: {total_domains:,}. Proceeding with Cloudflare deployment...")
 
     # 4. Cloudflare Engine Sync
     existing_lists = cf.get_lists()
@@ -466,7 +467,7 @@ def main() -> None:
         tld_rule = sync_regex_rule(cf, existing_rules, tlds_list, "Block: HaGeZi Most Abused TLDs")
         if tld_rule: all_active_rule_names.append(tld_rule)
 
-        kw_rule = sync_regex_rule(cf, existing_rules, top_keywords, "Block: Dynamic NSFW Keywords", isolate_edges=True)
+        kw_rule = sync_regex_rule(cf, existing_rules, top_keywords, "Block: Targeted Ad/Tracking Regex", isolate_edges=True)
         if kw_rule: all_active_rule_names.append(kw_rule)
 
     if all_heuristic_patterns:
@@ -492,7 +493,7 @@ def main() -> None:
         f"- **Execution Time:** {exec_time:.2f}s\n"
         f"- **Raw Domains Ingested:** {global_raw:,}\n"
         f"- **Total Shaved via Regex/KW:** {(global_raw - global_final):,}\n"
-        f"- **Final Cloudflare Footprint:** {total_domains:,}/{Config.TOTAL_QUOTA:,}\n"
+        f"- **Final Cloudflare Payload:** {total_domains:,} Domains (deduplicated)\n"
         f"- **Active Heuristic Rules:** {len(all_heuristic_patterns)} compiled patterns"
     )
 
