@@ -27,7 +27,7 @@ class Config:
     
     # --- TOGGLES ---
     ENABLE_TLD_KW_FILTERING = True
-    ENABLE_TIF_MINI         = True # Toggle for adding TIF Mini
+    ENABLE_TIF_FULL         = True # Toggle for adding TIF Full
     
     # Static custom explicit keywords used to drop matching domains locally
     OFFLOAD_KEYWORDS = [
@@ -76,7 +76,7 @@ IP_PATTERN = re.compile(
 ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/spam-tlds.txt"
 
 BLOCKLIST_URLS = {
-    "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+    "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/normal-onlydomains.txt",
     "HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
@@ -85,7 +85,7 @@ BLOCKLIST_URLS = {
     "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt", 
     "HaGeZi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
     "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
-    "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
+    "HaGeZi TIF Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
 }
 
 POLICIES = [
@@ -104,7 +104,7 @@ POLICIES = [
     {"prefix": "L_DynDNS", "policy_name": "Block: HaGeZi Dynamic DNS", "action": "block", "identity_condition": None, "include": ["HaGeZi Dynamic DNS"], "exclude": []},
 ]
 
-if Config.ENABLE_TIF_MINI:
+if Config.ENABLE_TIF_FULL:
     POLICIES.append({"prefix": "L_TIF", "policy_name": "Block: HaGeZi TIF Full", "action": "block", "identity_condition": None, "include": ["HaGeZi TIF Full"], "exclude": []})
 
 # ---------------------------------------------------------------------------
@@ -289,7 +289,9 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
                 kw_offloaded_count += 1
         logger.info(f"Fetched {name}: {len(valid_domains):,} kept (Offloaded TLD: {tld_offloaded_count:,}, KW: {kw_offloaded_count:,}, Irrelevant: {irrelevant_count:,})")
     except Exception as exc:
-        logger.error(f"Error fetching {name}: {exc}")
+        logger.error(f"Error fetching {name} from {url}: {exc}")
+        raise exc # Re-raise to abort the sync
+
     return name, valid_domains, tld_offloaded_count, kw_offloaded_count, irrelevant_count
 
 def optimize_domains(domains: set[str]) -> list[str]:
@@ -486,11 +488,15 @@ def main() -> None:
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
         futures = {pool.submit(fetch_url, download_session, name, url, checker): name for name, url in BLOCKLIST_URLS.items()}
         for future in concurrent.futures.as_completed(futures):
-            name, valid_set, tld_count, kw_count, irrelevant_count = future.result()
-            fetched_lists[name] = valid_set
-            total_tld_offloaded += tld_count
-            total_kw_offloaded += kw_count
-            total_irrelevant_pruned += irrelevant_count
+            try:
+                name, valid_set, tld_count, kw_count, irrelevant_count = future.result()
+                fetched_lists[name] = valid_set
+                total_tld_offloaded += tld_count
+                total_kw_offloaded += kw_count
+                total_irrelevant_pruned += irrelevant_count
+            except Exception as e:
+                logger.error("A critical blocklist failed to download. Aborting sync to prevent accidental rule deletion.")
+                return
 
     compiled_policies = build_policy_sets(POLICIES, fetched_lists)
     optimized_allow_domains = optimize_domains(ALLOWED_DOMAINS) if ALLOWED_DOMAINS else []
