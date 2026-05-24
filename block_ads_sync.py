@@ -26,7 +26,7 @@ class Config:
     SECONDARY_EMAIL         = os.environ.get("SECONDARY_EMAIL", "")  
     
     # --- TOGGLES ---
-    ENABLE_TLD_KW_FILTERING = True
+    ENABLE_TLD_KW_FILTERING = False
     ENABLE_TIF_FULL         = True # Toggle for adding TIF Full
     
     # Static custom explicit keywords used to drop matching domains locally
