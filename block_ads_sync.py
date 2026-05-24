@@ -77,31 +77,18 @@ ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adbl
 
 BLOCKLIST_URLS = {
     "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-    "HaGeZi Ultimate": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
-    "HaGeZi Safesearch Not Support": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
-    "HaGeZi Bypass Block": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
-    "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt", 
-    "HaGeZi Dynamic DNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-    "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
 }
 
 POLICIES = [
-    # Normal applies to ALL users (Base layer)
+    # Normal applies to ALL users (Base layer) - Safe for general family use
     {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (All Users)", "action": "block", "identity_condition": None, "include": ["HaGeZi Normal"], "exclude": []},
     
-    # Combined Ultimate & Social Delta (minus Normal) applies to everyone EXCEPT Secondary
-    {"prefix": "L_UltSoc", "policy_name": "Block: HaGeZi Ultimate & Social (Except Secondary)", "action": "block", "identity_condition": f'not(identity.email == "{Config.SECONDARY_EMAIL}")', "include": ["HaGeZi Ultimate", "HaGeZi Social"], "exclude": ["HaGeZi Normal"]},
-    
-    # Generic Blocklists (Apply to all)
+    # Generic Blocklists (Apply globally to all users)
     {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "include": ["Hagezi NSFW"], "exclude": []},
     {"prefix": "L_Fake", "policy_name": "Block: HaGeZi Fake", "action": "block", "identity_condition": None, "include": ["HaGeZi Fake"], "exclude": []},
-    {"prefix": "L_NoSafe", "policy_name": "Block: HaGeZi Safesearch Not Support", "action": "block", "identity_condition": None, "include": ["HaGeZi Safesearch Not Support"], "exclude": []},
-    {"prefix": "L_Bypass", "policy_name": "Block: HaGeZi Bypass Block", "action": "block", "identity_condition": None, "include": ["HaGeZi Bypass Block"], "exclude": []},
-    {"prefix": "L_AntiPiracy", "policy_name": "Block: HaGeZi Anti Piracy", "action": "block", "identity_condition": None, "include": ["HaGeZi Anti Piracy"], "exclude": []},
-    {"prefix": "L_DynDNS", "policy_name": "Block: HaGeZi Dynamic DNS", "action": "block", "identity_condition": None, "include": ["HaGeZi Dynamic DNS"], "exclude": []},
 ]
 
 if Config.ENABLE_TIF_FULL:
@@ -216,7 +203,6 @@ class RelevanceChecker:
         return has_suffix_match(clean_domain, self.master_allowlist)
 
 def parse_adguard_tld_list(session: requests.Session) -> list[str]:
-    """Parses AdGuard syntax to dynamically extract structural blocked TLDs and exceptions."""
     global ALLOWED_DOMAINS
     try:
         resp = session.get(ADGUARD_TLD_URL, timeout=Config.REQUEST_TIMEOUT)
@@ -278,7 +264,6 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
             cleaned, offload_reason = is_valid_domain(line.split()[-1].lower())
             
             if cleaned: 
-                # Run through Relevance Filter
                 if checker and not checker.is_relevant(cleaned):
                     irrelevant_count += 1
                 else:
@@ -290,7 +275,7 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
         logger.info(f"Fetched {name}: {len(valid_domains):,} kept (Offloaded TLD: {tld_offloaded_count:,}, KW: {kw_offloaded_count:,}, Irrelevant: {irrelevant_count:,})")
     except Exception as exc:
         logger.error(f"Error fetching {name} from {url}: {exc}")
-        raise exc # Re-raise to abort the sync
+        raise exc
 
     return name, valid_domains, tld_offloaded_count, kw_offloaded_count, irrelevant_count
 
@@ -461,7 +446,6 @@ def main() -> None:
     dl_retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
     download_session.mount("https://", HTTPAdapter(max_retries=dl_retry))
 
-    # Initialize Relevance Checker & build allowance list from top 1M datasets
     checker = RelevanceChecker(download_session)
     checker.build_dataset(max_workers=Config.MAX_WORKERS)
 
@@ -469,7 +453,6 @@ def main() -> None:
     if Config.ENABLE_TLD_KW_FILTERING:
         tlds_list = parse_adguard_tld_list(download_session)
     
-    # Compile structural offload rules separately into target engine components
     global TLD_PATTERN, KW_PATTERN
     if tlds_list:
         tld_regex_str = "|".join(tlds_list)
@@ -479,7 +462,6 @@ def main() -> None:
     if kw_str:
         KW_PATTERN = re.compile(f"(?i){kw_str}")
 
-    # Concurrently fetch and filter upstream lists tracking independent telemetry
     fetched_lists = {}
     total_tld_offloaded = 0
     total_kw_offloaded = 0
