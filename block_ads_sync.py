@@ -8,11 +8,12 @@ import hashlib
 import io
 import zipfile
 import gzip
+import sys
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
 # Global variables for the dynamically compiled filters
-TLD_PATTERN = None
+TLD_SET = set()
 KW_PATTERN = None
 ALLOWED_DOMAINS = set()
 
@@ -51,7 +52,9 @@ class Config:
         "Block:",
         "Allow:",
         "L_",
-        "ProMini"
+        "ProMini",
+        "ProUser",
+        "ProHome"
     ]
 
     @classmethod
@@ -74,7 +77,7 @@ IP_PATTERN = re.compile(
 )
 
 # Raw URL for HaGeZi's Most Abused TLDs AdGuard-syntax list
-ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/spam-tlds.txt"
+ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/spam-tlds-adblock.txt"
 
 BLOCKLIST_URLS = {
     "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
@@ -85,13 +88,16 @@ BLOCKLIST_URLS = {
 }
 
 POLICIES = [
-    # Household Layer: Applies globally to everyone (no identity condition)
+    # 1. Household Layer: Applies globally to everyone (no identity condition)
     {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (Household Base)", "action": "block", "identity_condition": None, "include": ["HaGeZi Normal"], "exclude": []},
     
-    # Strict Layer: Only applies to your authenticated primary email OR home network location
-    {"prefix": "L_ProMini", "policy_name": "Block: HaGeZi Pro Mini (Primary User & Home Network)", "action": "block", "identity_condition": f'any(identity.email[*] == "{Config.PRIMARY_EMAIL}") or dns.location in {{"5c13043a5e1342e18138dd024a98b8c9"}}', "include": ["HaGeZi Pro Mini"], "exclude": []},
+    # 2. Pro User Layer: Only applies to your authenticated primary email roaming identity
+    {"prefix": "L_ProUser", "policy_name": "Block: HaGeZi Pro Mini (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "include": ["HaGeZi Pro Mini"], "exclude": []},
+
+    # 3. Pro Home Layer: Only applies to traffic originating from the home network location
+    {"prefix": "L_ProHome", "policy_name": "Block: HaGeZi Pro Mini (Home Network Location)", "action": "block", "identity_condition": f'dns.location in {{"5c13043a5e1342e18138dd024a98b8c9"}}', "include": ["HaGeZi Pro Mini"], "exclude": []},
     
-    # Generic Blocklists (Apply globally to all users)
+    # 4. Generic Blocklists (Apply globally to all users)
     {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "include": ["Hagezi NSFW"], "exclude": []},
     {"prefix": "L_Fake", "policy_name": "Block: HaGeZi Fake", "action": "block", "identity_condition": None, "include": ["HaGeZi Fake"], "exclude": []},
 ]
@@ -108,7 +114,12 @@ class CloudflareAPI:
         self.headers = {"Authorization": f"Bearer {Config.API_TOKEN}", "Content-Type": "application/json"}
         self.session = requests.Session()
         retry = Retry(total=Config.MAX_RETRIES, backoff_factor=2, status_forcelist=[500, 502, 503, 504])
-        self.session.mount("https://", HTTPAdapter(max_retries=retry))
+        adapter = HTTPAdapter(
+            pool_connections=Config.MAX_WORKERS, 
+            pool_maxsize=Config.MAX_WORKERS,
+            max_retries=retry
+        )
+        self.session.mount("https://", adapter)
 
     def _request(self, method, endpoint, **kwargs):
         retries = Config.MAX_RETRIES
@@ -127,8 +138,22 @@ class CloudflareAPI:
             return resp.json()
         raise requests.exceptions.HTTPError("Exhausted retries due to Cloudflare API rate limits (429).", response=resp)
 
-    def get_lists(self):                                      return self._request("GET",    "lists").get("result") or []
-    def get_rules(self):                                      return self._request("GET",    "rules").get("result") or []
+    def _get_paginated(self, endpoint):
+        results = []
+        page = 1
+        while True:
+            resp = self._request("GET", f"{endpoint}?page={page}&per_page=100")
+            data = resp.get("result") or []
+            results.extend(data)
+            
+            info = resp.get("result_info")
+            if not info or page >= info.get("total_pages", 1):
+                break
+            page += 1
+        return results
+
+    def get_lists(self):                                      return self._get_paginated("lists")
+    def get_rules(self):                                      return self._get_paginated("rules")
     def delete_list(self, lid):                               return self._request("DELETE", f"lists/{lid}")
     def delete_rule(self, rid):                               return self._request("DELETE", f"rules/{rid}")
     def create_list(self, name, items, desc=""):              return self._request("POST",   "lists",         json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
@@ -182,8 +207,8 @@ def fetch_top_list(url: str, col_idx: int, skip_header: bool, compression: str, 
         else:
             return _parse_csv_lines(r.text.splitlines(), col_idx, skip_header)
     except Exception as e:
-        logger.error(f"Error fetching top list {url}: {e}")
-    return set()
+        logger.critical(f"Critical failure fetching top list {url}: {e}")
+        sys.exit(1)
 
 class RelevanceChecker:
     def __init__(self, session: requests.Session):
@@ -248,7 +273,8 @@ def is_valid_domain(domain: str) -> tuple[str | None, str | None]:
         return domain, None
     
     if Config.ENABLE_TLD_KW_FILTERING:
-        if TLD_PATTERN and TLD_PATTERN.search(domain):
+        tld = domain.split(".")[-1]
+        if tld in TLD_SET:
             return None, "tld"
         if KW_PATTERN and KW_PATTERN.search(domain):
             return None, "kw"
@@ -449,7 +475,12 @@ def main() -> None:
     
     download_session = requests.Session()
     dl_retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
-    download_session.mount("https://", HTTPAdapter(max_retries=dl_retry))
+    dl_adapter = HTTPAdapter(
+        pool_connections=Config.MAX_WORKERS, 
+        pool_maxsize=Config.MAX_WORKERS,
+        max_retries=dl_retry
+    )
+    download_session.mount("https://", dl_adapter)
 
     checker = RelevanceChecker(download_session)
     checker.build_dataset(max_workers=Config.MAX_WORKERS)
@@ -458,10 +489,9 @@ def main() -> None:
     if Config.ENABLE_TLD_KW_FILTERING:
         tlds_list = parse_adguard_tld_list(download_session)
     
-    global TLD_PATTERN, KW_PATTERN
+    global TLD_SET, KW_PATTERN
     if tlds_list:
-        tld_regex_str = "|".join(tlds_list)
-        TLD_PATTERN = re.compile(f"(?i)\\.(?:{tld_regex_str})$")
+        TLD_SET = set(tld.lower() for tld in tlds_list)
         
     kw_str = "|".join(Config.OFFLOAD_KEYWORDS)
     if kw_str:
