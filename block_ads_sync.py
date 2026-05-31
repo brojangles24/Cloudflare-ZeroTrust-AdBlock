@@ -12,25 +12,19 @@ import sys
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-# Global variables for the dynamically compiled filters
 TLD_SET = set()
 KW_PATTERN = None
 ALLOWED_DOMAINS = set()
 
-# ---------------------------------------------------------------------------
-# 1. Config & Lists
-# ---------------------------------------------------------------------------
 class Config:
     API_TOKEN               = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID              = os.environ.get("ACCOUNT_ID", "")
     PRIMARY_EMAIL           = os.environ.get("PRIMARY_EMAIL", "")   
     SECONDARY_EMAIL         = os.environ.get("SECONDARY_EMAIL", "")  
     
-    # --- TOGGLES ---
     ENABLE_TLD_KW_FILTERING = False
-    ENABLE_TIF_FULL         = True # Toggle for adding TIF Full
+    ENABLE_TIF_FULL         = True 
     
-    # Static custom explicit keywords used to drop matching domains locally
     OFFLOAD_KEYWORDS = [
         "blowjob", "threesome", "gangbang", "deepthroat", "bukkake", 
         "tits", "fuck", "onlyfans", "porn", "xxx", "sex",
@@ -42,7 +36,6 @@ class Config:
     REQUEST_TIMEOUT         = (5, 25)
     MAX_WORKERS             = 5
 
-    # Targets to scrub orphaned rules/lists
     SCRUB_TARGETS = [
         "Base", 
         "Pro++", 
@@ -76,7 +69,6 @@ IP_PATTERN = re.compile(
     r"^(?:[A-Fa-f0-9]{1,4}:)*:[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*$"
 )
 
-# Raw URL for HaGeZi's Most Abused TLDs AdGuard-syntax list
 ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/spam-tlds-adblock.txt"
 
 BLOCKLIST_URLS = {
@@ -88,16 +80,9 @@ BLOCKLIST_URLS = {
 }
 
 POLICIES = [
-    # 1. Household Layer: Applies globally to everyone (no identity condition)
     {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (Household Base)", "action": "block", "identity_condition": None, "include": ["HaGeZi Normal"], "exclude": []},
-    
-    # 2. Pro User Layer: Only applies to your authenticated primary email roaming identity
     {"prefix": "L_ProUser", "policy_name": "Block: HaGeZi Pro Mini (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "include": ["HaGeZi Pro Mini"], "exclude": []},
-
-    # 3. Pro Home Layer: Only applies to traffic originating from the home network location
     {"prefix": "L_ProHome", "policy_name": "Block: HaGeZi Pro Mini (Home Network Location)", "action": "block", "identity_condition": f'dns.location in {{"5c13043a5e1342e18138dd024a98b8c9"}}', "include": ["HaGeZi Pro Mini"], "exclude": []},
-    
-    # 4. Generic Blocklists (Apply globally to all users)
     {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "include": ["Hagezi NSFW"], "exclude": []},
     {"prefix": "L_Fake", "policy_name": "Block: HaGeZi Fake", "action": "block", "identity_condition": None, "include": ["HaGeZi Fake"], "exclude": []},
 ]
@@ -105,20 +90,13 @@ POLICIES = [
 if Config.ENABLE_TIF_FULL:
     POLICIES.append({"prefix": "L_TIF", "policy_name": "Block: HaGeZi TIF Full", "action": "block", "identity_condition": None, "include": ["HaGeZi TIF Full"], "exclude": []})
 
-# ---------------------------------------------------------------------------
-# 2. Cloudflare API Client
-# ---------------------------------------------------------------------------
 class CloudflareAPI:
     def __init__(self):
         self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{Config.ACCOUNT_ID}/gateway"
         self.headers = {"Authorization": f"Bearer {Config.API_TOKEN}", "Content-Type": "application/json"}
         self.session = requests.Session()
         retry = Retry(total=Config.MAX_RETRIES, backoff_factor=2, status_forcelist=[500, 502, 503, 504])
-        adapter = HTTPAdapter(
-            pool_connections=Config.MAX_WORKERS, 
-            pool_maxsize=Config.MAX_WORKERS,
-            max_retries=retry
-        )
+        adapter = HTTPAdapter(pool_connections=Config.MAX_WORKERS, pool_maxsize=Config.MAX_WORKERS, max_retries=retry)
         self.session.mount("https://", adapter)
 
     def _request(self, method, endpoint, **kwargs):
@@ -145,7 +123,6 @@ class CloudflareAPI:
             resp = self._request("GET", f"{endpoint}?page={page}&per_page=100")
             data = resp.get("result") or []
             results.extend(data)
-            
             info = resp.get("result_info")
             if not info or page >= info.get("total_pages", 1):
                 break
@@ -161,10 +138,6 @@ class CloudflareAPI:
     def create_rule(self, data):                              return self._request("POST",   "rules",         json=data)
     def update_rule(self, rid, data):                         return self._request("PUT",    f"rules/{rid}",  json=data)
 
-
-# ---------------------------------------------------------------------------
-# 3. Relevance Filtering & Domain Logic
-# ---------------------------------------------------------------------------
 TOP_LISTS = [
     ("https://tranco-list.eu/top-1m.csv.zip", 1, False, "zip"),
     ("http://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip", 1, False, "zip"),
@@ -328,9 +301,6 @@ def build_policy_sets(policies_config, fetched_lists):
         sets.append((policy, optimize_domains(p_set)))
     return sets
 
-# ---------------------------------------------------------------------------
-# 4. Cloudflare Sync & Cleanup
-# ---------------------------------------------------------------------------
 def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tlds: list[str]) -> str:
     if not tlds:
         return ""
@@ -389,7 +359,13 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
         futures = [executor.submit(process_chunk, idx, chunk) for idx, chunk in enumerate(chunks)]
         used_ids = [f.result() for f in concurrent.futures.as_completed(futures)]
 
-    traffic_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
+    list_expr = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in used_ids])
+    
+    if policy.get("identity_condition"):
+        traffic_expr = f"({policy['identity_condition']}) and ({list_expr})"
+    else:
+        traffic_expr = list_expr
+
     final_rule_name = policy['policy_name']
     active_rule_names = [final_rule_name]
     
@@ -398,10 +374,9 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     is_enabled = existing_rule.get("enabled", True) if existing_rule else True
 
     payload = {"name": final_rule_name, "action": action, "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
-    if policy.get("identity_condition"): payload["identity"] = policy["identity_condition"]
     
     if existing_rule:
-        if existing_rule.get("traffic") == traffic_expr and existing_rule.get("identity") == policy.get("identity_condition") and existing_rule.get("enabled") == is_enabled:
+        if existing_rule.get("traffic") == traffic_expr and existing_rule.get("enabled") == is_enabled:
             logger.info(f"Firewall rule {final_rule_name} unchanged. Skipping update.")
         else:
             cf.update_rule(existing_rule["id"], payload)
@@ -447,7 +422,6 @@ def enforce_tld_rule_order(cf: CloudflareAPI):
         logger.info("Reordering: Moving TLD Block rule below Allow exceptions...")
         try:
             cf.delete_rule(block_rule["id"])
-            
             payload = {
                 "name": block_rule["name"],
                 "action": block_rule["action"],
@@ -455,9 +429,6 @@ def enforce_tld_rule_order(cf: CloudflareAPI):
                 "enabled": block_rule.get("enabled", True),
                 "filters": block_rule.get("filters", ["dns"])
             }
-            if "identity" in block_rule and block_rule["identity"]:
-                payload["identity"] = block_rule["identity"]
-                
             cf.create_rule(payload)
             logger.info("Successfully fixed rule precedence.")
         except Exception as e:
@@ -465,9 +436,6 @@ def enforce_tld_rule_order(cf: CloudflareAPI):
     else:
         logger.info("Rule precedence is already correct.")
 
-# ---------------------------------------------------------------------------
-# 5. Main Execution
-# ---------------------------------------------------------------------------
 def main() -> None:
     start = time.perf_counter()
     Config.validate()
@@ -475,11 +443,7 @@ def main() -> None:
     
     download_session = requests.Session()
     dl_retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
-    dl_adapter = HTTPAdapter(
-        pool_connections=Config.MAX_WORKERS, 
-        pool_maxsize=Config.MAX_WORKERS,
-        max_retries=dl_retry
-    )
+    dl_adapter = HTTPAdapter(pool_connections=Config.MAX_WORKERS, pool_maxsize=Config.MAX_WORKERS, max_retries=dl_retry)
     download_session.mount("https://", dl_adapter)
 
     checker = RelevanceChecker(download_session)
@@ -531,7 +495,6 @@ def main() -> None:
     existing_lists = cf.get_lists()
     existing_rules = cf.get_rules()
 
-    # --- SMART PRE-CLEANUP ---
     valid_prefixes = tuple(p["prefix"] for p in POLICIES)
     valid_rule_bases = {p["policy_name"] for p in POLICIES}
     
@@ -561,7 +524,6 @@ def main() -> None:
                     existing_lists.remove(lst)
                     logger.info(f"Pre-cleaned abandoned list: {lst['name']}")
                 except Exception as e: logger.error(f"Could not delete abandoned list {lst['name']}: {e}")
-    # -------------------------
 
     all_active_list_ids = []
     all_active_rule_names = []
