@@ -50,7 +50,8 @@ class Config:
         "Social",
         "Block:",
         "Allow:",
-        "L_"
+        "L_",
+        "ProMini"
     ]
 
     @classmethod
@@ -77,14 +78,18 @@ ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adbl
 
 BLOCKLIST_URLS = {
     "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+    "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.mini-onlydomains.txt",
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
 }
 
 POLICIES = [
-    # Normal applies to ALL users (Base layer) - Safe for general family use
-    {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (All Users)", "action": "block", "identity_condition": None, "include": ["HaGeZi Normal"], "exclude": []},
+    # Household Layer: Applies globally to everyone (no identity condition)
+    {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (Household Base)", "action": "block", "identity_condition": None, "include": ["HaGeZi Normal"], "exclude": []},
+    
+    # Strict Layer: Only applies to your authenticated primary email OR home network location
+    {"prefix": "L_ProMini", "policy_name": "Block: HaGeZi Pro Mini (Primary User & Home Network)", "action": "block", "identity_condition": f'any(identity.email[*] == "{Config.PRIMARY_EMAIL}") or dns.location in {{"5c13043a5e1342e18138dd024a98b8c9"}}', "include": ["HaGeZi Pro Mini"], "exclude": []},
     
     # Generic Blocklists (Apply globally to all users)
     {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "include": ["Hagezi NSFW"], "exclude": []},
