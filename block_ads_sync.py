@@ -28,7 +28,7 @@ class Config:
     NULLNET_LOCATION_ID     = "5c13043a5e1342e18138dd024a98b8c9"
     
     # --- TOGGLES ---
-    ENABLE_TLD_KW_FILTERING = False
+    ENABLE_TLD_KW_FILTERING = True
     ENABLE_TIF_FULL         = True # Toggle for adding TIF Full
     
     # Static custom explicit keywords used to drop matching domains locally
