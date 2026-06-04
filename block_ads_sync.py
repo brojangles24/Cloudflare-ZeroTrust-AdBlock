@@ -87,8 +87,14 @@ BLOCKLIST_URLS = {
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
 }
 
-# The condition ensuring offloading rules only apply to Nullnet or the Primary Email
-TARGET_CONDITION = f'(dns.location in {{"{Config.NULLNET_LOCATION_ID}"}} or identity.email == "{Config.PRIMARY_EMAIL}")'
+# ---------------------------------------------------------------------------
+# Offloading Target Definitions
+# Splits rules logically to satisfy Cloudflare's strict Traffic/Identity API limitations
+# ---------------------------------------------------------------------------
+OFFLOAD_TARGETS = [
+    {"suffix": "(Roaming)", "traffic_cond": None, "identity_cond": f'identity.email == "{Config.PRIMARY_EMAIL}"'},
+    {"suffix": "(Home)", "traffic_cond": f'dns.location in {{"{Config.NULLNET_LOCATION_ID}"}}', "identity_cond": None}
+]
 
 POLICIES = [
     # 1. Household Layer: Applies globally. MUST NOT offload domains, otherwise non-Pro users lose protection.
@@ -351,11 +357,12 @@ def build_policy_sets(policies_config, fetched_lists):
 # ---------------------------------------------------------------------------
 # 4. Cloudflare Sync & Cleanup
 # ---------------------------------------------------------------------------
-def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tlds: list[str]) -> str:
+def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tlds: list[str]) -> list[str]:
     if not tlds:
-        return ""
+        return []
         
-    rule_name = "Block: HaGeZi Most Abused TLDs"
+    active_rules = []
+    base_name = "Block: HaGeZi Most Abused TLDs"
     chunk_size = 30
     tld_chunks = [tlds[i:i + chunk_size] for i in range(0, len(tlds), chunk_size)]
     
@@ -365,52 +372,82 @@ def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tlds: list[str]
         expr_parts.append(f'any(dns.domains[*] matches "(?i)\\.(?:{regex_str})$")')
         
     base_traffic = " or ".join(expr_parts)
-    # Strictly wrap the TLD expression within the targeted nullnet/primary email scope.
-    traffic_expr = f"({TARGET_CONDITION}) and ({base_traffic})"
     
-    existing_rule = next((r for r in existing_rules if r["name"] == rule_name), None)
-    is_enabled = existing_rule.get("enabled", True) if existing_rule else True
-
-    payload = {"name": rule_name, "action": "block", "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
-    
-    if existing_rule:
-        if existing_rule.get("traffic") == traffic_expr and existing_rule.get("enabled") == is_enabled:
-            logger.info(f"Firewall rule {rule_name} unchanged. Skipping update.")
-        else:
-            cf.update_rule(existing_rule["id"], payload)
-            logger.info(f"Firewall rule updated: {rule_name}")
-    else: 
-        cf.create_rule(payload)
-        logger.info(f"Firewall rule created: {rule_name}")
+    for target in OFFLOAD_TARGETS:
+        rule_name = f"{base_name} {target['suffix']}"
+        active_rules.append(rule_name)
         
-    return rule_name
+        traffic_expr = base_traffic
+        if target['traffic_cond']:
+            traffic_expr = f"({target['traffic_cond']}) and ({base_traffic})"
+            
+        existing_rule = next((r for r in existing_rules if r["name"] == rule_name), None)
+        is_enabled = existing_rule.get("enabled", True) if existing_rule else True
 
-def sync_kw_regex_rule(cf: CloudflareAPI, existing_rules: list, keywords: list[str]) -> str:
+        payload = {"name": rule_name, "action": "block", "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
+        if target['identity_cond']:
+            payload["identity"] = target['identity_cond']
+            
+        if existing_rule:
+            existing_traffic = existing_rule.get("traffic", "")
+            existing_identity = existing_rule.get("identity", "")
+            
+            if existing_traffic == traffic_expr and existing_identity == (target['identity_cond'] or "") and existing_rule.get("enabled") == is_enabled:
+                logger.info(f"Firewall rule {rule_name} unchanged. Skipping update.")
+            else:
+                cf.update_rule(existing_rule["id"], payload)
+                logger.info(f"Firewall rule updated: {rule_name}")
+        else: 
+            cf.create_rule(payload)
+            logger.info(f"Firewall rule created: {rule_name}")
+            
+    return active_rules
+
+def sync_kw_regex_rule(cf: CloudflareAPI, existing_rules: list, keywords: list[str]) -> list[str]:
     if not keywords:
-        return ""
+        return []
         
-    rule_name = "Block: NSFW Explicit Keywords"
-    kw_str = "|".join(keywords)
+    active_rules = []
+    base_name = "Block: NSFW Explicit Keywords"
+    chunk_size = 30
+    kw_chunks = [keywords[i:i + chunk_size] for i in range(0, len(keywords), chunk_size)]
     
-    # Target regex rule strictly to Nullnet and Primary Email
-    traffic_expr = f'({TARGET_CONDITION}) and (any(dns.domains[*] matches "(?i).*({kw_str}).*"))'
+    expr_parts = []
+    for chunk in kw_chunks:
+        kw_str = "|".join(chunk)
+        expr_parts.append(f'any(dns.domains[*] matches "(?i).*({kw_str}).*")')
+        
+    base_traffic = " or ".join(expr_parts)
     
-    existing_rule = next((r for r in existing_rules if r["name"] == rule_name), None)
-    is_enabled = existing_rule.get("enabled", True) if existing_rule else True
+    for target in OFFLOAD_TARGETS:
+        rule_name = f"{base_name} {target['suffix']}"
+        active_rules.append(rule_name)
+        
+        traffic_expr = base_traffic
+        if target['traffic_cond']:
+            traffic_expr = f"({target['traffic_cond']}) and ({base_traffic})"
+            
+        existing_rule = next((r for r in existing_rules if r["name"] == rule_name), None)
+        is_enabled = existing_rule.get("enabled", True) if existing_rule else True
 
-    payload = {"name": rule_name, "action": "block", "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
-    
-    if existing_rule:
-        if existing_rule.get("traffic") == traffic_expr and existing_rule.get("enabled") == is_enabled:
-            logger.info(f"Firewall rule {rule_name} unchanged. Skipping update.")
-        else:
-            cf.update_rule(existing_rule["id"], payload)
-            logger.info(f"Firewall rule updated: {rule_name}")
-    else: 
-        cf.create_rule(payload)
-        logger.info(f"Firewall rule created: {rule_name}")
+        payload = {"name": rule_name, "action": "block", "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
+        if target['identity_cond']:
+            payload["identity"] = target['identity_cond']
         
-    return rule_name
+        if existing_rule:
+            existing_traffic = existing_rule.get("traffic", "")
+            existing_identity = existing_rule.get("identity", "")
+            
+            if existing_traffic == traffic_expr and existing_identity == (target['identity_cond'] or "") and existing_rule.get("enabled") == is_enabled:
+                logger.info(f"Firewall rule {rule_name} unchanged. Skipping update.")
+            else:
+                cf.update_rule(existing_rule["id"], payload)
+                logger.info(f"Firewall rule updated: {rule_name}")
+        else: 
+            cf.create_rule(payload)
+            logger.info(f"Firewall rule created: {rule_name}")
+            
+    return active_rules
 
 def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], domains: list[str], policy: dict) -> tuple[list[str], list[str]]:
     if not domains: return [], []
@@ -505,35 +542,34 @@ def enforce_tld_rule_order(cf: CloudflareAPI):
     rules = cf.get_rules()
     
     allow_rules = [r for r in rules if r["name"].startswith("Allow: HaGeZi TLD Exceptions")]
-    block_rule = next((r for r in rules if r["name"] == "Block: HaGeZi Most Abused TLDs"), None)
+    block_rules = [r for r in rules if r["name"].startswith("Block: HaGeZi Most Abused TLDs")]
     
-    if not allow_rules or not block_rule:
+    if not allow_rules or not block_rules:
         return
         
-    block_prec = block_rule["precedence"]
-    out_of_order = any(r["precedence"] > block_prec for r in allow_rules)
-    
-    if out_of_order:
-        logger.info("Reordering: Moving TLD Block rule below Allow exceptions...")
-        try:
-            cf.delete_rule(block_rule["id"])
-            
-            payload = {
-                "name": block_rule["name"],
-                "action": block_rule["action"],
-                "traffic": block_rule["traffic"],
-                "enabled": block_rule.get("enabled", True),
-                "filters": block_rule.get("filters", ["dns"])
-            }
-            if "identity" in block_rule and block_rule["identity"]:
-                payload["identity"] = block_rule["identity"]
+    for block_rule in block_rules:
+        block_prec = block_rule["precedence"]
+        out_of_order = any(r["precedence"] > block_prec for r in allow_rules)
+        
+        if out_of_order:
+            logger.info(f"Reordering: Moving {block_rule['name']} below Allow exceptions...")
+            try:
+                cf.delete_rule(block_rule["id"])
                 
-            cf.create_rule(payload)
-            logger.info("Successfully fixed rule precedence.")
-        except Exception as e:
-            logger.error(f"Could not reorder rule: {e}")
-    else:
-        logger.info("Rule precedence is already correct.")
+                payload = {
+                    "name": block_rule["name"],
+                    "action": block_rule["action"],
+                    "traffic": block_rule["traffic"],
+                    "enabled": block_rule.get("enabled", True),
+                    "filters": block_rule.get("filters", ["dns"])
+                }
+                if "identity" in block_rule and block_rule.get("identity"):
+                    payload["identity"] = block_rule["identity"]
+                    
+                cf.create_rule(payload)
+                logger.info(f"Successfully fixed rule precedence for {block_rule['name']}.")
+            except Exception as e:
+                logger.error(f"Could not reorder rule: {e}")
 
 # ---------------------------------------------------------------------------
 # 5. Main Execution
@@ -638,26 +674,37 @@ def main() -> None:
     all_active_rule_names = []
 
     if Config.ENABLE_TLD_KW_FILTERING and optimized_allow_domains:
-        allow_policy = {
-            "prefix": "L_AllowTLD",
-            "policy_name": "Allow: HaGeZi TLD Exceptions",
-            "action": "allow",
-            # Explicitly bind the allow exception strictly to Nullnet or the Primary user
-            "identity_condition": TARGET_CONDITION 
-        }
-        used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_allow_domains, allow_policy)
-        all_active_list_ids.extend(used_ids)
-        all_active_rule_names.extend(rule_names)
+        # Split allow rules identical to the block rules
+        allow_policies = [
+            {
+                "prefix": "L_AllowTLD",
+                "policy_name": "Allow: HaGeZi TLD Exceptions (Roaming)",
+                "action": "allow",
+                "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"'
+            },
+            {
+                "prefix": "L_AllowTLD",
+                "policy_name": "Allow: HaGeZi TLD Exceptions (Home)",
+                "action": "allow",
+                "identity_condition": f'dns.location in {{"{Config.NULLNET_LOCATION_ID}"}}'
+            }
+        ]
+        
+        for ap in allow_policies:
+            used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_allow_domains, ap)
+            # Reusing the L_AllowTLD prefix means the list generation happens once, saving quota.
+            for uid in used_ids:
+                if uid not in all_active_list_ids:
+                    all_active_list_ids.append(uid)
+            all_active_rule_names.extend(rule_names)
 
     if Config.ENABLE_TLD_KW_FILTERING and tlds_list:
-        tld_rule_name = sync_tld_regex_rule(cf, existing_rules, tlds_list)
-        if tld_rule_name:
-            all_active_rule_names.append(tld_rule_name)
+        tld_rule_names = sync_tld_regex_rule(cf, existing_rules, tlds_list)
+        all_active_rule_names.extend(tld_rule_names)
             
     if Config.ENABLE_TLD_KW_FILTERING and Config.OFFLOAD_KEYWORDS:
-        kw_rule_name = sync_kw_regex_rule(cf, existing_rules, Config.OFFLOAD_KEYWORDS)
-        if kw_rule_name:
-            all_active_rule_names.append(kw_rule_name)
+        kw_rule_names = sync_kw_regex_rule(cf, existing_rules, Config.OFFLOAD_KEYWORDS)
+        all_active_rule_names.extend(kw_rule_names)
 
     for policy, optimized_domains in compiled_policies:
         used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy)
