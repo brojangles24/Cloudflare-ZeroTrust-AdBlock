@@ -15,7 +15,6 @@ from urllib3.util import Retry
 # Global variables for the dynamically compiled filters
 TLD_SET = set()
 KW_PATTERN = None
-ALLOWED_DOMAINS = set()
 
 # ---------------------------------------------------------------------------
 # 1. Config & Lists
@@ -77,12 +76,11 @@ IP_PATTERN = re.compile(
     r"^(?:[A-Fa-f0-9]{1,4}:)*:[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*$"
 )
 
-# Updated to the specific list containing the denyallow exceptions
 ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/spam-tlds.txt"
 
 BLOCKLIST_URLS = {
     "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-    "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
+    "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
@@ -242,13 +240,13 @@ class RelevanceChecker:
             clean_domain = clean_domain[4:]
         return has_suffix_match(clean_domain, self.master_allowlist)
 
-def parse_adguard_tld_list(session: requests.Session) -> list[str]:
-    global ALLOWED_DOMAINS
+def parse_adguard_tld_list(session: requests.Session) -> tuple[list[str], set[str]]:
+    allowed_domains = set()
+    tlds = []
     try:
         resp = session.get(ADGUARD_TLD_URL, timeout=Config.REQUEST_TIMEOUT)
         resp.raise_for_status()
         
-        tlds = []
         for line in resp.text.splitlines():
             line = line.strip()
             # Ignore headers, brackets, and comments
@@ -267,24 +265,20 @@ def parse_adguard_tld_list(session: requests.Session) -> list[str]:
                     for dom in allowed_parts:
                         dom_cleaned = dom.strip().lower()
                         if dom_cleaned:
-                            ALLOWED_DOMAINS.add(dom_cleaned)
+                            allowed_domains.add(dom_cleaned)
                             
         if tlds:
-            logger.info(f"Parsed AdGuard TLDs: {len(tlds)} TLD blocks, extracted {len(ALLOWED_DOMAINS)} whitelisted domains.")
-            return tlds
+            logger.info(f"Parsed AdGuard TLDs: {len(tlds)} TLD blocks, extracted {len(allowed_domains)} raw whitelisted domains.")
+        return tlds, allowed_domains
     except Exception as exc:
         logger.error(f"Failed to fetch or parse AdGuard TLD database: {exc}")
-    return []
+    return [], set()
 
 def is_valid_domain(domain: str) -> tuple[str | None, str | None]:
     domain = domain.strip().strip(".")
     if not domain or any(c in domain for c in "*/[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
         return None, None
-        
-    if domain in ALLOWED_DOMAINS or any(domain.endswith("." + allowed) for allowed in ALLOWED_DOMAINS):
-        return domain, None
     
-    # Return the domain alongside its offload reason rather than outright dropping it.
     if Config.ENABLE_TLD_KW_FILTERING:
         tld = domain.split(".")[-1]
         if tld in TLD_SET:
@@ -298,6 +292,7 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
     kept_domains = set()
     tld_offloadable = set()
     kw_offloadable = set()
+    all_parsed_from_list = set()
     irrelevant_count = 0
     try:
         resp = session.get(url, timeout=Config.REQUEST_TIMEOUT)
@@ -308,6 +303,9 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
             cleaned, offload_reason = is_valid_domain(line.split()[-1].lower())
             
             if cleaned: 
+                # Capture the domain BEFORE relevance pruning drops it, so we can cross-reference it against the allowlist
+                all_parsed_from_list.add(cleaned)
+                
                 if checker and not checker.is_relevant(cleaned):
                     irrelevant_count += 1
                 elif offload_reason == "tld":
@@ -321,7 +319,7 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
         logger.error(f"Error fetching {name} from {url}: {exc}")
         raise exc
 
-    return name, kept_domains, tld_offloadable, kw_offloadable, len(tld_offloadable), len(kw_offloadable), irrelevant_count
+    return name, kept_domains, tld_offloadable, kw_offloadable, all_parsed_from_list, len(tld_offloadable), len(kw_offloadable), irrelevant_count
 
 def optimize_domains(domains: set[str]) -> list[str]:
     reversed_sorted = sorted(d[::-1] for d in domains)
@@ -357,7 +355,6 @@ def build_policy_sets(policies_config, fetched_lists):
                 
         sets.append((policy, optimize_domains(p_set)))
         
-        # Transparent logging so you can see exactly how many domains are explicitly preserved
         if not apply_offload and re_injected_count > 0:
             logger.info(f"Policy '{policy['policy_name']}': Re-injected {re_injected_count:,} domains to ensure full global coverage.")
             
@@ -601,8 +598,9 @@ def main() -> None:
     checker.build_dataset(max_workers=Config.MAX_WORKERS)
 
     tlds_list = []
+    raw_allowed_domains = set()
     if Config.ENABLE_TLD_KW_FILTERING:
-        tlds_list = parse_adguard_tld_list(download_session)
+        tlds_list, raw_allowed_domains = parse_adguard_tld_list(download_session)
     
     global TLD_SET, KW_PATTERN
     if tlds_list:
@@ -617,12 +615,19 @@ def main() -> None:
     total_kw_offloaded = 0
     total_irrelevant_pruned = 0
     
+    # Store everything intended to be blocked across all lists
+    all_blocklist_domains = set()
+    
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
         futures = {pool.submit(fetch_url, download_session, name, url, checker): name for name, url in BLOCKLIST_URLS.items()}
         for future in concurrent.futures.as_completed(futures):
             try:
-                name, kept_set, tld_off, kw_off, tld_count, kw_count, irrelevant_count = future.result()
+                name, kept_set, tld_off, kw_off, all_parsed, tld_count, kw_count, irrelevant_count = future.result()
                 fetched_lists[name] = (kept_set, tld_off, kw_off)
+                
+                # Add everything from this blocklist to the master aggregation set
+                all_blocklist_domains.update(all_parsed)
+                
                 total_tld_offloaded += tld_count
                 total_kw_offloaded += kw_count
                 total_irrelevant_pruned += irrelevant_count
@@ -630,8 +635,15 @@ def main() -> None:
                 logger.error("A critical blocklist failed to download. Aborting sync to prevent accidental rule deletion.")
                 return
 
+    # Cross-reference the TLD allowlist against the complete blocklist universe
+    final_allowed_domains = raw_allowed_domains - all_blocklist_domains
+    dropped_allow_count = len(raw_allowed_domains) - len(final_allowed_domains)
+    
+    if dropped_allow_count > 0:
+        logger.info(f"Cross-referenced allowlist against blocklists: Dropped {dropped_allow_count} explicitly blocked exception domains.")
+
     compiled_policies = build_policy_sets(POLICIES, fetched_lists)
-    optimized_allow_domains = optimize_domains(ALLOWED_DOMAINS) if ALLOWED_DOMAINS else []
+    optimized_allow_domains = optimize_domains(final_allowed_domains) if final_allowed_domains else []
     total_domains = sum(len(domains) for _, domains in compiled_policies) + len(optimized_allow_domains)
 
     if total_domains > Config.TOTAL_QUOTA:
