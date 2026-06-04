@@ -77,11 +77,12 @@ IP_PATTERN = re.compile(
     r"^(?:[A-Fa-f0-9]{1,4}:)*:[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*$"
 )
 
+# Updated to the specific list containing the denyallow exceptions
 ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/spam-tlds.txt"
 
 BLOCKLIST_URLS = {
     "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-    "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
+    "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
@@ -295,9 +296,8 @@ def is_valid_domain(domain: str) -> tuple[str | None, str | None]:
 
 def fetch_url(session: requests.Session, name: str, url: str, checker: RelevanceChecker = None):
     kept_domains = set()
-    offloadable_domains = set()
-    tld_offloaded_count = 0
-    kw_offloaded_count = 0
+    tld_offloadable = set()
+    kw_offloadable = set()
     irrelevant_count = 0
     try:
         resp = session.get(url, timeout=Config.REQUEST_TIMEOUT)
@@ -311,19 +311,17 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
                 if checker and not checker.is_relevant(cleaned):
                     irrelevant_count += 1
                 elif offload_reason == "tld":
-                    tld_offloaded_count += 1
-                    offloadable_domains.add(cleaned)
+                    tld_offloadable.add(cleaned)
                 elif offload_reason == "kw":
-                    kw_offloaded_count += 1
-                    offloadable_domains.add(cleaned)
+                    kw_offloadable.add(cleaned)
                 else:
                     kept_domains.add(cleaned)
-        logger.info(f"Fetched {name}: {len(kept_domains):,} kept (Offloadable TLD: {tld_offloaded_count:,}, KW: {kw_offloaded_count:,}, Irrelevant: {irrelevant_count:,})")
+        logger.info(f"Fetched {name}: {len(kept_domains):,} kept (Offloadable TLD: {len(tld_offloadable):,}, KW: {len(kw_offloadable):,}, Irrelevant: {irrelevant_count:,})")
     except Exception as exc:
         logger.error(f"Error fetching {name} from {url}: {exc}")
         raise exc
 
-    return name, kept_domains, offloadable_domains, tld_offloaded_count, kw_offloaded_count, irrelevant_count
+    return name, kept_domains, tld_offloadable, kw_offloadable, len(tld_offloadable), len(kw_offloadable), irrelevant_count
 
 def optimize_domains(domains: set[str]) -> list[str]:
     reversed_sorted = sorted(d[::-1] for d in domains)
@@ -339,21 +337,30 @@ def build_policy_sets(policies_config, fetched_lists):
     for policy in policies_config:
         p_set = set()
         apply_offload = policy.get("apply_offload", False)
+        re_injected_count = 0
         
         for inc in policy.get("include", []):
-            kept, offloadable = fetched_lists.get(inc, (set(), set()))
+            kept, tld_off, kw_off = fetched_lists.get(inc, (set(), set(), set()))
             p_set |= kept
             # If offloading is False for this policy, we re-inject the TLD/KW domains back in.
             if not apply_offload:
-                p_set |= offloadable
+                p_set |= tld_off
+                p_set |= kw_off
+                re_injected_count += (len(tld_off) + len(kw_off))
                 
         for exc in policy.get("exclude", []):
-            kept, offloadable = fetched_lists.get(exc, (set(), set()))
+            kept, tld_off, kw_off = fetched_lists.get(exc, (set(), set(), set()))
             p_set -= kept
             if not apply_offload:
-                p_set -= offloadable
+                p_set -= tld_off
+                p_set -= kw_off
                 
         sets.append((policy, optimize_domains(p_set)))
+        
+        # Transparent logging so you can see exactly how many domains are explicitly preserved
+        if not apply_offload and re_injected_count > 0:
+            logger.info(f"Policy '{policy['policy_name']}': Re-injected {re_injected_count:,} domains to ensure full global coverage.")
+            
     return sets
 
 # ---------------------------------------------------------------------------
@@ -614,8 +621,8 @@ def main() -> None:
         futures = {pool.submit(fetch_url, download_session, name, url, checker): name for name, url in BLOCKLIST_URLS.items()}
         for future in concurrent.futures.as_completed(futures):
             try:
-                name, kept_set, offload_set, tld_count, kw_count, irrelevant_count = future.result()
-                fetched_lists[name] = (kept_set, offload_set)
+                name, kept_set, tld_off, kw_off, tld_count, kw_count, irrelevant_count = future.result()
+                fetched_lists[name] = (kept_set, tld_off, kw_off)
                 total_tld_offloaded += tld_count
                 total_kw_offloaded += kw_count
                 total_irrelevant_pruned += irrelevant_count
