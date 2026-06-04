@@ -81,7 +81,7 @@ ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adbl
 
 BLOCKLIST_URLS = {
     "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-    "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+    "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
@@ -250,12 +250,14 @@ def parse_adguard_tld_list(session: requests.Session) -> list[str]:
         tlds = []
         for line in resp.text.splitlines():
             line = line.strip()
-            if not line or line.startswith("!"): 
+            # Ignore headers, brackets, and comments
+            if not line or line.startswith("!") or line.startswith("#") or line.startswith("["): 
                 continue
                 
-            if line.startswith("||*."):
+            if line.startswith("||"):
                 parts = line.split("^$denyallow=")
-                raw_tld = parts[0].replace("||*.", "").replace("^", "")
+                # Clean up to isolate strictly the raw string of the TLD
+                raw_tld = parts[0].replace("||", "").replace("*.", "").replace("^", "")
                 if raw_tld:
                     tlds.append(raw_tld)
                 
