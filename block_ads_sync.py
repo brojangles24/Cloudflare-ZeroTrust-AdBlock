@@ -25,6 +25,7 @@ class Config:
     ACCOUNT_ID              = os.environ.get("ACCOUNT_ID", "")
     PRIMARY_EMAIL           = os.environ.get("PRIMARY_EMAIL", "")   
     SECONDARY_EMAIL         = os.environ.get("SECONDARY_EMAIL", "")  
+    NULLNET_LOCATION_ID     = "5c13043a5e1342e18138dd024a98b8c9"
     
     # --- TOGGLES ---
     ENABLE_TLD_KW_FILTERING = False
@@ -76,7 +77,6 @@ IP_PATTERN = re.compile(
     r"^(?:[A-Fa-f0-9]{1,4}:)*:[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*$"
 )
 
-# Raw URL for HaGeZi's Most Abused TLDs AdGuard-syntax list
 ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/spam-tlds-adblock.txt"
 
 BLOCKLIST_URLS = {
@@ -87,23 +87,26 @@ BLOCKLIST_URLS = {
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
 }
 
-POLICIES = [
-    # 1. Household Layer: Applies globally to everyone (no identity condition)
-    {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (Household Base)", "action": "block", "identity_condition": None, "include": ["HaGeZi Normal"], "exclude": []},
-    
-    # 2. Pro User Layer: Only applies to your authenticated primary email roaming identity
-    {"prefix": "L_ProUser", "policy_name": "Block: HaGeZi Pro Mini (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "include": ["HaGeZi Pro Mini"], "exclude": []},
+# The condition ensuring offloading rules only apply to Nullnet or the Primary Email
+TARGET_CONDITION = f'(dns.location in {{"{Config.NULLNET_LOCATION_ID}"}} or identity.email == "{Config.PRIMARY_EMAIL}")'
 
-    # 3. Pro Home Layer: Only applies to traffic originating from the home network location
-    {"prefix": "L_ProHome", "policy_name": "Block: HaGeZi Pro Mini (Home Network Location)", "action": "block", "identity_condition": f'dns.location in {{"5c13043a5e1342e18138dd024a98b8c9"}}', "include": ["HaGeZi Pro Mini"], "exclude": []},
+POLICIES = [
+    # 1. Household Layer: Applies globally. MUST NOT offload domains, otherwise non-Pro users lose protection.
+    {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (Household Base)", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi Normal"], "exclude": []},
     
-    # 4. Generic Blocklists (Apply globally to all users)
-    {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "include": ["Hagezi NSFW"], "exclude": []},
-    {"prefix": "L_Fake", "policy_name": "Block: HaGeZi Fake", "action": "block", "identity_condition": None, "include": ["HaGeZi Fake"], "exclude": []},
+    # 2. Pro User Layer: Covered by the explicit TLD/KW regex rules, so offloading is TRUE.
+    {"prefix": "L_ProUser", "policy_name": "Block: HaGeZi Pro Mini (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "apply_offload": True, "include": ["HaGeZi Pro Mini"], "exclude": []},
+
+    # 3. Pro Home Layer: Covered by the explicit TLD/KW regex rules, so offloading is TRUE.
+    {"prefix": "L_ProHome", "policy_name": "Block: HaGeZi Pro Mini (Home Network Location)", "action": "block", "identity_condition": f'dns.location in {{"{Config.NULLNET_LOCATION_ID}"}}', "apply_offload": True, "include": ["HaGeZi Pro Mini"], "exclude": []},
+    
+    # 4. Generic Blocklists: Applies globally. MUST NOT offload.
+    {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["Hagezi NSFW"], "exclude": []},
+    {"prefix": "L_Fake", "policy_name": "Block: HaGeZi Fake", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi Fake"], "exclude": []},
 ]
 
 if Config.ENABLE_TIF_FULL:
-    POLICIES.append({"prefix": "L_TIF", "policy_name": "Block: HaGeZi TIF Full", "action": "block", "identity_condition": None, "include": ["HaGeZi TIF Full"], "exclude": []})
+    POLICIES.append({"prefix": "L_TIF", "policy_name": "Block: HaGeZi TIF Full", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi TIF Full"], "exclude": []})
 
 # ---------------------------------------------------------------------------
 # 2. Cloudflare API Client
@@ -272,17 +275,19 @@ def is_valid_domain(domain: str) -> tuple[str | None, str | None]:
     if domain in ALLOWED_DOMAINS or any(domain.endswith("." + allowed) for allowed in ALLOWED_DOMAINS):
         return domain, None
     
+    # Return the domain alongside its offload reason rather than outright dropping it.
     if Config.ENABLE_TLD_KW_FILTERING:
         tld = domain.split(".")[-1]
         if tld in TLD_SET:
-            return None, "tld"
+            return domain, "tld"
         if KW_PATTERN and KW_PATTERN.search(domain):
-            return None, "kw"
+            return domain, "kw"
             
     return domain, None
 
-def fetch_url(session: requests.Session, name: str, url: str, checker: RelevanceChecker = None) -> tuple[str, set[str], int, int, int]:
-    valid_domains = set()
+def fetch_url(session: requests.Session, name: str, url: str, checker: RelevanceChecker = None):
+    kept_domains = set()
+    offloadable_domains = set()
     tld_offloaded_count = 0
     kw_offloaded_count = 0
     irrelevant_count = 0
@@ -297,18 +302,20 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
             if cleaned: 
                 if checker and not checker.is_relevant(cleaned):
                     irrelevant_count += 1
+                elif offload_reason == "tld":
+                    tld_offloaded_count += 1
+                    offloadable_domains.add(cleaned)
+                elif offload_reason == "kw":
+                    kw_offloaded_count += 1
+                    offloadable_domains.add(cleaned)
                 else:
-                    valid_domains.add(cleaned)
-            elif offload_reason == "tld":
-                tld_offloaded_count += 1
-            elif offload_reason == "kw":
-                kw_offloaded_count += 1
-        logger.info(f"Fetched {name}: {len(valid_domains):,} kept (Offloaded TLD: {tld_offloaded_count:,}, KW: {kw_offloaded_count:,}, Irrelevant: {irrelevant_count:,})")
+                    kept_domains.add(cleaned)
+        logger.info(f"Fetched {name}: {len(kept_domains):,} kept (Offloadable TLD: {tld_offloaded_count:,}, KW: {kw_offloaded_count:,}, Irrelevant: {irrelevant_count:,})")
     except Exception as exc:
         logger.error(f"Error fetching {name} from {url}: {exc}")
         raise exc
 
-    return name, valid_domains, tld_offloaded_count, kw_offloaded_count, irrelevant_count
+    return name, kept_domains, offloadable_domains, tld_offloaded_count, kw_offloaded_count, irrelevant_count
 
 def optimize_domains(domains: set[str]) -> list[str]:
     reversed_sorted = sorted(d[::-1] for d in domains)
@@ -323,8 +330,21 @@ def build_policy_sets(policies_config, fetched_lists):
     sets = []
     for policy in policies_config:
         p_set = set()
-        for inc in policy.get("include", []): p_set |= fetched_lists.get(inc, set())
-        for exc in policy.get("exclude", []): p_set -= fetched_lists.get(exc, set())
+        apply_offload = policy.get("apply_offload", False)
+        
+        for inc in policy.get("include", []):
+            kept, offloadable = fetched_lists.get(inc, (set(), set()))
+            p_set |= kept
+            # If offloading is False for this policy, we re-inject the TLD/KW domains back in.
+            if not apply_offload:
+                p_set |= offloadable
+                
+        for exc in policy.get("exclude", []):
+            kept, offloadable = fetched_lists.get(exc, (set(), set()))
+            p_set -= kept
+            if not apply_offload:
+                p_set -= offloadable
+                
         sets.append((policy, optimize_domains(p_set)))
     return sets
 
@@ -344,7 +364,37 @@ def sync_tld_regex_rule(cf: CloudflareAPI, existing_rules: list, tlds: list[str]
         regex_str = "|".join(chunk)
         expr_parts.append(f'any(dns.domains[*] matches "(?i)\\.(?:{regex_str})$")')
         
-    traffic_expr = " or ".join(expr_parts)
+    base_traffic = " or ".join(expr_parts)
+    # Strictly wrap the TLD expression within the targeted nullnet/primary email scope.
+    traffic_expr = f"({TARGET_CONDITION}) and ({base_traffic})"
+    
+    existing_rule = next((r for r in existing_rules if r["name"] == rule_name), None)
+    is_enabled = existing_rule.get("enabled", True) if existing_rule else True
+
+    payload = {"name": rule_name, "action": "block", "enabled": is_enabled, "filters": ["dns"], "traffic": traffic_expr}
+    
+    if existing_rule:
+        if existing_rule.get("traffic") == traffic_expr and existing_rule.get("enabled") == is_enabled:
+            logger.info(f"Firewall rule {rule_name} unchanged. Skipping update.")
+        else:
+            cf.update_rule(existing_rule["id"], payload)
+            logger.info(f"Firewall rule updated: {rule_name}")
+    else: 
+        cf.create_rule(payload)
+        logger.info(f"Firewall rule created: {rule_name}")
+        
+    return rule_name
+
+def sync_kw_regex_rule(cf: CloudflareAPI, existing_rules: list, keywords: list[str]) -> str:
+    if not keywords:
+        return ""
+        
+    rule_name = "Block: NSFW Explicit Keywords"
+    kw_str = "|".join(keywords)
+    
+    # Target regex rule strictly to Nullnet and Primary Email
+    traffic_expr = f'({TARGET_CONDITION}) and (any(dns.domains[*] matches "(?i).*({kw_str}).*"))'
+    
     existing_rule = next((r for r in existing_rules if r["name"] == rule_name), None)
     is_enabled = existing_rule.get("enabled", True) if existing_rule else True
 
@@ -397,11 +447,11 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     # Intelligently route or distribute the condition
     cond = policy.get("identity_condition")
     if cond:
-        if cond.startswith("identity."):
+        if cond.startswith("identity.") and " or " not in cond and " and " not in cond:
             identity_expr = cond
             traffic_expr = " or ".join(list_items)
         else:
-            # Explicitly bind the network condition to every individual list chunk
+            # Explicitly bind complex network/identity conditions to every individual list chunk
             traffic_expr = " or ".join([f"({cond} and {item})" for item in list_items])
     else:
         traffic_expr = " or ".join(list_items)
@@ -526,8 +576,8 @@ def main() -> None:
         futures = {pool.submit(fetch_url, download_session, name, url, checker): name for name, url in BLOCKLIST_URLS.items()}
         for future in concurrent.futures.as_completed(futures):
             try:
-                name, valid_set, tld_count, kw_count, irrelevant_count = future.result()
-                fetched_lists[name] = valid_set
+                name, kept_set, offload_set, tld_count, kw_count, irrelevant_count = future.result()
+                fetched_lists[name] = (kept_set, offload_set)
                 total_tld_offloaded += tld_count
                 total_kw_offloaded += kw_count
                 total_irrelevant_pruned += irrelevant_count
@@ -543,8 +593,8 @@ def main() -> None:
         logger.error(f"Total domains ({total_domains:,}) exceeds quota! Aborting.")
         return
 
-    logger.info(f"Total domains offloaded by TLD rule: {total_tld_offloaded:,}")
-    logger.info(f"Total domains offloaded by Keyword rule: {total_kw_offloaded:,}")
+    logger.info(f"Total domains offloadable by TLD rule: {total_tld_offloaded:,}")
+    logger.info(f"Total domains offloadable by Keyword rule: {total_kw_offloaded:,}")
     logger.info(f"Total domains pruned by Relevance Filter: {total_irrelevant_pruned:,}")
     logger.info(f"Total domains to sync to Cloudflare: {total_domains:,}. Proceeding...")
 
@@ -559,6 +609,7 @@ def main() -> None:
         valid_prefixes += ("L_AllowTLD",)
         valid_rule_bases.add("Block: HaGeZi Most Abused TLDs")
         valid_rule_bases.add("Allow: HaGeZi TLD Exceptions")
+        valid_rule_bases.add("Block: NSFW Explicit Keywords")
 
     logger.info("Scanning for abandoned policies to clear room for new ones...")
     for rule in existing_rules[:]:
@@ -590,7 +641,9 @@ def main() -> None:
         allow_policy = {
             "prefix": "L_AllowTLD",
             "policy_name": "Allow: HaGeZi TLD Exceptions",
-            "action": "allow"
+            "action": "allow",
+            # Explicitly bind the allow exception strictly to Nullnet or the Primary user
+            "identity_condition": TARGET_CONDITION 
         }
         used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_allow_domains, allow_policy)
         all_active_list_ids.extend(used_ids)
@@ -600,6 +653,11 @@ def main() -> None:
         tld_rule_name = sync_tld_regex_rule(cf, existing_rules, tlds_list)
         if tld_rule_name:
             all_active_rule_names.append(tld_rule_name)
+            
+    if Config.ENABLE_TLD_KW_FILTERING and Config.OFFLOAD_KEYWORDS:
+        kw_rule_name = sync_kw_regex_rule(cf, existing_rules, Config.OFFLOAD_KEYWORDS)
+        if kw_rule_name:
+            all_active_rule_names.append(kw_rule_name)
 
     for policy, optimized_domains in compiled_policies:
         used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy)
