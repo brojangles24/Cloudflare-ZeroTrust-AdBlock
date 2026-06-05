@@ -27,7 +27,7 @@ class Config:
     TERTIARY_EMAIL          = os.environ.get("TERTIARY_EMAIL", "")
     
     # --- TOGGLES ---
-    ENABLE_TLD_KW_FILTERING = True
+    ENABLE_TLD_KW_FILTERING = False
     ENABLE_TIF_FULL         = True # Toggle for adding TIF Full
     
     # Static custom explicit keywords used to drop matching domains locally
@@ -304,7 +304,6 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
     kept_domains = set()
     tld_offloadable = set()
     kw_offloadable = set()
-    all_parsed_from_list = set()
     irrelevant_count = 0
     try:
         resp = session.get(url, timeout=Config.REQUEST_TIMEOUT)
@@ -315,9 +314,6 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
             cleaned, offload_reason = is_valid_domain(line.split()[-1].lower())
             
             if cleaned: 
-                # Capture the domain BEFORE relevance pruning drops it, so we can cross-reference it against the allowlist
-                all_parsed_from_list.add(cleaned)
-                
                 if checker and not checker.is_relevant(cleaned):
                     irrelevant_count += 1
                 elif offload_reason == "tld":
@@ -331,7 +327,7 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
         logger.error(f"Error fetching {name} from {url}: {exc}")
         raise exc
 
-    return name, kept_domains, tld_offloadable, kw_offloadable, all_parsed_from_list, len(tld_offloadable), len(kw_offloadable), irrelevant_count
+    return name, kept_domains, tld_offloadable, kw_offloadable, len(tld_offloadable), len(kw_offloadable), irrelevant_count
 
 def optimize_domains(domains: set[str]) -> list[str]:
     reversed_sorted = sorted(d[::-1] for d in domains)
@@ -626,18 +622,12 @@ def main() -> None:
     total_kw_offloaded = 0
     total_irrelevant_pruned = 0
     
-    # Store everything intended to be blocked across all lists
-    all_blocklist_domains = set()
-    
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
         futures = {pool.submit(fetch_url, download_session, name, url, checker): name for name, url in BLOCKLIST_URLS.items()}
         for future in concurrent.futures.as_completed(futures):
             try:
-                name, kept_set, tld_off, kw_off, all_parsed, tld_count, kw_count, irrelevant_count = future.result()
+                name, kept_set, tld_off, kw_off, tld_count, kw_count, irrelevant_count = future.result()
                 fetched_lists[name] = (kept_set, tld_off, kw_off)
-                
-                # Add everything from this blocklist to the master aggregation set
-                all_blocklist_domains.update(all_parsed)
                 
                 total_tld_offloaded += tld_count
                 total_kw_offloaded += kw_count
@@ -646,15 +636,8 @@ def main() -> None:
                 logger.error("A critical blocklist failed to download. Aborting sync to prevent accidental rule deletion.")
                 return
 
-    # Cross-reference the TLD allowlist against the complete blocklist universe
-    final_allowed_domains = raw_allowed_domains - all_blocklist_domains
-    dropped_allow_count = len(raw_allowed_domains) - len(final_allowed_domains)
-    
-    if dropped_allow_count > 0:
-        logger.info(f"Cross-referenced allowlist against blocklists: Dropped {dropped_allow_count} explicitly blocked exception domains.")
-
     compiled_policies = build_policy_sets(POLICIES, fetched_lists)
-    optimized_allow_domains = optimize_domains(final_allowed_domains) if final_allowed_domains else []
+    optimized_allow_domains = optimize_domains(raw_allowed_domains) if raw_allowed_domains else []
     total_domains = sum(len(domains) for _, domains in compiled_policies) + len(optimized_allow_domains)
 
     if total_domains > Config.TOTAL_QUOTA:
