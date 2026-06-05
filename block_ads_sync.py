@@ -93,7 +93,8 @@ BLOCKLIST_URLS = {
 # Offloading Target Definitions
 # Excludes Wife and Mom from the strict Regex rules (TLDs and Keywords)
 # ---------------------------------------------------------------------------
-TARGET_IDENTITY = f'not identity.email in {{"{Config.SECONDARY_EMAIL}", "{Config.TERTIARY_EMAIL}"}}'
+excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
+TARGET_IDENTITY = " and ".join([f'identity.email != "{e}"' for e in excluded_emails]) if excluded_emails else None
 
 OFFLOAD_TARGETS = [
     {"suffix": "", "traffic_cond": None, "identity_cond": TARGET_IDENTITY}
