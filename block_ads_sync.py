@@ -37,10 +37,10 @@ class Config:
     ]
     
     MAX_LIST_SIZE           = 10000  # Optimized to Cloudflare Max Batch Limit
-    MAX_RETRIES             = 5
-    TOTAL_QUOTA             = 300_000
-    REQUEST_TIMEOUT         = (5, 25)
-    MAX_WORKERS             = 5
+    MAX_RETRIES              = 5
+    TOTAL_QUOTA              = 300_000
+    REQUEST_TIMEOUT          = (5, 25)
+    MAX_WORKERS              = 5
 
     # Targets to scrub orphaned rules/lists
     SCRUB_TARGETS = [
@@ -81,7 +81,7 @@ ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adbl
 
 BLOCKLIST_URLS = {
     "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro_plus-onlydomains.txt",
+    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
@@ -104,7 +104,7 @@ OFFLOAD_TARGETS = [
 
 POLICIES = [
     {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (Household Base)", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi Normal"], "exclude": []},
-    {"prefix": "L_ProPlus", "policy_name": "Block: HaGeZi Pro++", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi Pro++"], "exclude": ["HaGeZi Normal"]}, # Fixed redundancy loop
+    {"prefix": "L_ProPlus", "policy_name": "Block: HaGeZi Pro++", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi Pro++"], "exclude": ["HaGeZi Normal"]},
     {"prefix": "L_Bypass", "policy_name": "Block: HaGeZi Bypass Prevention", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi Bypass Prevention"], "exclude": []},
     {"prefix": "L_Social", "policy_name": "Block: HaGeZi Social", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi Social"], "exclude": []},
     {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["Hagezi NSFW"], "exclude": []},
@@ -282,18 +282,25 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
     return name, kept_domains, tld_offloadable, kw_offloadable, len(tld_offloadable), len(kw_offloadable), irrelevant_count
 
 def optimize_domains(domains: set[str]) -> list[str]:
-    # Ultra-fast grouping & suffix compression without double string reversal
+    """
+    Optimizes domain structures cleanly removing deeper subdomains.
+    Leverages clean component segments instead of basic tail-end checks.
+    """
     sorted_domains = sorted(domains, key=lambda d: d.split('.')[::-1])
-    optimized, last_kept = [], None
+    optimized = []
+    last_kept_parts = None
+
     for dom in sorted_domains:
-        if last_kept and dom.endswith("." + last_kept): continue
+        current_parts = dom.split('.')
+        if last_kept_parts and len(current_parts) > len(last_kept_parts):
+            if current_parts[-len(last_kept_parts):] == last_kept_parts:
+                continue
         optimized.append(dom)
-        last_kept = dom
+        last_kept_parts = current_parts
     return optimized
 
 def build_policy_sets(policies_config, fetched_lists):
     sets = []
-    # Deduplicate downstream paths out of Household Base (L_Normal) on the fly
     base_household_set = fetched_lists.get("HaGeZi Normal", (set(), set(), set()))[0]
 
     for policy in policies_config:
@@ -315,7 +322,6 @@ def build_policy_sets(policies_config, fetched_lists):
                 p_set -= tld_off
                 p_set -= kw_off
         
-        # Performance/Quota Win: Strip global base rules from strict profile lists
         if policy["prefix"] != "L_Normal" and "HaGeZi Normal" not in policy.get("exclude", []):
             p_set -= base_household_set
 
@@ -387,15 +393,22 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     if not domains: return [], []
     sorted_domains = sorted(domains)
     chunks = [sorted_domains[i : i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
+    
     policy_existing_lists = sorted([l for l in existing_lists if l["name"].startswith(policy["prefix"] + " ")], key=lambda x: x["name"])
     
+    # Pre-map list data by index structural safety to remove thread-unsafe lookups
+    list_mapping = {}
+    for idx in range(len(chunks)):
+        if idx < len(policy_existing_lists):
+            list_mapping[idx] = policy_existing_lists[idx]
+
     def process_chunk(idx: int, chunk: list[str]) -> str:
         list_name = f"{policy['prefix']} {idx + 1:03d}"
         chunk_hash = hashlib.sha256(",".join(chunk).encode('utf-8')).hexdigest()
         items = [{"value": d} for d in chunk]
         
-        if idx < len(policy_existing_lists):
-            existing = policy_existing_lists[idx]
+        if idx in list_mapping:
+            existing = list_mapping[idx]
             if existing.get("description") == chunk_hash: return existing["id"]
             cf.update_list(existing["id"], list_name, items, desc=chunk_hash)
             logger.info(f"Updated list {list_name} ({len(chunk):,} domains)")
@@ -461,6 +474,10 @@ def cleanup_orphans(cf: CloudflareAPI, existing_lists: list[dict], existing_rule
             except Exception as e: logger.error(f"Could not delete list {l['name']}: {e}")
 
 def enforce_tld_rule_order(cf: CloudflareAPI):
+    """
+    Safely enforces precedence values directly via updates. Modifies metadata 
+    directly without rule drop actions to avoid gaps in system security.
+    """
     logger.info("Verifying rule precedence order...")
     rules = cf.get_rules()
     allow_rules = [r for r in rules if r["name"].startswith("Allow: HaGeZi TLD Exceptions")]
@@ -468,15 +485,22 @@ def enforce_tld_rule_order(cf: CloudflareAPI):
     if not allow_rules or not block_rules: return
         
     for block_rule in block_rules:
-        if any(r["precedence"] > block_rule["precedence"] for r in allow_rules):
-            logger.info(f"Reordering: Shifting {block_rule['name']} beneath exceptions layout...")
+        if any(r["precedence"] >= block_rule["precedence"] for r in allow_rules):
+            logger.info(f"Correcting priority for: {block_rule['name']} via direct PUT metadata shift...")
             try:
-                cf.delete_rule(block_rule["id"])
-                payload = {"name": block_rule["name"], "action": block_rule["action"], "traffic": block_rule["traffic"], "enabled": block_rule.get("enabled", True), "filters": block_rule.get("filters", ["dns"])}
+                target_precedence = min(r["precedence"] for r in allow_rules) + 10
+                payload = {
+                    "name": block_rule["name"], 
+                    "action": block_rule["action"], 
+                    "traffic": block_rule["traffic"], 
+                    "enabled": block_rule.get("enabled", True), 
+                    "filters": block_rule.get("filters", ["dns"]),
+                    "precedence": target_precedence
+                }
                 if block_rule.get("identity"): payload["identity"] = block_rule["identity"]
-                cf.create_rule(payload)
-                logger.info(f"Fixed rule order priority for {block_rule['name']}.")
-            except Exception as e: logger.error(f"Could not drop and swap precedence: {e}")
+                cf.update_rule(block_rule["id"], payload)
+                logger.info(f"Updated priority metadata layout for {block_rule['name']}.")
+            except Exception as e: logger.error(f"Could not update precedence configuration layers: {e}")
 
 # ---------------------------------------------------------------------------
 # 5. Main Execution
