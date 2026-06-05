@@ -105,11 +105,11 @@ POLICIES = [
     # 2. Pro User Layer: Covered by the explicit TLD/KW regex rules, so offloading is TRUE.
     {"prefix": "L_ProUser", "policy_name": "Block: HaGeZi Pro Mini (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "apply_offload": True, "include": ["HaGeZi Pro Mini"], "exclude": []},
     
-    {"prefix": "L_ProUser", "policy_name": "Block: HaGeZi Bypass Prevention (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "apply_offload": True, "include": ["HaGeZi Bypass Prevention"], "exclude": []},
+    {"prefix": "L_BypassBlock", "policy_name": "Block: HaGeZi Bypass Prevention (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "apply_offload": True, "include": ["HaGeZi Bypass Prevention"], "exclude": []},
  
-    {"prefix": "L_ProHome", "policy_name": "Block: HaGeZi Bypass Prevention (Home Network Location)", "action": "block", "identity_condition": f'dns.location in {{"{Config.NULLNET_LOCATION_ID}"}}', "apply_offload": True, "include": ["HaGeZi Bypass Prevention"], "exclude": []},
+    {"prefix": "L_BypassBlock", "policy_name": "Block: HaGeZi Bypass Prevention (Home Network Location)", "action": "block", "identity_condition": f'dns.location in {{"{Config.NULLNET_LOCATION_ID}"}}', "apply_offload": True, "include": ["HaGeZi Bypass Prevention"], "exclude": []},
     
-    {"prefix": "L_ProUser", "policy_name": "Block: HaGeZi Social  (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "apply_offload": True, "include": ["HaGeZi Social"], "exclude": []},
+    {"prefix": "L_SocialBlock", "policy_name": "Block: HaGeZi Social  (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "apply_offload": True, "include": ["HaGeZi Social"], "exclude": []},
     # 3. Pro Home Layer: Covered by the explicit TLD/KW regex rules, so offloading is TRUE.
     {"prefix": "L_ProHome", "policy_name": "Block: HaGeZi Pro Mini (Home Network Location)", "action": "block", "identity_condition": f'dns.location in {{"{Config.NULLNET_LOCATION_ID}"}}', "apply_offload": True, "include": ["HaGeZi Pro Mini"], "exclude": []},
     
