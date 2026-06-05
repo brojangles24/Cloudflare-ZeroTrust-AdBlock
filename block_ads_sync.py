@@ -85,40 +85,38 @@ BLOCKLIST_URLS = {
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
     "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
-    "HaGezI No Safesearch": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
+    "HaGeZi No SafeSearch": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
     "HaGeZi Bypass Prevention": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
 }
 
 # ---------------------------------------------------------------------------
 # Offloading Target Definitions
-# Splits rules logically to satisfy Cloudflare's strict Traffic/Identity API limitations
+# Splits explicit Regex rules logically to satisfy Cloudflare API limitations
 # ---------------------------------------------------------------------------
 OFFLOAD_TARGETS = [
     {"suffix": "(Roaming)", "traffic_cond": None, "identity_cond": f'identity.email == "{Config.PRIMARY_EMAIL}"'},
     {"suffix": "(Home)", "traffic_cond": f'dns.location in {{"{Config.NULLNET_LOCATION_ID}"}}', "identity_cond": None}
 ]
 
+# Create a unified condition for your personal standard lists
+TARGET_CONDITION = f'(identity.email == "{Config.PRIMARY_EMAIL}" or dns.location in {{"{Config.NULLNET_LOCATION_ID}"}})'
+
 POLICIES = [
-    # 1. Household Layer: Applies globally. MUST NOT offload domains, otherwise non-Pro users lose protection.
+    # 1. Household Layer: Applies globally.
     {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (Household Base)", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi Normal"], "exclude": []},
     
-    # 2. Pro User Layer: Covered by the explicit TLD/KW regex rules, so offloading is TRUE.
-    {"prefix": "L_ProUser", "policy_name": "Block: HaGeZi Pro Mini (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "apply_offload": True, "include": ["HaGeZi Pro Mini"], "exclude": []},
+    # 2. Pro Layers: Combined Home & Roaming to prevent 409 conflicts and save quota.
+    {"prefix": "L_Pro", "policy_name": "Block: HaGeZi Pro Mini", "action": "block", "identity_condition": TARGET_CONDITION, "apply_offload": True, "include": ["HaGeZi Pro Mini"], "exclude": []},
     
-    {"prefix": "L_BypassBlock", "policy_name": "Block: HaGeZi Bypass Prevention (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "apply_offload": True, "include": ["HaGeZi Bypass Prevention"], "exclude": []},
- 
-    {"prefix": "L_BypassBlock", "policy_name": "Block: HaGeZi Bypass Prevention (Home Network Location)", "action": "block", "identity_condition": f'dns.location in {{"{Config.NULLNET_LOCATION_ID}"}}', "apply_offload": True, "include": ["HaGeZi Bypass Prevention"], "exclude": []},
+    {"prefix": "L_Bypass", "policy_name": "Block: HaGeZi Bypass Prevention", "action": "block", "identity_condition": TARGET_CONDITION, "apply_offload": True, "include": ["HaGeZi Bypass Prevention"], "exclude": []},
     
-    {"prefix": "L_SocialBlock", "policy_name": "Block: HaGeZi Social  (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "apply_offload": True, "include": ["HaGeZi Social"], "exclude": []},
-    # 3. Pro Home Layer: Covered by the explicit TLD/KW regex rules, so offloading is TRUE.
-    {"prefix": "L_ProHome", "policy_name": "Block: HaGeZi Pro Mini (Home Network Location)", "action": "block", "identity_condition": f'dns.location in {{"{Config.NULLNET_LOCATION_ID}"}}', "apply_offload": True, "include": ["HaGeZi Pro Mini"], "exclude": []},
+    {"prefix": "L_Social", "policy_name": "Block: HaGeZi Social (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "apply_offload": True, "include": ["HaGeZi Social"], "exclude": []},
     
-    # 4. Generic Blocklists: Applies globally. MUST NOT offload.
+    # 3. Generic Blocklists: Applies globally.
     {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["Hagezi NSFW"], "exclude": []},
     {"prefix": "L_Fake", "policy_name": "Block: HaGeZi Fake", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi Fake"], "exclude": []},
     {"prefix": "L_NoSafeSearch", "policy_name": "Block: HaGeZi No SafeSearch", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi No SafeSearch"], "exclude": []},
-    
-] 
+]
 
 if Config.ENABLE_TIF_FULL:
     POLICIES.append({"prefix": "L_TIF", "policy_name": "Block: HaGeZi TIF Full", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi TIF Full"], "exclude": []})
@@ -705,29 +703,17 @@ def main() -> None:
     all_active_rule_names = []
 
     if Config.ENABLE_TLD_KW_FILTERING and optimized_allow_domains:
-        # Split allow rules identical to the block rules
-        allow_policies = [
-            {
-                "prefix": "L_AllowTLD",
-                "policy_name": "Allow: HaGeZi TLD Exceptions (Roaming)",
-                "action": "allow",
-                "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"'
-            },
-            {
-                "prefix": "L_AllowTLD",
-                "policy_name": "Allow: HaGeZi TLD Exceptions (Home)",
-                "action": "allow",
-                "identity_condition": f'dns.location in {{"{Config.NULLNET_LOCATION_ID}"}}'
-            }
-        ]
+        # Unified allow rule to prevent 409 Conflict and save quota
+        allow_policy = {
+            "prefix": "L_AllowTLD",
+            "policy_name": "Allow: HaGeZi TLD Exceptions",
+            "action": "allow",
+            "identity_condition": TARGET_CONDITION
+        }
         
-        for ap in allow_policies:
-            used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_allow_domains, ap)
-            # Reusing the L_AllowTLD prefix means the list generation happens once, saving quota.
-            for uid in used_ids:
-                if uid not in all_active_list_ids:
-                    all_active_list_ids.append(uid)
-            all_active_rule_names.extend(rule_names)
+        used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_allow_domains, allow_policy)
+        all_active_list_ids.extend(used_ids)
+        all_active_rule_names.extend(rule_names)
 
     if Config.ENABLE_TLD_KW_FILTERING and tlds_list:
         tld_rule_names = sync_tld_regex_rule(cf, existing_rules, tlds_list)
