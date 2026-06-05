@@ -53,6 +53,7 @@ class Config:
         "Allow:",
         "L_",
         "ProMini",
+        "ProPlus",
         "ProUser",
         "ProHome"
     ]
@@ -80,7 +81,7 @@ ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adbl
 
 BLOCKLIST_URLS = {
     "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-    "HaGeZi Pro Mini": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro_plus-onlydomains.txt",
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
@@ -96,8 +97,6 @@ BLOCKLIST_URLS = {
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
 
 if excluded_emails:
-    # Safely creates: not (identity.email == "email1" or identity.email == "email2")
-    # This bypasses both the broken {} set parser and the unsupported != operator
     emails_cond = " or ".join([f'identity.email == "{e}"' for e in excluded_emails])
     TARGET_IDENTITY = f'not ({emails_cond})'
 else:
@@ -112,7 +111,7 @@ POLICIES = [
     {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (Household Base)", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi Normal"], "exclude": []},
     
     # 2. Strict Layers: Applies by default, but explicitly EXCLUDES Wife and Mom.
-    {"prefix": "L_Pro", "policy_name": "Block: HaGeZi Pro Mini", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi Pro Mini"], "exclude": []},
+    {"prefix": "L_ProPlus", "policy_name": "Block: HaGeZi Pro++", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi Pro++"], "exclude": []},
     {"prefix": "L_Bypass", "policy_name": "Block: HaGeZi Bypass Prevention", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi Bypass Prevention"], "exclude": []},
     {"prefix": "L_Social", "policy_name": "Block: HaGeZi Social", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi Social"], "exclude": []},
     
@@ -177,7 +176,7 @@ class CloudflareAPI:
     def delete_list(self, lid):                               return self._request("DELETE", f"lists/{lid}")
     def delete_rule(self, rid):                               return self._request("DELETE", f"rules/{rid}")
     def create_list(self, name, items, desc=""):              return self._request("POST",   "lists",         json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
-    def update_list(self, lid, name, items, desc=""):         return self._request("PUT",    f"lists/{lid}",  json={"name": name, "items": items, "description": desc})
+    def update_list(self, lid, name, items, desc=""):          return self._request("PUT",    f"lists/{lid}",  json={"name": name, "items": items, "description": desc})
     def create_rule(self, data):                              return self._request("POST",   "rules",         json=data)
     def update_rule(self, rid, data):                         return self._request("PUT",    f"rules/{rid}",  json=data)
 
@@ -261,13 +260,11 @@ def parse_adguard_tld_list(session: requests.Session) -> tuple[list[str], set[st
         
         for line in resp.text.splitlines():
             line = line.strip()
-            # Ignore headers, brackets, and comments
             if not line or line.startswith("!") or line.startswith("#") or line.startswith("["): 
                 continue
                 
             if line.startswith("||"):
                 parts = line.split("^$denyallow=")
-                # Clean up to isolate strictly the raw string of the TLD
                 raw_tld = parts[0].replace("||", "").replace("*.", "").replace("^", "")
                 if raw_tld:
                     tlds.append(raw_tld)
@@ -348,7 +345,6 @@ def build_policy_sets(policies_config, fetched_lists):
         for inc in policy.get("include", []):
             kept, tld_off, kw_off = fetched_lists.get(inc, (set(), set(), set()))
             p_set |= kept
-            # If offloading is False for this policy, we re-inject the TLD/KW domains back in.
             if not apply_offload:
                 p_set |= tld_off
                 p_set |= kw_off
@@ -495,7 +491,6 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     traffic_expr = ""
     identity_expr = ""
 
-    # Route identity exclusions cleanly to the Cloudflare API 'identity' property
     cond = policy.get("identity_condition")
     if cond:
         if "dns." not in cond:
@@ -689,7 +684,6 @@ def main() -> None:
     all_active_rule_names = []
 
     if Config.ENABLE_TLD_KW_FILTERING and optimized_allow_domains:
-        # Unified allow rule using the exclusion identity condition
         allow_policy = {
             "prefix": "L_AllowTLD",
             "policy_name": "Allow: HaGeZi TLD Exceptions",
