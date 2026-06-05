@@ -94,7 +94,14 @@ BLOCKLIST_URLS = {
 # Excludes Wife and Mom from the strict Regex rules (TLDs and Keywords)
 # ---------------------------------------------------------------------------
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
-TARGET_IDENTITY = " and ".join([f'identity.email != "{e}"' for e in excluded_emails]) if excluded_emails else None
+
+if excluded_emails:
+    # Formats the array into: "email1", "email2"
+    emails_str = ", ".join([f'"{e}"' for e in excluded_emails])
+    # Wraps it in the strict wirefilter syntax: not(identity.email in {"email1", "email2"})
+    TARGET_IDENTITY = f'not(identity.email in {{{emails_str}}})'
+else:
+    TARGET_IDENTITY = None
 
 OFFLOAD_TARGETS = [
     {"suffix": "", "traffic_cond": None, "identity_cond": TARGET_IDENTITY}
