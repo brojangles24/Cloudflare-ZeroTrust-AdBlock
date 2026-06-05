@@ -40,18 +40,9 @@ class Config:
 
     # Targets to scrub orphaned rules/lists
     SCRUB_TARGETS = [
-        "Base", 
-        "Pro++", 
-        "Ultimate",
-        "Normal",
-        "Social",
-        "Block:",
-        "Allow:",
-        "L_",
-        "ProMini",
-        "ProPlus",
-        "ProUser",
-        "ProHome"
+        "Base", "Pro++", "Ultimate", "Normal", "Social", 
+        "Block:", "Allow:", "L_", "ProMini", "ProPlus", 
+        "ProUser", "ProHome", "Piracy", "DynDNS", "Hoster"
     ]
 
     @classmethod
@@ -85,19 +76,15 @@ BLOCKLIST_URLS = {
     "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
     "HaGeZi No SafeSearch": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
     "HaGeZi Bypass Prevention": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+    "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
+    "HaGeZi DynDNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
+    "HaGeZi Hoster": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
 }
 
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
+TARGET_IDENTITY = f'not ({" or ".join([f\'identity.email == "{e}"\' for e in excluded_emails])})' if excluded_emails else None
 
-if excluded_emails:
-    emails_cond = " or ".join([f'identity.email == "{e}"' for e in excluded_emails])
-    TARGET_IDENTITY = f'not ({emails_cond})'
-else:
-    TARGET_IDENTITY = None
-
-OFFLOAD_TARGETS = [
-    {"suffix": "", "traffic_cond": None, "identity_cond": TARGET_IDENTITY}
-]
+OFFLOAD_TARGETS = [{"suffix": "", "traffic_cond": None, "identity_cond": TARGET_IDENTITY}]
 
 POLICIES = [
     {"prefix": "L_Normal", "policy_name": "Block: HaGeZi Normal (Household Base)", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi Normal"], "exclude": []},
@@ -107,6 +94,9 @@ POLICIES = [
     {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["Hagezi NSFW"], "exclude": []},
     {"prefix": "L_Fake", "policy_name": "Block: HaGeZi Fake", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi Fake"], "exclude": []},
     {"prefix": "L_NoSafeSearch", "policy_name": "Block: HaGeZi No SafeSearch", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi No SafeSearch"], "exclude": []},
+    {"prefix": "L_Piracy", "policy_name": "Block: HaGeZi Anti-Piracy", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi Anti Piracy"], "exclude": ["HaGeZi Normal"]},
+    {"prefix": "L_DynDNS", "policy_name": "Block: HaGeZi Dynamic DNS", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi DynDNS"], "exclude": ["HaGeZi Normal"]},
+    {"prefix": "L_Hoster", "policy_name": "Block: HaGeZi File Hosters", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi Hoster"], "exclude": ["HaGeZi Normal"]},
 ]
 
 if Config.ENABLE_TIF_FULL:
@@ -121,7 +111,7 @@ class CloudflareAPI:
         self.headers = {"Authorization": f"Bearer {Config.API_TOKEN}", "Content-Type": "application/json"}
         self.session = requests.Session()
         retry = Retry(total=Config.MAX_RETRIES, backoff_factor=2, status_forcelist=[500, 502, 503, 504])
-        adapter = HTTPAdapter(pool_connections=Config.MAX_WORKERS, pool_maxsize=Config.MAX_WORKERS, max_retries=retry)
+        adapter = HTTPAdapter(pool_connections=Config.MAX_WORKERS, pool_maxsize=Config.MAX_WORKERS + 2, max_retries=retry)
         self.session.mount("https://", adapter)
 
     def _request(self, method, endpoint, **kwargs):
@@ -175,10 +165,9 @@ TOP_LISTS = [
 
 def has_suffix_match(host: str, lookup_set: set[str]) -> bool:
     if host in lookup_set: return True
-    idx = host.find('.')
-    while idx != -1:
-        if host[idx+1:] in lookup_set: return True
-        idx = host.find('.', idx + 1)
+    parts = host.split('.')
+    for i in range(1, len(parts)):
+        if '.'.join(parts[i:]) in lookup_set: return True
     return False
 
 def _parse_csv_lines(iterable, col_idx: int, skip_header: bool) -> set[str]:
@@ -206,7 +195,7 @@ def fetch_top_list(url: str, col_idx: int, skip_header: bool, compression: str, 
         else:
             return _parse_csv_lines(r.text.splitlines(), col_idx, skip_header)
     except Exception as e:
-        logger.critical(f"Critical failure fetching top list {url}: {e}")
+        logger.critical(f"Critical failure fetching top list {url}: {e}", exc_info=True)
         sys.exit(1)
 
 class RelevanceChecker:
@@ -313,7 +302,6 @@ def build_policy_sets(policies_config, fetched_lists):
                 p_set -= tld_off
                 p_set -= kw_off
         
-        # Suffix-aware pruning eliminates redundant subdomains to preserve TOTAL_QUOTA limits
         if policy["prefix"] != "L_Normal" and "HaGeZi Normal" not in policy.get("exclude", []) and base_household_set:
             p_set = {dom for dom in p_set if not has_suffix_match(dom, base_household_set)}
 
@@ -405,7 +393,6 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as executor:
         futures = [executor.submit(process_chunk, idx, chunk) for idx, chunk in enumerate(chunks)]
-        # Deterministic extraction preserves original array sequencing across lifetimes
         used_ids = [f.result() for f in futures]
 
     list_items = [f"any(dns.domains[*] in ${lid})" for lid in used_ids]
@@ -468,15 +455,25 @@ def enforce_tld_rule_order(cf: CloudflareAPI):
         if not allow_rules or not block_rules: return
             
         for block_rule in block_rules:
-            if any(r["precedence"] > block_rule["precedence"] for r in allow_rules):
-                logger.info(f"Reordering: Shifting {block_rule['name']} beneath exceptions layout...")
-                cf.delete_rule(block_rule["id"])
-                payload = {"name": block_rule["name"], "action": block_rule["action"], "traffic": block_rule["traffic"], "enabled": block_rule.get("enabled", True), "filters": block_rule.get("filters", ["dns"])}
-                if block_rule.get("identity"): payload["identity"] = block_rule["identity"]
-                cf.create_rule(payload)
-                logger.info(f"Fixed rule order priority for {block_rule['name']}.")
+            target_allow = max(r["precedence"] for r in allow_rules)
+            if block_rule["precedence"] <= target_allow:
+                logger.info(f"Updating priority for {block_rule['name']} directly via API parameters...")
+                
+                # Fixed: Stripped out backend read-only params to avoid 400 Bad Request
+                payload = {
+                    "name": block_rule["name"],
+                    "action": block_rule["action"],
+                    "traffic": block_rule["traffic"],
+                    "enabled": block_rule.get("enabled", True),
+                    "filters": block_rule.get("filters", ["dns"]),
+                    "precedence": target_allow + 1
+                }
+                if block_rule.get("identity"): 
+                    payload["identity"] = block_rule["identity"]
+                    
+                cf.update_rule(block_rule["id"], payload)
     except Exception as e: 
-        logger.error(f"Could not execute precedence stabilization swap sequence: {e}")
+        logger.error(f"Could not execute precedence stabilization sequence: {e}")
 
 # ---------------------------------------------------------------------------
 # 5. Main Execution
@@ -488,7 +485,7 @@ def main() -> None:
     
     download_session = requests.Session()
     dl_retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
-    download_session.mount("https://", HTTPAdapter(pool_connections=Config.MAX_WORKERS, pool_maxsize=Config.MAX_WORKERS, max_retries=dl_retry))
+    download_session.mount("https://", HTTPAdapter(pool_connections=Config.MAX_WORKERS, pool_maxsize=Config.MAX_WORKERS + 2, max_retries=dl_retry))
 
     checker = RelevanceChecker(download_session)
     checker.build_dataset(max_workers=Config.MAX_WORKERS)
@@ -514,11 +511,11 @@ def main() -> None:
                 total_tld_offloaded += tld_count
                 total_kw_offloaded += kw_count
                 total_irrelevant_pruned += irrelevant_count
-            except Exception:
+            except Exception as e:
                 if name == "HaGeZi Normal":
-                    logger.critical("Primary structural baseline compilation failure (HaGeZi Normal). Halting pipeline execution.")
+                    logger.critical("Primary structural baseline compilation failure (HaGeZi Normal). Halting pipeline execution.", exc_info=True)
                     return
-                logger.warning(f"Non-critical list source offline: {name}. Continuing with baseline survivability ruleset mapping.")
+                logger.warning(f"Non-critical list source offline: {name}. Error context: {e}")
 
     compiled_policies = build_policy_sets(POLICIES, fetched_lists)
     optimized_allow_domains = optimize_domains(raw_allowed_domains) if raw_allowed_domains else []
@@ -535,7 +532,6 @@ def main() -> None:
     existing_lists = cf.get_lists()
     existing_rules = cf.get_rules()
 
-    # --- SMART PRE-CLEANUP ---
     valid_prefixes = tuple(p["prefix"] for p in POLICIES)
     valid_rule_bases = {p["policy_name"] for p in POLICIES}
     if Config.ENABLE_TLD_KW_FILTERING:
@@ -561,7 +557,6 @@ def main() -> None:
                     existing_lists.remove(lst)
                     logger.info(f"Purged deprecated baseline table array: {lst['name']}")
                 except Exception as e: logger.error(f"Table array footprint cleanup intercept drop: {e}")
-    # -------------------------
 
     all_active_list_ids, all_active_rule_names = [], []
 
