@@ -82,7 +82,11 @@ BLOCKLIST_URLS = {
 }
 
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
-TARGET_IDENTITY = f'not ({" or ".join([f\'identity.email == "{e}"\' for e in excluded_emails])})' if excluded_emails else None
+if excluded_emails:
+    emails_cond = " or ".join([f'identity.email == "{e}"' for e in excluded_emails])
+    TARGET_IDENTITY = f"not ({emails_cond})"
+else:
+    TARGET_IDENTITY = None
 
 OFFLOAD_TARGETS = [{"suffix": "", "traffic_cond": None, "identity_cond": TARGET_IDENTITY}]
 
@@ -459,7 +463,6 @@ def enforce_tld_rule_order(cf: CloudflareAPI):
             if block_rule["precedence"] <= target_allow:
                 logger.info(f"Updating priority for {block_rule['name']} directly via API parameters...")
                 
-                # Fixed: Stripped out backend read-only params to avoid 400 Bad Request
                 payload = {
                     "name": block_rule["name"],
                     "action": block_rule["action"],
