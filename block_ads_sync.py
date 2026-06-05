@@ -12,10 +12,6 @@ import sys
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-# Global variables for the dynamically compiled filters
-TLD_SET = set()
-KW_PATTERN = None
-
 # ---------------------------------------------------------------------------
 # 1. Config & Lists
 # ---------------------------------------------------------------------------
@@ -37,10 +33,10 @@ class Config:
     ]
     
     MAX_LIST_SIZE           = 10000  # Optimized to Cloudflare Max Batch Limit
-    MAX_RETRIES              = 5
-    TOTAL_QUOTA              = 300_000
-    REQUEST_TIMEOUT          = (5, 25)
-    MAX_WORKERS              = 5
+    MAX_RETRIES             = 5
+    TOTAL_QUOTA             = 300_000
+    REQUEST_TIMEOUT         = (5, 25)
+    MAX_WORKERS             = 5
 
     # Targets to scrub orphaned rules/lists
     SCRUB_TARGETS = [
@@ -60,9 +56,10 @@ class Config:
 
     @classmethod
     def validate(cls):
-        missing = [k for k in ("API_TOKEN", "ACCOUNT_ID", "PRIMARY_EMAIL", "SECONDARY_EMAIL", "TERTIARY_EMAIL") if not getattr(cls, k)]
+        required_vars = ("API_TOKEN", "ACCOUNT_ID", "PRIMARY_EMAIL")
+        missing = [k for k in required_vars if not getattr(cls, k)]
         if missing:
-            raise EnvironmentError(f"Missing environment variables: {', '.join(missing)}")
+            raise EnvironmentError(f"Missing mandatory environment variables: {', '.join(missing)}")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -252,16 +249,16 @@ def parse_adguard_tld_list(session: requests.Session) -> tuple[list[str], set[st
         logger.error(f"Failed to parse AdGuard TLD data: {exc}")
     return [], set()
 
-def is_valid_domain(domain: str) -> tuple[str | None, str | None]:
+def is_valid_domain(domain: str, tld_set: set[str], kw_pattern: re.Pattern | None) -> tuple[str | None, str | None]:
     domain = domain.strip().strip(".")
     if not domain or any(c in domain for c in "*/[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
         return None, None
     if Config.ENABLE_TLD_KW_FILTERING:
-        if domain.split(".")[-1] in TLD_SET: return domain, "tld"
-        if KW_PATTERN and KW_PATTERN.search(domain): return domain, "kw"
+        if domain.split(".")[-1] in tld_set: return domain, "tld"
+        if kw_pattern and kw_pattern.search(domain): return domain, "kw"
     return domain, None
 
-def fetch_url(session: requests.Session, name: str, url: str, checker: RelevanceChecker = None):
+def fetch_url(session: requests.Session, name: str, url: str, tld_set: set[str], kw_pattern: re.Pattern | None, checker: RelevanceChecker = None):
     kept_domains, tld_offloadable, kw_offloadable, irrelevant_count = set(), set(), set(), 0
     try:
         resp = session.get(url, timeout=Config.REQUEST_TIMEOUT)
@@ -269,7 +266,7 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
         for line in resp.text.splitlines():
             line = line.strip()
             if not line or line[0] in ("#", "!", "/"): continue
-            cleaned, offload_reason = is_valid_domain(line.split()[-1].lower())
+            cleaned, offload_reason = is_valid_domain(line.split()[-1].lower(), tld_set, kw_pattern)
             if cleaned: 
                 if checker and not checker.is_relevant(cleaned): irrelevant_count += 1
                 elif offload_reason == "tld": tld_offloadable.add(cleaned)
@@ -282,33 +279,26 @@ def fetch_url(session: requests.Session, name: str, url: str, checker: Relevance
     return name, kept_domains, tld_offloadable, kw_offloadable, len(tld_offloadable), len(kw_offloadable), irrelevant_count
 
 def optimize_domains(domains: set[str]) -> list[str]:
-    """
-    Optimizes domain structures cleanly removing deeper subdomains.
-    Leverages clean component segments instead of basic tail-end checks.
-    """
     sorted_domains = sorted(domains, key=lambda d: d.split('.')[::-1])
-    optimized = []
-    last_kept_parts = None
-
+    optimized, last_kept = [], None
     for dom in sorted_domains:
-        current_parts = dom.split('.')
-        if last_kept_parts and len(current_parts) > len(last_kept_parts):
-            if current_parts[-len(last_kept_parts):] == last_kept_parts:
-                continue
+        if last_kept and dom.endswith("." + last_kept): continue
         optimized.append(dom)
-        last_kept_parts = current_parts
+        last_kept = dom
     return optimized
 
 def build_policy_sets(policies_config, fetched_lists):
     sets = []
-    base_household_set = fetched_lists.get("HaGeZi Normal", (set(), set(), set()))[0]
+    base_entry = fetched_lists.get("HaGeZi Normal")
+    base_household_set = base_entry[0] if base_entry else set()
 
     for policy in policies_config:
         p_set, re_injected_count = set(), 0
         apply_offload = policy.get("apply_offload", False)
         
         for inc in policy.get("include", []):
-            kept, tld_off, kw_off = fetched_lists.get(inc, (set(), set(), set()))
+            if inc not in fetched_lists: continue
+            kept, tld_off, kw_off = fetched_lists[inc]
             p_set |= kept
             if not apply_offload:
                 p_set |= tld_off
@@ -316,14 +306,16 @@ def build_policy_sets(policies_config, fetched_lists):
                 re_injected_count += (len(tld_off) + len(kw_off))
                 
         for exc in policy.get("exclude", []):
-            kept, tld_off, kw_off = fetched_lists.get(exc, (set(), set(), set()))
+            if exc not in fetched_lists: continue
+            kept, tld_off, kw_off = fetched_lists[exc]
             p_set -= kept
             if not apply_offload:
                 p_set -= tld_off
                 p_set -= kw_off
         
-        if policy["prefix"] != "L_Normal" and "HaGeZi Normal" not in policy.get("exclude", []):
-            p_set -= base_household_set
+        # Suffix-aware pruning eliminates redundant subdomains to preserve TOTAL_QUOTA limits
+        if policy["prefix"] != "L_Normal" and "HaGeZi Normal" not in policy.get("exclude", []) and base_household_set:
+            p_set = {dom for dom in p_set if not has_suffix_match(dom, base_household_set)}
 
         sets.append((policy, optimize_domains(p_set)))
         if not apply_offload and re_injected_count > 0:
@@ -393,22 +385,15 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     if not domains: return [], []
     sorted_domains = sorted(domains)
     chunks = [sorted_domains[i : i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
-    
     policy_existing_lists = sorted([l for l in existing_lists if l["name"].startswith(policy["prefix"] + " ")], key=lambda x: x["name"])
     
-    # Pre-map list data by index structural safety to remove thread-unsafe lookups
-    list_mapping = {}
-    for idx in range(len(chunks)):
-        if idx < len(policy_existing_lists):
-            list_mapping[idx] = policy_existing_lists[idx]
-
     def process_chunk(idx: int, chunk: list[str]) -> str:
         list_name = f"{policy['prefix']} {idx + 1:03d}"
         chunk_hash = hashlib.sha256(",".join(chunk).encode('utf-8')).hexdigest()
         items = [{"value": d} for d in chunk]
         
-        if idx in list_mapping:
-            existing = list_mapping[idx]
+        if idx < len(policy_existing_lists):
+            existing = policy_existing_lists[idx]
             if existing.get("description") == chunk_hash: return existing["id"]
             cf.update_list(existing["id"], list_name, items, desc=chunk_hash)
             logger.info(f"Updated list {list_name} ({len(chunk):,} domains)")
@@ -420,7 +405,8 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as executor:
         futures = [executor.submit(process_chunk, idx, chunk) for idx, chunk in enumerate(chunks)]
-        used_ids = [f.result() for f in concurrent.futures.as_completed(futures)]
+        # Deterministic extraction preserves original array sequencing across lifetimes
+        used_ids = [f.result() for f in futures]
 
     list_items = [f"any(dns.domains[*] in ${lid})" for lid in used_ids]
     traffic_expr, identity_expr = "", ""
@@ -474,33 +460,23 @@ def cleanup_orphans(cf: CloudflareAPI, existing_lists: list[dict], existing_rule
             except Exception as e: logger.error(f"Could not delete list {l['name']}: {e}")
 
 def enforce_tld_rule_order(cf: CloudflareAPI):
-    """
-    Safely enforces precedence values directly via updates. Modifies metadata 
-    directly without rule drop actions to avoid gaps in system security.
-    """
     logger.info("Verifying rule precedence order...")
-    rules = cf.get_rules()
-    allow_rules = [r for r in rules if r["name"].startswith("Allow: HaGeZi TLD Exceptions")]
-    block_rules = [r for r in rules if r["name"].startswith("Block: HaGeZi Most Abused TLDs")]
-    if not allow_rules or not block_rules: return
-        
-    for block_rule in block_rules:
-        if any(r["precedence"] >= block_rule["precedence"] for r in allow_rules):
-            logger.info(f"Correcting priority for: {block_rule['name']} via direct PUT metadata shift...")
-            try:
-                target_precedence = min(r["precedence"] for r in allow_rules) + 10
-                payload = {
-                    "name": block_rule["name"], 
-                    "action": block_rule["action"], 
-                    "traffic": block_rule["traffic"], 
-                    "enabled": block_rule.get("enabled", True), 
-                    "filters": block_rule.get("filters", ["dns"]),
-                    "precedence": target_precedence
-                }
+    try:
+        rules = cf.get_rules()
+        allow_rules = [r for r in rules if r["name"].startswith("Allow: HaGeZi TLD Exceptions")]
+        block_rules = [r for r in rules if r["name"].startswith("Block: HaGeZi Most Abused TLDs")]
+        if not allow_rules or not block_rules: return
+            
+        for block_rule in block_rules:
+            if any(r["precedence"] > block_rule["precedence"] for r in allow_rules):
+                logger.info(f"Reordering: Shifting {block_rule['name']} beneath exceptions layout...")
+                cf.delete_rule(block_rule["id"])
+                payload = {"name": block_rule["name"], "action": block_rule["action"], "traffic": block_rule["traffic"], "enabled": block_rule.get("enabled", True), "filters": block_rule.get("filters", ["dns"])}
                 if block_rule.get("identity"): payload["identity"] = block_rule["identity"]
-                cf.update_rule(block_rule["id"], payload)
-                logger.info(f"Updated priority metadata layout for {block_rule['name']}.")
-            except Exception as e: logger.error(f"Could not update precedence configuration layers: {e}")
+                cf.create_rule(payload)
+                logger.info(f"Fixed rule order priority for {block_rule['name']}.")
+    except Exception as e: 
+        logger.error(f"Could not execute precedence stabilization swap sequence: {e}")
 
 # ---------------------------------------------------------------------------
 # 5. Main Execution
@@ -521,17 +497,17 @@ def main() -> None:
     if Config.ENABLE_TLD_KW_FILTERING:
         tlds_list, raw_allowed_domains = parse_adguard_tld_list(download_session)
     
-    global TLD_SET, KW_PATTERN
-    if tlds_list: TLD_SET = set(tld.lower() for tld in tlds_list)
+    local_tld_set = set(tld.lower() for tld in tlds_list) if tlds_list else set()
     kw_str = "|".join(Config.OFFLOAD_KEYWORDS)
-    if kw_str: KW_PATTERN = re.compile(f"(?i){kw_str}")
+    local_kw_pattern = re.compile(f"(?i){kw_str}") if kw_str else None
 
     fetched_lists = {}
     total_tld_offloaded = total_kw_offloaded = total_irrelevant_pruned = 0
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
-        futures = {pool.submit(fetch_url, download_session, name, url, checker): name for name, url in BLOCKLIST_URLS.items()}
+        futures = {pool.submit(fetch_url, download_session, name, url, local_tld_set, local_kw_pattern, checker): name for name, url in BLOCKLIST_URLS.items()}
         for future in concurrent.futures.as_completed(futures):
+            name = futures[future]
             try:
                 name, kept_set, tld_off, kw_off, tld_count, kw_count, irrelevant_count = future.result()
                 fetched_lists[name] = (kept_set, tld_off, kw_off)
@@ -539,15 +515,17 @@ def main() -> None:
                 total_kw_offloaded += kw_count
                 total_irrelevant_pruned += irrelevant_count
             except Exception:
-                logger.error("A critical blocklist compilation failure occurred. Terminating transaction.")
-                return
+                if name == "HaGeZi Normal":
+                    logger.critical("Primary structural baseline compilation failure (HaGeZi Normal). Halting pipeline execution.")
+                    return
+                logger.warning(f"Non-critical list source offline: {name}. Continuing with baseline survivability ruleset mapping.")
 
     compiled_policies = build_policy_sets(POLICIES, fetched_lists)
     optimized_allow_domains = optimize_domains(raw_allowed_domains) if raw_allowed_domains else []
     total_domains = sum(len(domains) for _, domains in compiled_policies) + len(optimized_allow_domains)
 
     if total_domains > Config.TOTAL_QUOTA:
-        logger.error(f"Total compiled size ({total_domains:,}) hits quota limits. Process halted.")
+        logger.error(f"Total compiled payload matrix size ({total_domains:,}) exceeds infrastructure limits. Execution halted.")
         return
 
     logger.info(f"Domains mapped to TLD rules: {total_tld_offloaded:,} | Keyword rules: {total_kw_offloaded:,}")
