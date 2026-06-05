@@ -84,6 +84,8 @@ BLOCKLIST_URLS = {
     "Hagezi NSFW": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
+    "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/social.txt",
+    "HaGezI No Safesearch": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/nosafesearch.txt",
 }
 
 # ---------------------------------------------------------------------------
@@ -101,14 +103,17 @@ POLICIES = [
     
     # 2. Pro User Layer: Covered by the explicit TLD/KW regex rules, so offloading is TRUE.
     {"prefix": "L_ProUser", "policy_name": "Block: HaGeZi Pro Mini (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "apply_offload": True, "include": ["HaGeZi Pro Mini"], "exclude": []},
-
+    
+    {"prefix": "L_ProUser", "policy_name": "Block: HaGeZi Social  (Primary User Roaming)", "action": "block", "identity_condition": f'identity.email == "{Config.PRIMARY_EMAIL}"', "apply_offload": True, "include": ["HaGeZi Social"], "exclude": []},
     # 3. Pro Home Layer: Covered by the explicit TLD/KW regex rules, so offloading is TRUE.
     {"prefix": "L_ProHome", "policy_name": "Block: HaGeZi Pro Mini (Home Network Location)", "action": "block", "identity_condition": f'dns.location in {{"{Config.NULLNET_LOCATION_ID}"}}', "apply_offload": True, "include": ["HaGeZi Pro Mini"], "exclude": []},
     
     # 4. Generic Blocklists: Applies globally. MUST NOT offload.
     {"prefix": "L_NSFW", "policy_name": "Block: HaGeZi NSFW", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["Hagezi NSFW"], "exclude": []},
     {"prefix": "L_Fake", "policy_name": "Block: HaGeZi Fake", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi Fake"], "exclude": []},
-]
+    {"prefix": "L_NoSafeSearch", "policy_name": "Block: HaGeZi No SafeSearch", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi No SafeSearch"], "exclude": []},
+    
+] 
 
 if Config.ENABLE_TIF_FULL:
     POLICIES.append({"prefix": "L_TIF", "policy_name": "Block: HaGeZi TIF Full", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi TIF Full"], "exclude": []})
