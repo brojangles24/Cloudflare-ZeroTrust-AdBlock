@@ -96,10 +96,10 @@ BLOCKLIST_URLS = {
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
 
 if excluded_emails:
-    # Formats the array into: "email1", "email2"
-    emails_str = ", ".join([f'"{e}"' for e in excluded_emails])
-    # Wraps it in the strict wirefilter syntax: not(identity.email in {"email1", "email2"})
-    TARGET_IDENTITY = f'not(identity.email in {{{emails_str}}})'
+    # Safely creates: not (identity.email == "email1" or identity.email == "email2")
+    # This bypasses both the broken {} set parser and the unsupported != operator
+    emails_cond = " or ".join([f'identity.email == "{e}"' for e in excluded_emails])
+    TARGET_IDENTITY = f'not ({emails_cond})'
 else:
     TARGET_IDENTITY = None
 
