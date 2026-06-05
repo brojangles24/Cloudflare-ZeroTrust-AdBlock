@@ -32,7 +32,7 @@ class Config:
         "tits", "fuck", "onlyfans", "porn", "xxx", "sex",
     ]
     
-    MAX_LIST_SIZE           = 10000  # Optimized to Cloudflare Max Batch Limit
+    MAX_LIST_SIZE           = 1000  # Optimized to Cloudflare Max Batch Limit
     MAX_RETRIES             = 5
     TOTAL_QUOTA             = 300_000
     REQUEST_TIMEOUT         = (5, 25)
