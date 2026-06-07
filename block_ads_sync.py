@@ -75,7 +75,7 @@ BLOCKLIST_URLS = {
         "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
         "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts",
         "https://raw.githubusercontent.com/blocklistproject/Lists/master/porn.txt",
-        "https://raw.githubusercontent.com/Bon-Appetit/porn-domains/main/block.txt",
+        "https://raw.githubusercontent.com/Bon-Appetit/porn-domains/refs/heads/main/block.5765c77bab.xpsq3l.txt",
     ],
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
