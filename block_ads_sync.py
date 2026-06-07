@@ -69,13 +69,13 @@ ADGUARD_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adbl
 
 BLOCKLIST_URLS = {
     "HaGeZi Normal": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
     "Hagezi NSFW": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",  
         "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
-        "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts",
-        "https://raw.githubusercontent.com/blocklistproject/Lists/master/porn.txt",
-        "https://raw.githubusercontent.com/Bon-Appetit/porn-domains/refs/heads/main/block.5765c77bab.xpsq3l.txt",
+        #"https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts",
+        #"https://raw.githubusercontent.com/blocklistproject/Lists/master/porn.txt",
+        #"https://raw.githubusercontent.com/Bon-Appetit/porn-domains/refs/heads/main/block.5765c77bab.xpsq3l.txt",
     ],
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
