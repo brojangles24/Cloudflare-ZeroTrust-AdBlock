@@ -257,25 +257,33 @@ def is_valid_domain(domain: str, tld_set: set[str], kw_pattern: re.Pattern | Non
         if kw_pattern and kw_pattern.search(domain): return domain, "kw"
     return domain, None
 
-def fetch_url(session: requests.Session, name: str, url: str, tld_set: set[str], kw_pattern: re.Pattern | None, checker: RelevanceChecker = None):
-    kept_domains, tld_offloadable, kw_offloadable, irrelevant_count = set(), set(), set(), 0
-    try:
-        resp = session.get(url, timeout=Config.REQUEST_TIMEOUT)
-        resp.raise_for_status()
-        for line in resp.text.splitlines():
-            line = line.strip()
-            if not line or line[0] in ("#", "!", "/"): continue
-            cleaned, offload_reason = is_valid_domain(line.split()[-1].lower(), tld_set, kw_pattern)
-            if cleaned: 
-                if checker and not checker.is_relevant(cleaned): irrelevant_count += 1
-                elif offload_reason == "tld": tld_offloadable.add(cleaned)
-                elif offload_reason == "kw": kw_offloadable.add(cleaned)
-                else: kept_domains.add(cleaned)
-        logger.info(f"Fetched {name}: {len(kept_domains):,} kept (TLD Offload: {len(tld_offloadable):,}, KW: {len(kw_offloadable):,}, Pruned: {irrelevant_count:,})")
-    except Exception as exc:
-        logger.error(f"Error fetching {name}: {exc}")
-        raise exc
-    return name, kept_domains, tld_offloadable, kw_offloadable, len(tld_offloadable), len(kw_offloadable), irrelevant_count
+# Updated to gracefully iterate strings vs lists of URLs
+def fetch_url(session: requests.Session, name: str, url: str | list[str], tld_set: set[str], kw_pattern: re.Pattern | None, checker: RelevanceChecker = None):
+    kept_domains, tld_offloadable, kw_offloadable = set(), set(), set()
+    total_irrelevant_count = 0
+    
+    # Standardize single strings into an iterable list
+    urls_to_process = [url] if isinstance(url, str) else url
+
+    for target_url in urls_to_process:
+        try:
+            resp = session.get(target_url, timeout=Config.REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            for line in resp.text.splitlines():
+                line = line.strip()
+                if not line or line[0] in ("#", "!", "/"): continue
+                cleaned, offload_reason = is_valid_domain(line.split()[-1].lower(), tld_set, kw_pattern)
+                if cleaned: 
+                    if checker and not checker.is_relevant(cleaned): total_irrelevant_count += 1
+                    elif offload_reason == "tld": tld_offloadable.add(cleaned)
+                    elif offload_reason == "kw": kw_offloadable.add(cleaned)
+                    else: kept_domains.add(cleaned)
+        except Exception as exc:
+            logger.error(f"Error fetching submodule in {name} ({target_url}): {exc}")
+            raise exc
+            
+    logger.info(f"Fetched {name}: {len(kept_domains):,} kept (TLD Offload: {len(tld_offloadable):,}, KW: {len(kw_offloadable):,}, Pruned: {total_irrelevant_count:,})")
+    return name, kept_domains, tld_offloadable, kw_offloadable, len(tld_offloadable), len(kw_offloadable), total_irrelevant_count
 
 def optimize_domains(domains: set[str]) -> list[str]:
     sorted_domains = sorted(domains, key=lambda d: d.split('.')[::-1])
