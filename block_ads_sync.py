@@ -87,7 +87,7 @@ BLOCKLIST_URLS = {
     "HaGeZi Bypass Prevention": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
     "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
     "HaGeZi DynDNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-    "HaGeZi Hoster": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
+    #"HaGeZi Hoster": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
 }
 
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
@@ -109,7 +109,7 @@ POLICIES = [
     {"prefix": "L_NoSafeSearch", "policy_name": "Block: HaGeZi No SafeSearch", "action": "block", "identity_condition": None, "apply_offload": False, "include": ["HaGeZi No SafeSearch"], "exclude": []},
     {"prefix": "L_Piracy", "policy_name": "Block: HaGeZi Anti-Piracy", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi Anti Piracy"], "exclude": ["HaGeZi Normal"]},
     {"prefix": "L_DynDNS", "policy_name": "Block: HaGeZi Dynamic DNS", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi DynDNS"], "exclude": ["HaGeZi Normal"]},
-    {"prefix": "L_Hoster", "policy_name": "Block: HaGeZi File Hosters", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi Hoster"], "exclude": ["HaGeZi Normal"]},
+    #{"prefix": "L_Hoster", "policy_name": "Block: HaGeZi File Hosters", "action": "block", "identity_condition": TARGET_IDENTITY, "apply_offload": True, "include": ["HaGeZi Hoster"], "exclude": ["HaGeZi Normal"]},
 ]
 
 if Config.ENABLE_TIF_FULL:
