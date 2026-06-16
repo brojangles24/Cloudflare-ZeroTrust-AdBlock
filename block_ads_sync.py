@@ -161,6 +161,17 @@ class CloudflareAPI:
 
         raise requests.exceptions.HTTPError("Exhausted retries due to persistent Cloudflare API dropouts.", response=resp)
 
+    def _get_paginated(self, endpoint):
+        results, page = [], 1
+        while True:
+            resp = self._request("GET", f"{endpoint}?page={page}&per_page=100")
+            data = resp.get("result") or []
+            results.extend(data)
+            info = resp.get("result_info")
+            if not info or page >= info.get("total_pages", 1): break
+            page += 1
+        return results
+
     def get_lists(self):                                      return self._get_paginated("lists")
     def get_rules(self):                                      return self._get_paginated("rules")
     def delete_list(self, lid):                               return self._request("DELETE", f"lists/{lid}")
@@ -472,7 +483,7 @@ def main() -> None:
 
     for rule in existing_rules[:]:
         if any(kw in rule["name"] for kw in ["IoT Bypass", "Custom", "Keywords"]): continue
-        if any(target in rule["name"] for target in Config.SCRUB_TARGETS):
+        if fasteners := any(target in rule["name"] for target in Config.SCRUB_TARGETS):
             if not any(rule["name"].startswith(base) for base in valid_rule_bases):
                 try:
                     cf.delete_rule(rule["id"])
