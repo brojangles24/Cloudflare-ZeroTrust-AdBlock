@@ -26,7 +26,7 @@ class Config:
     ENABLE_RELEVANCE_FILTER = True
     ENABLE_TIF_FULL         = True
     
-    MAX_LIST_SIZE           = 1000  # Reverted to 1000. Hard API limit enforced by Cloudflare.
+    MAX_LIST_SIZE           = 1000  
     MAX_RETRIES             = 5
     TOTAL_QUOTA             = 300_000
     REQUEST_TIMEOUT         = (5, 25)
@@ -410,7 +410,7 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     return used_ids, [final_rule_name]
 
 def cleanup_orphans(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], active_list_ids: list[str], active_rule_names: list[str]):
-    logger.info("Running post-sync cleanup of orphaned resources...")
+    logger.info("Running post-sync cleanup of orphaned firewall rules...")
     for r in existing_rules:
         if any(kw in r["name"] for kw in ["IoT Bypass", "Custom", "Keywords"]): continue
         if r["name"] not in active_rule_names and any(target in r["name"] for target in Config.SCRUB_TARGETS):
@@ -482,12 +482,54 @@ def main() -> None:
     existing_lists = cf.get_lists()
     existing_rules = cf.get_rules()
 
-    valid_prefixes = tuple(p["prefix"] for p in active_policies)
-    valid_rule_bases = {p["policy_name"] for p in active_policies}
+    # --- UPFRONT COMPREHENSIVE LIST PURGE ---
+    # Determine the maximum amount of chunks each active policy requires right now
+    expected_chunks = {}
+    for policy, optimized_domains in compiled_policies:
+        prefix = policy["prefix"]
+        needed_chunks = (len(optimized_domains) + Config.MAX_LIST_SIZE - 1) // Config.MAX_LIST_SIZE
+        expected_chunks[prefix] = max(1, needed_chunks) if optimized_domains else 0
 
+    logger.info("Executing predictive upfront cleanup of stale/excess lists to open up quota slots...")
+    for lst in existing_lists[:]:
+        if "IoT Bypass" in lst["name"]: 
+            continue
+            
+        if any(target in lst["name"] for target in Config.SCRUB_TARGETS):
+            matched_prefix = None
+            for pfx in expected_chunks:
+                if lst["name"].startswith(pfx + " "):
+                    matched_prefix = pfx
+                    break
+            
+            should_delete = False
+            if not matched_prefix:
+                # The list belongs to a target pattern but its prefix is completely deprecated
+                should_delete = True
+            else:
+                # The list has a valid prefix, but check if its index is larger than what we currently need
+                try:
+                    idx_part = lst["name"].split()[-1]
+                    lst_idx = int(idx_part)
+                    if lst_idx > expected_chunks[matched_prefix]:
+                        should_delete = True
+                except ValueError:
+                    # If it's malformed or missing a clean trailing integer, schedule purge
+                    should_delete = True
+                    
+            if should_delete:
+                try:
+                    cf.delete_list(lst["id"])
+                    existing_lists.remove(lst)
+                    logger.info(f"Pre-emptively purged out-of-bounds list slot: {lst['name']}")
+                except Exception as e:
+                    logger.error(f"Failed to clear space for list {lst['name']}: {e}")
+
+    # Clean up deprecated rules before rule creation/update
+    valid_rule_bases = {p["policy_name"] for p in active_policies}
     for rule in existing_rules[:]:
         if any(kw in rule["name"] for kw in ["IoT Bypass", "Custom", "Keywords"]): continue
-        if fasteners := any(target in rule["name"] for target in Config.SCRUB_TARGETS):
+        if any(target in rule["name"] for target in Config.SCRUB_TARGETS):
             if not any(rule["name"].startswith(base) for base in valid_rule_bases):
                 try:
                     cf.delete_rule(rule["id"])
@@ -495,16 +537,7 @@ def main() -> None:
                     logger.info(f"Purged deprecated baseline rule: {rule['name']}")
                 except Exception as e: logger.error(f"Rule cleanup intercept drop: {e}")
 
-    for lst in existing_lists[:]:
-        if "IoT Bypass" in lst["name"]: continue
-        if any(target in lst["name"] for target in Config.SCRUB_TARGETS):
-            if not any(lst["name"].startswith(pfx + " ") for pfx in valid_prefixes):
-                try:
-                    cf.delete_list(lst["id"])
-                    existing_lists.remove(lst)
-                    logger.info(f"Purged deprecated baseline table array: {lst['name']}")
-                except Exception as e: logger.error(f"Table array footprint cleanup intercept drop: {e}")
-
+    # --- SYNCHRONIZATION PHASE ---
     all_active_list_ids, all_active_rule_names = [], []
 
     for policy, optimized_domains in compiled_policies:
@@ -527,6 +560,7 @@ def main() -> None:
     except Exception as e:
         logger.error(f"Failed writing target aggregate blocklist dump matrix: {e}")
 
+    # Fallback secondary sweep just in case any edge case structural lists remain
     cleanup_orphans(cf, existing_lists, existing_rules, all_active_list_ids, all_active_rule_names)
 
     logger.info(f"Sync complete. Network timeline iteration: {time.perf_counter() - start:.2f} seconds.")
