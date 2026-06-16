@@ -23,8 +23,8 @@ class Config:
     TERTIARY_EMAIL          = os.environ.get("TERTIARY_EMAIL", "")
     
     # --- TOGGLES ---
-    ENABLE_RELEVANCE_FILTER = False
-    ENABLE_TIF_FULL         = False
+    ENABLE_RELEVANCE_FILTER = True
+    ENABLE_TIF_FULL         = True
     
     MAX_LIST_SIZE           = 5000  # Optimized to mitigate Cloudflare total account list limits
     MAX_RETRIES             = 5
