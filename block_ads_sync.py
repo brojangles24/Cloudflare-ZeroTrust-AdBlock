@@ -63,7 +63,7 @@ BLOCKLIST_URLS = {
     "HaGeZi Normal": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
     ],
-    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
     "Hagezi NSFW": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",  
         "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
@@ -93,13 +93,7 @@ POLICIES = [
         "action": "block", 
         "identity_condition": None, 
         "category_condition": "any(dns.security_category[*] in {178 80 187 83 176 175 117 131 134 153}) or any(dns.content_category[*] in {133})",
-        "include": [
-            "HaGeZi Normal",
-            "Hagezi NSFW",
-            "HaGeZi Fake",
-            "HaGeZi DynDNS",
-            "HaGeZi No SafeSearch", 
-        ], 
+        "include": ["HaGeZi Normal"], 
         "exclude": []
     },
     {
@@ -112,14 +106,18 @@ POLICIES = [
             "HaGeZi Pro++", 
             "HaGeZi Bypass Prevention", 
             "HaGeZi Social", 
+            "Hagezi NSFW", 
+            "HaGeZi Fake", 
+            "HaGeZi No SafeSearch", 
             "HaGeZi Anti Piracy", 
+            "HaGeZi DynDNS"
         ], 
         "exclude": ["HaGeZi Normal"]
     }
 ]
 
 if Config.ENABLE_TIF_FULL:
-    POLICIES[0]["include"].append("HaGeZi TIF Full")
+    POLICIES[1]["include"].append("HaGeZi TIF Full")
 
 # ---------------------------------------------------------------------------
 # 2. Cloudflare API Client
@@ -141,7 +139,7 @@ class CloudflareAPI:
             try:
                 resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, timeout=Config.REQUEST_TIMEOUT, **kwargs)
                 
-                if resp.status_code in [409, 429, 500, 502, 503, 504]:
+                if resp.status_code in [429, 500, 502, 503, 504]:
                     retries -= 1
                     logger.warning(f"Transient API Error ({resp.status_code}) on {endpoint}. Retrying in {delay}s... ({retries} left)")
                     time.sleep(delay)
@@ -162,20 +160,6 @@ class CloudflareAPI:
                 delay *= 2
 
         raise requests.exceptions.HTTPError("Exhausted retries due to persistent Cloudflare API dropouts.", response=resp)
-
-    def _get_paginated(self, endpoint: str) -> list:
-        results = []
-        page = 1
-        while True:
-            resp = self._request("GET", f"{endpoint}?page={page}&per_page=1000")
-            if "result" in resp and resp["result"]:
-                results.extend(resp["result"])
-            
-            result_info = resp.get("result_info", {})
-            if page >= result_info.get("total_pages", 1):
-                break
-            page += 1
-        return results
 
     def get_lists(self):                                      return self._get_paginated("lists")
     def get_rules(self):                                      return self._get_paginated("rules")
@@ -365,10 +349,9 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
                 logger.info(f"Created list {list_name} ({len(chunk):,} domains)")
                 return res["result"]["id"]
 
-        used_ids = []
-        for idx, chunk in enumerate(chunks):
-            used_ids.append(process_chunk(idx, chunk))
-            time.sleep(0.2)  # Give Cloudflare's internal configuration lock a tiny buffer
+        with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as executor:
+            futures = [executor.submit(process_chunk, idx, chunk) for idx, chunk in enumerate(chunks)]
+            used_ids = [f.result() for f in futures]
 
     list_items = [f"any(dns.domains[*] in ${lid})" for lid in used_ids]
     
@@ -514,6 +497,20 @@ def main() -> None:
         used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy, raw_tld_expr=tld_expr)
         all_active_list_ids.extend(used_ids)
         all_active_rule_names.extend(rule_names)
+
+    # --- AGGREGATE BLOCKLIST EXPORT FOR GITHUB ---
+    logger.info("Compiling absolute master aggregate blocklist payload...")
+    aggregate_master_set = set()
+    for _, domains in compiled_policies:
+        aggregate_master_set.update(domains)
+        
+    try:
+        with open("aggregate_blocklist.txt", "w", encoding="utf-8") as f:
+            for domain in sorted(list(aggregate_master_set)):
+                f.write(f"{domain}\n")
+        logger.info(f"Successfully dumped {len(aggregate_master_set):,} total consolidated entries to aggregate_blocklist.txt")
+    except Exception as e:
+        logger.error(f"Failed writing target aggregate blocklist dump matrix: {e}")
 
     cleanup_orphans(cf, existing_lists, existing_rules, all_active_list_ids, all_active_rule_names)
 
