@@ -89,11 +89,15 @@ else:
 POLICIES = [
     {
         "prefix": "L_Normal", 
-        "policy_name": "Block: HaGeZi Normal (Household Base)", 
+        "policy_name": "Block: Household Base", 
         "action": "block", 
         "identity_condition": None, 
         "category_condition": "any(dns.security_category[*] in {178 80 187 83 176 175 117 131 134 153}) or any(dns.content_category[*] in {133})",
-        "include": ["HaGeZi Normal"], 
+        "include": [
+            "HaGeZi Normal",
+            "Hagezi NSFW",
+            "HaGeZi Fake"
+        ], 
         "exclude": []
     },
     {
@@ -106,8 +110,6 @@ POLICIES = [
             "HaGeZi Pro++", 
             "HaGeZi Bypass Prevention", 
             "HaGeZi Social", 
-            "Hagezi NSFW", 
-            "HaGeZi Fake", 
             "HaGeZi No SafeSearch", 
             "HaGeZi Anti Piracy", 
             "HaGeZi DynDNS"
@@ -117,7 +119,7 @@ POLICIES = [
 ]
 
 if Config.ENABLE_TIF_FULL:
-    POLICIES[1]["include"].append("HaGeZi TIF Full")
+    POLICIES[0]["include"].append("HaGeZi TIF Full")
 
 # ---------------------------------------------------------------------------
 # 2. Cloudflare API Client
@@ -139,7 +141,7 @@ class CloudflareAPI:
             try:
                 resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, timeout=Config.REQUEST_TIMEOUT, **kwargs)
                 
-                if resp.status_code in [429, 500, 502, 503, 504]:
+                if resp.status_code in [409, 429, 500, 502, 503, 504]:
                     retries -= 1
                     logger.warning(f"Transient API Error ({resp.status_code}) on {endpoint}. Retrying in {delay}s... ({retries} left)")
                     time.sleep(delay)
@@ -363,9 +365,10 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
                 logger.info(f"Created list {list_name} ({len(chunk):,} domains)")
                 return res["result"]["id"]
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as executor:
-            futures = [executor.submit(process_chunk, idx, chunk) for idx, chunk in enumerate(chunks)]
-            used_ids = [f.result() for f in futures]
+        used_ids = []
+        for idx, chunk in enumerate(chunks):
+            used_ids.append(process_chunk(idx, chunk))
+            time.sleep(0.2)  # Give Cloudflare's internal configuration lock a tiny buffer
 
     list_items = [f"any(dns.domains[*] in ${lid})" for lid in used_ids]
     
