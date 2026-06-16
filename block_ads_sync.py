@@ -88,8 +88,8 @@ else:
 
 POLICIES = [
     {
-        "prefix": "L_Normal", 
-        "policy_name": "Block: Household Base", 
+        "prefix": "L_Relaxed", 
+        "policy_name": "Block: Relaxed Profile", 
         "action": "block", 
         "identity_condition": None, 
         "category_condition": "any(dns.security_category[*] in {178 80 187 83 176 175 117 131 134 153}) or any(dns.content_category[*] in {133})",
