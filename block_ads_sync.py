@@ -96,7 +96,9 @@ POLICIES = [
         "include": [
             "HaGeZi Normal",
             "Hagezi NSFW",
-            "HaGeZi Fake"
+            "HaGeZi Fake",
+            "HaGeZi DynDNS",
+            "HaGeZi No SafeSearch", 
         ], 
         "exclude": []
     },
@@ -110,9 +112,7 @@ POLICIES = [
             "HaGeZi Pro++", 
             "HaGeZi Bypass Prevention", 
             "HaGeZi Social", 
-            "HaGeZi No SafeSearch", 
             "HaGeZi Anti Piracy", 
-            "HaGeZi DynDNS"
         ], 
         "exclude": ["HaGeZi Normal"]
     }
