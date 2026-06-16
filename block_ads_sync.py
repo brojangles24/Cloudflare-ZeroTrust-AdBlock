@@ -23,8 +23,10 @@ class Config:
     TERTIARY_EMAIL          = os.environ.get("TERTIARY_EMAIL", "")
     
     # --- TOGGLES ---
+    ENABLE_RELEVANCE_FILTER = False
+    PUSH_ALL_LISTS          = False
     ENABLE_TLD_KW_FILTERING = False
-    ENABLE_TIF_FULL         = True 
+    ENABLE_TIF_FULL         = False
     
     # Static custom explicit keywords used to drop matching domains locally
     OFFLOAD_KEYWORDS = [
@@ -160,7 +162,7 @@ class CloudflareAPI:
     def delete_list(self, lid):                               return self._request("DELETE", f"lists/{lid}")
     def delete_rule(self, rid):                               return self._request("DELETE", f"rules/{rid}")
     def create_list(self, name, items, desc=""):              return self._request("POST",   "lists",         json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
-    def update_list(self, lid, name, items, desc=""):          return self._request("PUT",    f"lists/{lid}",  json={"name": name, "items": items, "description": desc})
+    def update_list(self, lid, name, items, desc=""):         return self._request("PUT",    f"lists/{lid}",  json={"name": name, "items": items, "description": desc})
     def create_rule(self, data):                              return self._request("POST",   "rules",         json=data)
     def update_rule(self, rid, data):                         return self._request("PUT",    f"rules/{rid}",  json=data)
 
@@ -260,7 +262,6 @@ def is_valid_domain(domain: str, tld_set: set[str], kw_pattern: re.Pattern | Non
         if kw_pattern and kw_pattern.search(domain): return domain, "kw"
     return domain, None
 
-# Updated to gracefully iterate strings vs lists of URLs
 def fetch_url(session: requests.Session, name: str, url: str | list[str], tld_set: set[str], kw_pattern: re.Pattern | None, checker: RelevanceChecker = None):
     kept_domains, tld_offloadable, kw_offloadable = set(), set(), set()
     total_irrelevant_count = 0
@@ -503,12 +504,20 @@ def main() -> None:
     Config.validate()
     cf = CloudflareAPI()
     
+    # --- ACTIVE FILTERS based on Toggles ---
+    active_blocklist_urls = BLOCKLIST_URLS if Config.PUSH_ALL_LISTS else {"HaGeZi Normal": BLOCKLIST_URLS["HaGeZi Normal"]}
+    active_policies = POLICIES if Config.PUSH_ALL_LISTS else [p for p in POLICIES if p["prefix"] == "L_Normal"]
+    
     download_session = requests.Session()
     dl_retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
     download_session.mount("https://", HTTPAdapter(pool_connections=Config.MAX_WORKERS, pool_maxsize=Config.MAX_WORKERS + 2, max_retries=dl_retry))
 
-    checker = RelevanceChecker(download_session)
-    checker.build_dataset(max_workers=Config.MAX_WORKERS)
+    if Config.ENABLE_RELEVANCE_FILTER:
+        checker = RelevanceChecker(download_session)
+        checker.build_dataset(max_workers=Config.MAX_WORKERS)
+    else:
+        logger.info("Relevance filter disabled via config. Skipping dataset build.")
+        checker = None
 
     tlds_list, raw_allowed_domains = [], set()
     if Config.ENABLE_TLD_KW_FILTERING:
@@ -522,7 +531,7 @@ def main() -> None:
     total_tld_offloaded = total_kw_offloaded = total_irrelevant_pruned = 0
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
-        futures = {pool.submit(fetch_url, download_session, name, url, local_tld_set, local_kw_pattern, checker): name for name, url in BLOCKLIST_URLS.items()}
+        futures = {pool.submit(fetch_url, download_session, name, url, local_tld_set, local_kw_pattern, checker): name for name, url in active_blocklist_urls.items()}
         for future in concurrent.futures.as_completed(futures):
             name = futures[future]
             try:
@@ -537,7 +546,7 @@ def main() -> None:
                     return
                 logger.warning(f"Non-critical list source offline: {name}. Error context: {e}")
 
-    compiled_policies = build_policy_sets(POLICIES, fetched_lists)
+    compiled_policies = build_policy_sets(active_policies, fetched_lists)
     optimized_allow_domains = optimize_domains(raw_allowed_domains) if raw_allowed_domains else []
     total_domains = sum(len(domains) for _, domains in compiled_policies) + len(optimized_allow_domains)
 
@@ -552,8 +561,8 @@ def main() -> None:
     existing_lists = cf.get_lists()
     existing_rules = cf.get_rules()
 
-    valid_prefixes = tuple(p["prefix"] for p in POLICIES)
-    valid_rule_bases = {p["policy_name"] for p in POLICIES}
+    valid_prefixes = tuple(p["prefix"] for p in active_policies)
+    valid_rule_bases = {p["policy_name"] for p in active_policies}
     if Config.ENABLE_TLD_KW_FILTERING:
         valid_prefixes += ("L_AllowTLD",)
         valid_rule_bases.update(["Block: HaGeZi Most Abused TLDs", "Allow: HaGeZi TLD Exceptions", "Block: NSFW Explicit Keywords"])
