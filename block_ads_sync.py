@@ -26,7 +26,7 @@ class Config:
     ENABLE_RELEVANCE_FILTER = False
     ENABLE_TIF_FULL         = False
     
-    MAX_LIST_SIZE           = 1000  # Optimized to Cloudflare Max Batch Limit
+    MAX_LIST_SIZE           = 5000  # Optimized to mitigate Cloudflare total account list limits
     MAX_RETRIES             = 5
     TOTAL_QUOTA             = 300_000
     REQUEST_TIMEOUT         = (5, 25)
@@ -66,7 +66,6 @@ BLOCKLIST_URLS = {
     "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
     "Hagezi NSFW": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",  
-        #"https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
     ],
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
@@ -248,7 +247,8 @@ class RelevanceChecker:
 
 def is_valid_domain(domain: str) -> str | None:
     domain = domain.strip().strip(".")
-    if not domain or any(c in domain for c in "*/[]") or "." not in domain or "xn--" in domain or IP_PATTERN.match(domain):
+    # Keeps Punycode tracking safe while cleaning invalid structures
+    if not domain or any(c in domain for c in "*/[]") or "." not in domain or IP_PATTERN.match(domain):
         return None
     return domain
 
@@ -326,7 +326,13 @@ def build_policy_sets(policies_config, fetched_lists):
             if exc in fetched_lists:
                 p_set -= fetched_lists[exc]
         
-        if policy["prefix"] != "L_Normal" and "HaGeZi Normal" not in policy.get("exclude", []) and base_household_set:
+        # Guard prevents purging profiles that explicitly include the baseline
+        if (
+            policy["prefix"] != "L_Normal" 
+            and "HaGeZi Normal" not in policy.get("include", [])
+            and "HaGeZi Normal" not in policy.get("exclude", []) 
+            and base_household_set
+        ):
             p_set = {dom for dom in p_set if not has_suffix_match(dom, base_household_set)}
 
         sets.append((policy, optimize_domains(p_set)))
