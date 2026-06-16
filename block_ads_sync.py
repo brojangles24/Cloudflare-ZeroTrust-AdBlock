@@ -23,8 +23,8 @@ class Config:
     TERTIARY_EMAIL          = os.environ.get("TERTIARY_EMAIL", "")
     
     # --- TOGGLES ---
-    ENABLE_RELEVANCE_FILTER = False
-    ENABLE_TIF_FULL         = False
+    ENABLE_RELEVANCE_FILTER = True
+    ENABLE_TIF_FULL         = True
     
     MAX_LIST_SIZE           = 1000  # Optimized to Cloudflare Max Batch Limit
     MAX_RETRIES             = 5
@@ -64,7 +64,7 @@ BLOCKLIST_URLS = {
     "HaGeZi Normal": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
     ],
-    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.onlydomains.txt",
+    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
     "Hagezi NSFW": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",  
         "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
