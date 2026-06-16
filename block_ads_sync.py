@@ -161,6 +161,20 @@ class CloudflareAPI:
 
         raise requests.exceptions.HTTPError("Exhausted retries due to persistent Cloudflare API dropouts.", response=resp)
 
+    def _get_paginated(self, endpoint: str) -> list:
+        results = []
+        page = 1
+        while True:
+            resp = self._request("GET", f"{endpoint}?page={page}&per_page=1000")
+            if "result" in resp and resp["result"]:
+                results.extend(resp["result"])
+            
+            result_info = resp.get("result_info", {})
+            if page >= result_info.get("total_pages", 1):
+                break
+            page += 1
+        return results
+
     def get_lists(self):                                      return self._get_paginated("lists")
     def get_rules(self):                                      return self._get_paginated("rules")
     def delete_list(self, lid):                               return self._request("DELETE", f"lists/{lid}")
