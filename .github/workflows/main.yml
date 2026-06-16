@@ -8,6 +8,8 @@ on:
 jobs:
   run-sync:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout Repository
@@ -30,3 +32,15 @@ jobs:
           TERTIARY_EMAIL: ${{ secrets.TERTIARY_EMAIL }}
           ACTIVE_TIER: ${{ vars.ACTIVE_TIER }}
         run: python3 block_ads_sync.py
+
+      - name: Commit and Push Changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add aggregate_blocklist.txt
+          if git diff --cached --quiet; then
+            echo "No changes detected in aggregate_blocklist.txt. Skipping commit."
+          else
+            git commit -m "chore: automated blocklist matrix sync [skip ci]"
+            git push
+          fi
