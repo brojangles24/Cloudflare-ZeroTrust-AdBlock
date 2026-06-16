@@ -23,8 +23,8 @@ class Config:
     TERTIARY_EMAIL          = os.environ.get("TERTIARY_EMAIL", "")
     
     # --- TOGGLES ---
-    ENABLE_RELEVANCE_FILTER = True
-    ENABLE_TIF_FULL         = True
+    ENABLE_RELEVANCE_FILTER = False
+    ENABLE_TIF_FULL         = False
     
     MAX_LIST_SIZE           = 1000  # Optimized to Cloudflare Max Batch Limit
     MAX_RETRIES             = 5
@@ -59,6 +59,7 @@ IP_PATTERN = re.compile(
     r"^(?:[A-Fa-f0-9]{1,4}:)*:[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*$"
 )
 
+# Core blocklists that sync as standard cloudflare list objects
 BLOCKLIST_URLS = {
     "HaGeZi Normal": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
@@ -75,8 +76,10 @@ BLOCKLIST_URLS = {
     "HaGeZi Bypass Prevention": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
     "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
     "HaGeZi DynDNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-    "HaGeZi Spam TLDs": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt",
 }
+
+# Dedicated target source compiled exclusively into cloudflare runtime regex lookups
+SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
 if excluded_emails:
@@ -85,7 +88,6 @@ if excluded_emails:
 else:
     TARGET_IDENTITY = None
 
-# One consolidated policy targeting everyone except secondary and tertiary accounts
 POLICIES = [
     {
         "prefix": "L_Restrictive", 
@@ -100,8 +102,7 @@ POLICIES = [
             "HaGeZi Fake", 
             "HaGeZi No SafeSearch", 
             "HaGeZi Anti Piracy", 
-            "HaGeZi DynDNS",
-            "HaGeZi Spam TLDs"
+            "HaGeZi DynDNS"
         ], 
         "exclude": ["HaGeZi Normal"]
     }
@@ -256,6 +257,32 @@ def fetch_url(session: requests.Session, name: str, url: str | list[str], checke
     logger.info(f"Fetched {name}: {len(kept_domains):,} kept (Pruned via relevance: {total_irrelevant_count:,})")
     return name, kept_domains, total_irrelevant_count
 
+def fetch_raw_tlds(session: requests.Session) -> list[str]:
+    logger.info("Fetching target Spam TLD source dataset...")
+    tlds = []
+    try:
+        resp = session.get(SPAM_TLD_URL, timeout=Config.REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        for line in resp.text.splitlines():
+            line = line.strip().lower()
+            if not line or line.startswith(("#", "!", "/")): continue
+            # Extract raw string fragment following final domain component split
+            clean_tld = line.split()[-1].strip(".")
+            if clean_tld and "." not in clean_tld and "*" not in clean_tld:
+                tlds.append(clean_tld)
+        logger.info(f"Compiled {len(tlds):,} raw target entries from TLD blocklist.")
+        return sorted(list(set(tlds)))
+    except Exception as exc:
+        logger.error(f"Failed to fetch baseline TLD requirements: {exc}")
+        return []
+
+def build_cloudflare_tld_expression(tlds: list[str], chunk_size: int = 35) -> str:
+    if not tlds: return ""
+    # Break total array items down into small grouped logic chunks for safe API runtime sizing
+    chunks = [tlds[i:i + chunk_size] for i in range(0, len(tlds), chunk_size)]
+    expr_blocks = [f'any(dns.domains[*] matches "(?i)\\\\.(?:{"|".join(chunk)})$")' for chunk in chunks]
+    return " or ".join(expr_blocks)
+
 def optimize_domains(domains: set[str]) -> list[str]:
     sorted_domains = sorted(domains, key=lambda d: d.split('.')[::-1])
     optimized, last_kept = [], None
@@ -289,33 +316,40 @@ def build_policy_sets(policies_config, fetched_lists):
 # ---------------------------------------------------------------------------
 # 4. Cloudflare Sync & Cleanup
 # ---------------------------------------------------------------------------
-def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], domains: list[str], policy: dict) -> tuple[list[str], list[str]]:
-    if not domains: return [], []
-    sorted_domains = sorted(domains)
-    chunks = [sorted_domains[i : i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
-    policy_existing_lists = sorted([l for l in existing_lists if l["name"].startswith(policy["prefix"] + " ")], key=lambda x: x["name"])
+def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], domains: list[str], policy: dict, raw_tld_expr: str = "") -> tuple[list[str], list[str]]:
+    if not domains and not raw_tld_expr: return [], []
     
-    def process_chunk(idx: int, chunk: list[str]) -> str:
-        list_name = f"{policy['prefix']} {idx + 1:03d}"
-        chunk_hash = hashlib.sha256(",".join(chunk).encode('utf-8')).hexdigest()
-        items = [{"value": d} for d in chunk]
+    used_ids = []
+    if domains:
+        sorted_domains = sorted(domains)
+        chunks = [sorted_domains[i : i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
+        policy_existing_lists = sorted([l for l in existing_lists if l["name"].startswith(policy["prefix"] + " ")], key=lambda x: x["name"])
         
-        if idx < len(policy_existing_lists):
-            existing = policy_existing_lists[idx]
-            if existing.get("description") == chunk_hash: return existing["id"]
-            cf.update_list(existing["id"], list_name, items, desc=chunk_hash)
-            logger.info(f"Updated list {list_name} ({len(chunk):,} domains)")
-            return existing["id"]
-        else:
-            res = cf.create_list(list_name, items, desc=chunk_hash)
-            logger.info(f"Created list {list_name} ({len(chunk):,} domains)")
-            return res["result"]["id"]
+        def process_chunk(idx: int, chunk: list[str]) -> str:
+            list_name = f"{policy['prefix']} {idx + 1:03d}"
+            chunk_hash = hashlib.sha256(",".join(chunk).encode('utf-8')).hexdigest()
+            items = [{"value": d} for d in chunk]
+            
+            if idx < len(policy_existing_lists):
+                existing = policy_existing_lists[idx]
+                if existing.get("description") == chunk_hash: return existing["id"]
+                cf.update_list(existing["id"], list_name, items, desc=chunk_hash)
+                logger.info(f"Updated list {list_name} ({len(chunk):,} domains)")
+                return existing["id"]
+            else:
+                res = cf.create_list(list_name, items, desc=chunk_hash)
+                logger.info(f"Created list {list_name} ({len(chunk):,} domains)")
+                return res["result"]["id"]
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as executor:
-        futures = [executor.submit(process_chunk, idx, chunk) for idx, chunk in enumerate(chunks)]
-        used_ids = [f.result() for f in futures]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as executor:
+            futures = [executor.submit(process_chunk, idx, chunk) for idx, chunk in enumerate(chunks)]
+            used_ids = [f.result() for f in futures]
 
+    # Combine domain standard array lists with runtime optimized regex logic string
     list_items = [f"any(dns.domains[*] in ${lid})" for lid in used_ids]
+    if raw_tld_expr:
+        list_items.append(f"({raw_tld_expr})")
+
     traffic_expr, identity_expr = "", ""
     cond = policy.get("identity_condition")
 
@@ -352,7 +386,7 @@ def cleanup_orphans(cf: CloudflareAPI, existing_lists: list[dict], existing_rule
     logger.info("Running post-sync cleanup of orphaned resources...")
     for r in existing_rules:
         if any(kw in r["name"] for kw in ["IoT Bypass", "Custom", "Keywords"]): continue
-        if r["name"] not in active_rule_names and any(target in r["name"] for target in Config.SCRUB_TARGET}, valid_rule_bases):
+        if r["name"] not in active_rule_names and any(target in r["name"] for target in Config.SCRUB_TARGETS):
             try:
                 cf.delete_rule(r["id"])
                 logger.info(f"Deleted Orphaned Rule: {r['name']}")
@@ -387,6 +421,10 @@ def main() -> None:
     else:
         logger.info("Relevance filter disabled via config. Skipping dataset build.")
         checker = None
+
+    # Fetch and transform the Spam TLD dataset into an explicit regex filter lookup string
+    tld_raw_list = fetch_raw_tlds(download_session)
+    tld_regex_expression = build_cloudflare_tld_expression(tld_raw_list)
 
     fetched_lists = {}
     total_irrelevant_pruned = 0
@@ -444,7 +482,8 @@ def main() -> None:
     all_active_list_ids, all_active_rule_names = [], []
 
     for policy, optimized_domains in compiled_policies:
-        used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy)
+        # Pass regex structure payload string straight into cloudflare rule sync parameters
+        used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy, raw_tld_expr=tld_regex_expression)
         all_active_list_ids.extend(used_ids)
         all_active_rule_names.extend(rule_names)
 
