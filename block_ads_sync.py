@@ -63,7 +63,7 @@ BLOCKLIST_URLS = {
     "HaGeZi Normal": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
     ],
-    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
+    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
     "Hagezi NSFW": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",  
         "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
@@ -86,7 +86,6 @@ if excluded_emails:
 else:
     TARGET_IDENTITY = None
 
-# Two structured policies: Native Cloudflare security/content categories appended to each layer
 POLICIES = [
     {
         "prefix": "L_Normal", 
@@ -135,30 +134,32 @@ class CloudflareAPI:
     def _request(self, method, endpoint, **kwargs):
         retries = Config.MAX_RETRIES
         delay = 2
+        resp = None
         while retries > 0:
-            resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, timeout=Config.REQUEST_TIMEOUT, **kwargs)
-            if resp.status_code == 429:
+            try:
+                resp = self.session.request(method, f"{self.base_url}/{endpoint}", headers=self.headers, timeout=Config.REQUEST_TIMEOUT, **kwargs)
+                
+                if resp.status_code in [429, 500, 502, 503, 504]:
+                    retries -= 1
+                    logger.warning(f"Transient API Error ({resp.status_code}) on {endpoint}. Retrying in {delay}s... ({retries} left)")
+                    time.sleep(delay)
+                    delay *= 2 
+                    continue
+                    
+                if not resp.ok:
+                    logger.error(f"Cloudflare API Error [{resp.status_code}]: {resp.text}")
+                resp.raise_for_status()
+                return resp.json()
+                
+            except requests.exceptions.RequestException as exc:
                 retries -= 1
-                logger.warning(f"Rate limited (429) on {endpoint}. Retrying in {delay}s... ({retries} left)")
+                if retries == 0:
+                    raise exc
+                logger.warning(f"Network error/timeout on {endpoint}: {exc}. Retrying in {delay}s... ({retries} left)")
                 time.sleep(delay)
-                delay *= 2 
-                continue
-            if not resp.ok:
-                logger.error(f"Cloudflare API Error [{resp.status_code}]: {resp.text}")
-            resp.raise_for_status()
-            return resp.json()
-        raise requests.exceptions.HTTPError("Exhausted retries due to Cloudflare API rate limits (429).", response=resp)
+                delay *= 2
 
-    def _get_paginated(self, endpoint):
-        results, page = [], 1
-        while True:
-            resp = self._request("GET", f"{endpoint}?page={page}&per_page=100")
-            data = resp.get("result") or []
-            results.extend(data)
-            info = resp.get("result_info")
-            if not info or page >= info.get("total_pages", 1): break
-            page += 1
-        return results
+        raise requests.exceptions.HTTPError("Exhausted retries due to persistent Cloudflare API dropouts.", response=resp)
 
     def get_lists(self):                                      return self._get_paginated("lists")
     def get_rules(self):                                      return self._get_paginated("rules")
