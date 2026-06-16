@@ -26,7 +26,7 @@ class Config:
     ENABLE_RELEVANCE_FILTER = True
     ENABLE_TIF_FULL         = True
     
-    MAX_LIST_SIZE           = 5000  # Optimized to mitigate Cloudflare total account list limits
+    MAX_LIST_SIZE           = 1000  # Reverted to 1000. Hard API limit enforced by Cloudflare.
     MAX_RETRIES             = 5
     TOTAL_QUOTA             = 300_000
     REQUEST_TIMEOUT         = (5, 25)
@@ -247,7 +247,6 @@ class RelevanceChecker:
 
 def is_valid_domain(domain: str) -> str | None:
     domain = domain.strip().strip(".")
-    # Keeps Punycode tracking safe while cleaning invalid structures
     if not domain or any(c in domain for c in "*/[]") or "." not in domain or IP_PATTERN.match(domain):
         return None
     return domain
@@ -326,7 +325,6 @@ def build_policy_sets(policies_config, fetched_lists):
             if exc in fetched_lists:
                 p_set -= fetched_lists[exc]
         
-        # Guard prevents purging profiles that explicitly include the baseline
         if (
             policy["prefix"] != "L_Normal" 
             and "HaGeZi Normal" not in policy.get("include", [])
