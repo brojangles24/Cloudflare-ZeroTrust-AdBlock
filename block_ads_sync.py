@@ -92,7 +92,12 @@ POLICIES = [
         "action": "block", 
         "identity_condition": None, 
         "category_condition": "any(dns.security_category[*] in {178 80 187 83 176 175 117 131 134 153}) or any(dns.content_category[*] in {133})",
-        "include": ["HaGeZi Normal"], 
+        "include": [
+            "HaGeZi Normal",
+            "Hagezi NSFW", 
+            "HaGeZi Fake", 
+            "HaGeZi No SafeSearch", 
+        ], 
         "exclude": []
     },
     {
@@ -105,9 +110,6 @@ POLICIES = [
             "HaGeZi Pro++", 
             "HaGeZi Bypass Prevention", 
             "HaGeZi Social", 
-            "Hagezi NSFW", 
-            "HaGeZi Fake", 
-            "HaGeZi No SafeSearch", 
             "HaGeZi Anti Piracy", 
             "HaGeZi DynDNS"
         ], 
@@ -482,8 +484,49 @@ def main() -> None:
     existing_lists = cf.get_lists()
     existing_rules = cf.get_rules()
 
-    # --- UPFRONT COMPREHENSIVE LIST PURGE ---
-    # Determine the maximum amount of chunks each active policy requires right now
+    # --- DECOUPLING PHASE: UNLOCK SYSTEM TO ALLOW SAFE SLOT MODIFICATIONS ---
+    
+    # STAGE 1: Temporarily detach active production rules to break active custom list hooks
+    logger.info("Temporarily detaching lists from active firewall rules to clear dependency locks...")
+    for policy in active_policies:
+        final_rule_name = policy['policy_name']
+        existing_rule = next((r for r in existing_rules if r["name"] == final_rule_name), None)
+        if existing_rule:
+            cat_expr = policy.get("category_condition")
+            fallback_traffic = f"({cat_expr})" if cat_expr else 'dns.domains == "detached.placeholder"'
+            payload = {
+                "name": final_rule_name,
+                "action": policy.get("action", "block"),
+                "enabled": existing_rule.get("enabled", True),
+                "filters": ["dns"],
+                "traffic": fallback_traffic
+            }
+            cond = policy.get("identity_condition")
+            if cond and "dns." not in cond:
+                payload["identity"] = cond
+            try:
+                cf.update_rule(existing_rule["id"], payload)
+                existing_rule["traffic"] = fallback_traffic
+                if cond and "dns." not in cond:
+                    existing_rule["identity"] = cond
+            except Exception as e:
+                logger.error(f"Failed to temporarily detach rule {final_rule_name}: {e}")
+
+    # STAGE 2: Completely delete deprecated/orphaned custom firewall rules that could hold stale references
+    logger.info("Purging deprecated firewall rules to remove stale list references...")
+    valid_rule_bases = {p["policy_name"] for p in active_policies}
+    for rule in existing_rules[:]:
+        if any(kw in rule["name"] for kw in ["IoT Bypass", "Custom", "Keywords"]): continue
+        if any(target in rule["name"] for target in Config.SCRUB_TARGETS):
+            if not any(rule["name"].startswith(base) for base in valid_rule_bases):
+                try:
+                    cf.delete_rule(rule["id"])
+                    existing_rules.remove(rule)
+                    logger.info(f"Purged deprecated baseline rule: {rule['name']}")
+                except Exception as e: 
+                    logger.error(f"Failed to purge deprecated rule {rule['name']}: {e}")
+
+    # STAGE 3: Now that all dependency locks are gone, execute upfront cleanup of excess custom lists
     expected_chunks = {}
     for policy, optimized_domains in compiled_policies:
         prefix = policy["prefix"]
@@ -504,17 +547,14 @@ def main() -> None:
             
             should_delete = False
             if not matched_prefix:
-                # The list belongs to a target pattern but its prefix is completely deprecated
                 should_delete = True
             else:
-                # The list has a valid prefix, but check if its index is larger than what we currently need
                 try:
                     idx_part = lst["name"].split()[-1]
                     lst_idx = int(idx_part)
                     if lst_idx > expected_chunks[matched_prefix]:
                         should_delete = True
                 except ValueError:
-                    # If it's malformed or missing a clean trailing integer, schedule purge
                     should_delete = True
                     
             if should_delete:
@@ -524,18 +564,6 @@ def main() -> None:
                     logger.info(f"Pre-emptively purged out-of-bounds list slot: {lst['name']}")
                 except Exception as e:
                     logger.error(f"Failed to clear space for list {lst['name']}: {e}")
-
-    # Clean up deprecated rules before rule creation/update
-    valid_rule_bases = {p["policy_name"] for p in active_policies}
-    for rule in existing_rules[:]:
-        if any(kw in rule["name"] for kw in ["IoT Bypass", "Custom", "Keywords"]): continue
-        if any(target in rule["name"] for target in Config.SCRUB_TARGETS):
-            if not any(rule["name"].startswith(base) for base in valid_rule_bases):
-                try:
-                    cf.delete_rule(rule["id"])
-                    existing_rules.remove(rule)
-                    logger.info(f"Purged deprecated baseline rule: {rule['name']}")
-                except Exception as e: logger.error(f"Rule cleanup intercept drop: {e}")
 
     # --- SYNCHRONIZATION PHASE ---
     all_active_list_ids, all_active_rule_names = [], []
