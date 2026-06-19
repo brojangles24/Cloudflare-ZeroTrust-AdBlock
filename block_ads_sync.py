@@ -69,7 +69,10 @@ BLOCKLIST_URLS = {
         "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
     ],
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
-    "HaGeZi TIF Full": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
+    "HaGeZi TIF Full": [
+        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
+        "https://raw.githubusercontent.com/DNSBunker/CTI/refs/heads/main/domains.txt",
+    ],
     "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
     "HaGeZi No SafeSearch": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
     "HaGeZi Bypass Prevention": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
@@ -78,9 +81,6 @@ BLOCKLIST_URLS = {
 }
 
 SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
-
-# Targeted content explicit keywords pattern string
-ADULT_KEYWORDS_EXPR = 'any(dns.domains[*] matches "(?i)(blowjob|threesome|gangbang|deepthroat|bukkake|tits|fuck|onlyfans|porn|xxx|sex)")'
 
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
 if excluded_emails:
@@ -267,12 +267,15 @@ def fetch_url(session: requests.Session, name: str, url: str | list[str], checke
         try:
             resp = session.get(target_url, timeout=Config.REQUEST_TIMEOUT)
             resp.raise_for_status()
+            
+            skip_relevance = "CTI" in target_url or "ruffkez" in target_url
+
             for line in resp.text.splitlines():
                 line = line.strip()
                 if not line or line[0] in ("#", "!", "/"): continue
                 cleaned = is_valid_domain(line.split()[-1].lower())
                 if cleaned: 
-                    if checker and not checker.is_relevant(cleaned): 
+                    if checker and not skip_relevance and not checker.is_relevant(cleaned): 
                         total_irrelevant_count += 1
                     else: 
                         kept_domains.add(cleaned)
@@ -378,10 +381,6 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     
     if raw_tld_expr:
         list_items.append(f"({raw_tld_expr})")
-        
-    # Inject the Adult Keyword Regex pattern explicitly if this is the L_Restrictive system map execution
-    if policy["prefix"] == "L_Restrictive":
-        list_items.append(ADULT_KEYWORDS_EXPR)
         
     cat_expr = policy.get("category_condition")
     if cat_expr:
@@ -493,17 +492,13 @@ def main() -> None:
     existing_rules = cf.get_rules()
 
     # --- DECOUPLING PHASE: UNLOCK SYSTEM TO ALLOW SAFE SLOT MODIFICATIONS ---
-    
-    # STAGE 1: Temporarily detach active production rules to break active custom list hooks
     logger.info("Temporarily detaching lists from active firewall rules to clear dependency locks...")
     for policy in active_policies:
         final_rule_name = policy['policy_name']
         existing_rule = next((r for r in existing_rules if r["name"] == final_rule_name), None)
         if existing_rule:
             cat_expr = policy.get("category_condition")
-            # Account for the trailing adult expression evaluation block inside the temporary string hook setup if present
-            extra_restrictive_buffer = f" or {ADULT_KEYWORDS_EXPR}" if policy["prefix"] == "L_Restrictive" else ""
-            fallback_traffic = f"({cat_expr}){extra_restrictive_buffer}" if cat_expr else 'dns.domains == "detached.placeholder"'
+            fallback_traffic = f"({cat_expr})" if cat_expr else 'dns.domains == "detached.placeholder"'
             payload = {
                 "name": final_rule_name,
                 "action": policy.get("action", "block"),
@@ -522,7 +517,6 @@ def main() -> None:
             except Exception as e:
                 logger.error(f"Failed to temporarily detach rule {final_rule_name}: {e}")
 
-    # STAGE 2: Completely delete deprecated/orphaned custom firewall rules that could hold stale references
     logger.info("Purging deprecated firewall rules to remove stale list references...")
     valid_rule_bases = {p["policy_name"] for p in active_policies}
     for rule in existing_rules[:]:
@@ -536,7 +530,6 @@ def main() -> None:
                 except Exception as e: 
                     logger.error(f"Failed to purge deprecated rule {rule['name']}: {e}")
 
-    # STAGE 3: Now that all dependency locks are gone, execute upfront cleanup of excess custom lists
     expected_chunks = {}
     for policy, optimized_domains in compiled_policies:
         prefix = policy["prefix"]
@@ -598,7 +591,6 @@ def main() -> None:
     except Exception as e:
         logger.error(f"Failed writing target aggregate blocklist dump matrix: {e}")
 
-    # Fallback secondary sweep just in case any edge case structural lists remain
     cleanup_orphans(cf, existing_lists, existing_rules, all_active_list_ids, all_active_rule_names)
 
     logger.info(f"Sync complete. Network timeline iteration: {time.perf_counter() - start:.2f} seconds.")
