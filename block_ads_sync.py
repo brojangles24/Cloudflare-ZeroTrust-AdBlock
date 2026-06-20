@@ -312,7 +312,7 @@ def build_cloudflare_tld_expression(tlds: list[str], chunk_size: int = 35) -> st
     if not tlds: return ""
     chunks = [tlds[i:i + chunk_size] for i in range(0, len(tlds), chunk_size)]
     # Applied the requested format to the regex chunks
-    expr_blocks = [f'any(dns.domains[*] matches "\\.(?:{"|".join(chunk)})$")' for chunk in chunks]
+    expr_blocks = [f'any(dns.domains[*] matches "\\.({"|".join(chunk)})$")' for chunk in chunks]
     return " or ".join(expr_blocks)
 
 def optimize_domains(domains: set[str]) -> list[str]:
