@@ -82,8 +82,8 @@ BLOCKLIST_URLS = {
 
 SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
-# Dynamic keyword-matching payload definition
-ADULT_KEYWORDS_EXPR = 'any(dns.domains[*] matches "(?i).*(blowjob|threesome|gangbang|deepthroat|bukkake|tits|fuck|onlyfans|porn|xxx|sex).*")'
+# Dynamic keyword-matching payload definition targeting dns.fqdn
+ADULT_KEYWORDS_EXPR = 'dns.fqdn matches "(?i).*(blowjob|threesome|gangbang|deepthroat|bukkake|tits|fuck|onlyfans|porn|xxx|sex).*"'
 
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
 if excluded_emails:
@@ -186,8 +186,8 @@ class CloudflareAPI:
     def delete_rule(self, rid):                               return self._request("DELETE", f"rules/{rid}")
     def create_list(self, name, items, desc=""):              return self._request("POST",   "lists",         json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
     def update_list(self, lid, name, items, desc=""):         return self._request("PUT",    f"lists/{lid}",  json={"name": name, "items": items, "description": desc})
-    def create_rule(self, data):                              return self._request("POST",   "rules",         json={**data, "rule_settings": {"block_page_enabled": False}})
-    def update_rule(self, rid, data):                         return self._request("PUT",    f"rules/{rid}",  json={**data, "rule_settings": {"block_page_enabled": False}})
+    def create_rule(self, data):                              return self._request("POST",   "rules",         json={**data, "rule_settings": {"block_page_enabled": True}})
+    def update_rule(self, rid, data):                         return self._request("PUT",    f"rules/{rid}",  json={**data, "rule_settings": {"block_page_enabled": True}})
 
 # ---------------------------------------------------------------------------
 # 3. Relevance Filtering & Domain Logic
@@ -311,7 +311,8 @@ def fetch_raw_tlds(session: requests.Session) -> list[str]:
 def build_cloudflare_tld_expression(tlds: list[str], chunk_size: int = 35) -> str:
     if not tlds: return ""
     chunks = [tlds[i:i + chunk_size] for i in range(0, len(tlds), chunk_size)]
-    expr_blocks = [f'any(dns.domains[*] matches "(?i).*\\\\.(?:{"|".join(chunk)})$")' for chunk in chunks]
+    # Updated to use dns.fqdn and include \\.? before the end anchor
+    expr_blocks = [f'dns.fqdn matches "(?i).*\\\\.(?:{"|".join(chunk)})\\\\.?$"' for chunk in chunks]
     return " or ".join(expr_blocks)
 
 def optimize_domains(domains: set[str]) -> list[str]:
