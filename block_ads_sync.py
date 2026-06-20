@@ -82,8 +82,8 @@ BLOCKLIST_URLS = {
 
 SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
-# Dynamic keyword regex matching configuration
-ADULT_KEYWORDS_EXPR = 'any(dns.domains[*] matches "(?i)(blowjob|threesome|gangbang|deepthroat|bukkake|tits|fuck|onlyfans|porn|xxx|sex)")'
+# Dynamic keyword-matching payload definition
+ADULT_KEYWORDS_EXPR = 'any(dns.domains[*] matches "(?i).*(blowjob|threesome|gangbang|deepthroat|bukkake|tits|fuck|onlyfans|porn|xxx|sex).*")'
 
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
 if excluded_emails:
@@ -271,7 +271,7 @@ def fetch_url(session: requests.Session, name: str, url: str | list[str], checke
             resp = session.get(target_url, timeout=Config.REQUEST_TIMEOUT)
             resp.raise_for_status()
             
-            # Absolute exclusion rules to protect target threat feed metrics
+            # Explicit relevance bypass for CTI and ruffkez feeds
             skip_relevance = "CTI" in target_url or "ruffkez" in target_url
 
             for line in resp.text.splitlines():
@@ -308,16 +308,10 @@ def fetch_raw_tlds(session: requests.Session) -> list[str]:
         logger.error(f"Failed to fetch baseline TLD requirements: {exc}")
         return []
 
-def build_cloudflare_tld_expression(tlds: list[str], chunk_size: int = 24) -> str:
+def build_cloudflare_tld_expression(tlds: list[str], chunk_size: int = 35) -> str:
     if not tlds: return ""
     chunks = [tlds[i:i + chunk_size] for i in range(0, len(tlds), chunk_size)]
-    
-    expr_blocks = []
-    for chunk in chunks:
-        # Generates highly optimized string-suffix operations instead of heavy regex compilation
-        chunk_expr = " or ".join([f'any(dns.domains[*] ends_with ".{tld}")' for tld in chunk])
-        expr_blocks.append(f"({chunk_expr})")
-        
+    expr_blocks = [f'any(dns.domains[*] matches "(?i).*\\\\.(?:{"|".join(chunk)})$")' for chunk in chunks]
     return " or ".join(expr_blocks)
 
 def optimize_domains(domains: set[str]) -> list[str]:
@@ -392,6 +386,7 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     if raw_tld_expr:
         list_items.append(f"({raw_tld_expr})")
         
+    # Re-inject expression explicitly to match structural profile settings
     if policy["prefix"] == "L_Restrictive":
         list_items.append(ADULT_KEYWORDS_EXPR)
         
