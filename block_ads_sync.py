@@ -63,7 +63,7 @@ BLOCKLIST_URLS = {
     "HaGeZi Normal": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
     ],
-    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
     "Hagezi NSFW": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
         "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
@@ -81,6 +81,9 @@ BLOCKLIST_URLS = {
 }
 
 SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
+
+# Dynamic keyword-matching payload definition
+ADULT_KEYWORDS_EXPR = 'any(dns.domains[*] matches "(?i)(blowjob|threesome|gangbang|deepthroat|bukkake|tits|fuck|onlyfans|porn|xxx|sex)")'
 
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
 if excluded_emails:
@@ -268,6 +271,7 @@ def fetch_url(session: requests.Session, name: str, url: str | list[str], checke
             resp = session.get(target_url, timeout=Config.REQUEST_TIMEOUT)
             resp.raise_for_status()
             
+            # Explicit relevance bypass for CTI and ruffkez feeds
             skip_relevance = "CTI" in target_url or "ruffkez" in target_url
 
             for line in resp.text.splitlines():
@@ -381,6 +385,10 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     
     if raw_tld_expr:
         list_items.append(f"({raw_tld_expr})")
+        
+    # Re-inject expression explicitly to match structural profile settings
+    if policy["prefix"] == "L_Restrictive":
+        list_items.append(ADULT_KEYWORDS_EXPR)
         
     cat_expr = policy.get("category_condition")
     if cat_expr:
@@ -498,7 +506,8 @@ def main() -> None:
         existing_rule = next((r for r in existing_rules if r["name"] == final_rule_name), None)
         if existing_rule:
             cat_expr = policy.get("category_condition")
-            fallback_traffic = f"({cat_expr})" if cat_expr else 'dns.domains == "detached.placeholder"'
+            extra_restrictive_buffer = f" or {ADULT_KEYWORDS_EXPR}" if policy["prefix"] == "L_Restrictive" else ""
+            fallback_traffic = f"({cat_expr}){extra_restrictive_buffer}" if cat_expr else 'dns.domains == "detached.placeholder"'
             payload = {
                 "name": final_rule_name,
                 "action": policy.get("action", "block"),
