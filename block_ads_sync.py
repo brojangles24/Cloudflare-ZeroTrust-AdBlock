@@ -82,8 +82,8 @@ BLOCKLIST_URLS = {
 
 SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
-# Dynamic keyword-matching payload definition targeting dns.fqdn
-ADULT_KEYWORDS_EXPR = 'dns.fqdn matches "(?i).*(blowjob|threesome|gangbang|deepthroat|bukkake|tits|fuck|onlyfans|porn|xxx|sex).*"'
+# Dynamic keyword-matching payload definition
+ADULT_KEYWORDS_EXPR = 'any(dns.domains[*] matches "(?i).*(blowjob|threesome|gangbang|deepthroat|bukkake|tits|fuck|onlyfans|porn|xxx|sex).*")'
 
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
 if excluded_emails:
@@ -311,8 +311,8 @@ def fetch_raw_tlds(session: requests.Session) -> list[str]:
 def build_cloudflare_tld_expression(tlds: list[str], chunk_size: int = 35) -> str:
     if not tlds: return ""
     chunks = [tlds[i:i + chunk_size] for i in range(0, len(tlds), chunk_size)]
-    # Updated to use dns.fqdn and include \\.? before the end anchor
-    expr_blocks = [f'dns.fqdn matches "(?i).*\\\\.(?:{"|".join(chunk)})\\\\.?$"' for chunk in chunks]
+    # Applied the requested format to the regex chunks
+    expr_blocks = [f'any(dns.domains[*] matches "\\.(?:{"|".join(chunk)})$")' for chunk in chunks]
     return " or ".join(expr_blocks)
 
 def optimize_domains(domains: set[str]) -> list[str]:
