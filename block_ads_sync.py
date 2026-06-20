@@ -184,10 +184,10 @@ class CloudflareAPI:
     def get_rules(self):                                      return self._get_paginated("rules")
     def delete_list(self, lid):                               return self._request("DELETE", f"lists/{lid}")
     def delete_rule(self, rid):                               return self._request("DELETE", f"rules/{rid}")
-    def create_list(self, name, items, desc=""):              return self._request("POST",   "lists",         json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
-    def update_list(self, lid, name, items, desc=""):         return self._request("PUT",    f"lists/{lid}",  json={"name": name, "items": items, "description": desc})
-    def create_rule(self, data):                              return self._request("POST",   "rules",         json={**data, "rule_settings": {"block_page_enabled": True}})
-    def update_rule(self, rid, data):                         return self._request("PUT",    f"rules/{rid}",  json={**data, "rule_settings": {"block_page_enabled": True}})
+    def create_list(self, name, items, desc=""):              return self._request("POST",   "lists",        json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
+    def update_list(self, lid, name, items, desc=""):         return self._request("PUT",    f"lists/{lid}", json={"name": name, "items": items, "description": desc})
+    def create_rule(self, data):                              return self._request("POST",   "rules",        json={**data, "rule_settings": {"block_page_enabled": True}})
+    def update_rule(self, rid, data):                         return self._request("PUT",    f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": True}})
 
 # ---------------------------------------------------------------------------
 # 3. Relevance Filtering & Domain Logic
@@ -308,12 +308,12 @@ def fetch_raw_tlds(session: requests.Session) -> list[str]:
         logger.error(f"Failed to fetch baseline TLD requirements: {exc}")
         return []
 
-def build_cloudflare_tld_expression(tlds: list[str], chunk_size: int = 35) -> str:
+def build_cloudflare_tld_expression(tlds: list[str]) -> str:
     if not tlds: return ""
-    chunks = [tlds[i:i + chunk_size] for i in range(0, len(tlds), chunk_size)]
-    # Applied the requested format to the regex chunks
-    expr_blocks = [f'any(dns.domains[*] matches "\\.({"|".join(chunk)})$")' for chunk in chunks]
-    return " or ".join(expr_blocks)
+    # Cloudflare's RE2 engine handles the entire list perfectly in one run.
+    # We use a raw f-string (rf) so the literal dot (\.) escapes properly into the API payload,
+    # and (?i) forces case-insensitivity on the match.
+    return rf'any(dns.domains[*] matches "(?i)\.({"|".join(tlds)})$")'
 
 def optimize_domains(domains: set[str]) -> list[str]:
     sorted_domains = sorted(domains, key=lambda d: d.split('.')[::-1])
