@@ -39153,6 +39153,7 @@ cineblog001.shop
 cineblog001.stream
 cineblog001.surf
 cineblog001.vip
+cineblog001.yachts
 cineblog01.casa
 cineblog01.rest
 cineblog01.spa
@@ -78884,8 +78885,10 @@ hdmoviehut.com
 hdmoviereview.com
 hdmovies23.yachts
 hdmovies28.baby
+hdmoviesb.com
 hdmoviesclub.com
 hdmoviesdirect.com
+hdmoviesdump.com
 hdmoviesflix.pages.dev
 hdmoviesflix.run
 hdmovieshd.com
@@ -94198,7 +94201,9 @@ larkbucket.oss-us-west-1.aliyuncs.com
 larooja.ru.com
 larossi.com.br
 laroya.store
+laroza.baby
 laroza.beer
+laroza.casa
 laroza.co.uk
 laroza.forum
 laroza.lat
@@ -166367,6 +166372,7 @@ torrentspy.com
 torrentssg1.com
 torrenttracker.nwc.acsalaska.net
 torrentum.y0.pl
+torrentunblock.xyz
 torrentvalley.com
 torrentvpn.club
 torrenty.org
@@ -188863,6 +188869,7 @@ yomedia.vn
 yomeno.xyz
 yomix.vip
 yomovies.courses
+yomovies.foundation
 yomovies.institute
 yon.oss-ap-southeast-1.aliyuncs.com
 yona-yethuu.co.za
