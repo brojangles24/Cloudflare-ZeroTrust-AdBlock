@@ -70,7 +70,7 @@ BLOCKLIST_URLS = {
     ],
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi TIF Full": [
-        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.onlydomains.txt",
+        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
     ],
     "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
     "HaGeZi No SafeSearch": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
