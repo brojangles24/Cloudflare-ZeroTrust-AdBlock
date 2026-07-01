@@ -3134,6 +3134,7 @@
 67yao4.oss-cn-qingdao.aliyuncs.com
 68-68-192-131-static.t3com.net
 68.240.110.34.bc.googleusercontent.com
+68285511.com
 682a5845.b-cdn.net
 682immunity.net
 68club.app
@@ -7075,6 +7076,7 @@ admin-dns.unpak.ac.id
 admin-gophish.caffeinearmy.com.br
 admin-gophish.tiprotec.com.mx
 admin-hiexpress.s3.ap-northeast-2.amazonaws.com
+admin-mcas-df.ms
 admin-owa-outlook-microsoftoline-login-notification.s3.ap-northeast-2.amazonaws.com
 admin.52ywp.com
 admin.a11ybar.com
@@ -24464,6 +24466,7 @@ birtec.co.jp
 bis.dutraloc.com.br
 bisa-aja.my.id
 bisaijangjnkoushuibiaozhun.com.cn
+bisaiyuceapp.lol
 bisalkc.com.np
 biscomunicacao.com.br
 bisesecrecy.com
@@ -33172,6 +33175,7 @@ cloudns.pro
 cloudnz.cc
 cloudone.com.bd
 cloudpop.co.kr
+cloudquantumteam.click
 cloudquickcdn.com
 cloudromance.com
 cloudroot256.za.com
@@ -71799,6 +71803,7 @@ jobius.com.ua
 joblikedrumscool.com
 jobline.co.il
 jobofer.org
+joborder-vip.com
 jobs.au-startups.com
 jobs.maanas.in
 jobs.trustaffingpartners.com
@@ -107787,6 +107792,7 @@ quantumaiplatform.com
 quantumator.org
 quantumblade.org
 quantumcontactsshop.com
+quantumcore.click
 quantumgraph.com
 quantummetric.com
 quantumneest.com
@@ -142849,6 +142855,7 @@ viteachoo.com.de
 vitia-bolotin.narod2.ru
 vitimadetransito.com.br
 vito-tracker.space
+vitolilandscapedesign.com
 vitop7eg5sqwgbk.jpn.com
 vitorianostudios.com.br
 vitralweb.com.br
@@ -151437,6 +151444,7 @@ yazhoubeiticaibeishuaishiduoshao.com.cn
 yazhouse8.com
 yazio-analytics.com
 yaziyor.org
+yaznsnkmpnysii.com
 yb-kolt-whatsapp.com.cn
 yb-skp-whatsapp.com.cn
 yb-vlc-whatsapp.com.cn
