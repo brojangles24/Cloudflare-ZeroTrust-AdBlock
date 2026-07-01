@@ -114,7 +114,7 @@ POLICIES = [
         "identity_condition": TARGET_IDENTITY, 
         "category_condition": "any(dns.security_category[*] in {151 191 188 68}) or any(dns.content_category[*] in {67 125})",
         "include": [
-            "HaGeZi Pro++", 
+            "HaGeZi Normal", 
             "HaGeZi Bypass Prevention", 
             "HaGeZi Social", 
             "HaGeZi Anti Piracy", 
