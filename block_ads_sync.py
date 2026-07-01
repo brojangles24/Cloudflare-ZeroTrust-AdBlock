@@ -70,8 +70,7 @@ BLOCKLIST_URLS = {
     ],
     "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
     "HaGeZi TIF Full": [
-        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
-        "https://raw.githubusercontent.com/DNSBunker/CTI/refs/heads/main/domains.txt",
+        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt",
     ],
     "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
     "HaGeZi No SafeSearch": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
@@ -104,6 +103,7 @@ POLICIES = [
             "Hagezi NSFW", 
             "HaGeZi Fake", 
             "HaGeZi No SafeSearch", 
+            "HaGeZi TIF Full",
         ], 
         "exclude": []
     },
@@ -114,7 +114,7 @@ POLICIES = [
         "identity_condition": TARGET_IDENTITY, 
         "category_condition": "any(dns.security_category[*] in {151 191 188 68}) or any(dns.content_category[*] in {67 125})",
         "include": [
-            "", 
+            "HaGeZi Pro++", 
             "HaGeZi Bypass Prevention", 
             "HaGeZi Social", 
             "HaGeZi Anti Piracy", 
@@ -124,8 +124,6 @@ POLICIES = [
     }
 ]
 
-if Config.ENABLE_TIF_FULL:
-    POLICIES[1]["include"].append("HaGeZi TIF Full")
 
 # ---------------------------------------------------------------------------
 # 2. Cloudflare API Client
