@@ -24,7 +24,7 @@ class Config:
     
     # --- TOGGLES ---
     ENABLE_RELEVANCE_FILTER = True
-    ENABLE_TIF_FULL         = True
+    ENABLE_TIF_FULL         = False
     
     MAX_LIST_SIZE           = 1000  
     MAX_RETRIES             = 5
