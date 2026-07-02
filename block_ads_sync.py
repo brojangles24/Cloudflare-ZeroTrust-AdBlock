@@ -63,7 +63,7 @@ BLOCKLIST_URLS = {
     "HaGeZi Normal": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
     ],
-    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+    "HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
     "Hagezi NSFW": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
         "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
@@ -465,8 +465,9 @@ def main() -> None:
         logger.info("Relevance filter disabled via config. Skipping dataset build.")
         checker = None
 
-    tld_raw_list = fetch_raw_tlds(download_session)
-    tld_regex_expression = build_cloudflare_tld_expression(tld_raw_list)
+    #tld_raw_list = fetch_raw_tlds(download_session)
+    #tld_regex_expression = build_cloudflare_tld_expression(tld_raw_list)
+    tld_regex_expression = ""
 
     fetched_lists = {}
     total_irrelevant_pruned = 0
