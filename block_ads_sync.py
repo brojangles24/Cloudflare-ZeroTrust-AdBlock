@@ -77,7 +77,7 @@ BLOCKLIST_URLS = {
     "HaGeZi Bypass Prevention": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
     "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
     "HaGeZi DynDNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-    "1Hosts Xtra": "https://github.com/luckmagnet/1Hosts/releases/download/latest/1hosts-Xtra_domains.wildcards",
+    #"1Hosts Xtra": "https://github.com/luckmagnet/1Hosts/releases/download/latest/1hosts-Xtra_domains.wildcards",
 }
 
 SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
@@ -120,7 +120,7 @@ POLICIES = [
             "HaGeZi Social", 
             "HaGeZi Anti Piracy", 
             "HaGeZi DynDNS"
-            "1Hosts Xtra"
+            #"1Hosts Xtra"
         ], 
         "exclude": ["HaGeZi Normal"]
     }
