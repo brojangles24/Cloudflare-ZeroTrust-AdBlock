@@ -99,7 +99,7 @@ POLICIES = [
         "category_condition": "any(dns.security_category[*] in {178 80 187 83 176 175 117 131 134 153}) or any(dns.content_category[*] in {133})",
         "include": [
             "HaGeZi Normal",
-            "HageziNSFW", 
+            "Hagezi NSFW", 
             "HaGeZi Fake", 
             "HaGeZi No SafeSearch", 
             "HaGeZi TIF Full",
@@ -270,7 +270,7 @@ def fetch_url(session: requests.Session, name: str, url: str | list[str], checke
             resp = session.get(target_url, timeout=Config.REQUEST_TIMEOUT)
             resp.raise_for_status()
             
-            skip_relevance = "CTI" in target_url or "ruffkez" in target_url
+            skip_relevance = (name == "HaGeZi Normal")
 
             for line in resp.text.splitlines():
                 line = line.strip()
