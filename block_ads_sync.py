@@ -270,7 +270,7 @@ def fetch_url(session: requests.Session, name: str, url: str | list[str], checke
             resp = session.get(target_url, timeout=Config.REQUEST_TIMEOUT)
             resp.raise_for_status()
             
-            skip_relevance = (name == "HaGeZi Normal")
+            skip_relevance = False
 
             for line in resp.text.splitlines():
                 line = line.strip()
