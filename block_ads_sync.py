@@ -63,7 +63,6 @@ BLOCKLIST_URLS = {
     "HaGeZi Normal": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
     ],
-    #"HaGeZi Pro++": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
     "HaGeZi Pro": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
     "Hagezi NSFW": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
@@ -78,10 +77,7 @@ BLOCKLIST_URLS = {
     "HaGeZi Bypass Prevention": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
     "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
     "HaGeZi DynDNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-    #"1Hosts Xtra": "https://github.com/luckmagnet/1Hosts/releases/download/latest/1hosts-Xtra_domains.wildcards",
 }
-
-SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
 # Dynamic keyword-matching payload definition
 ADULT_KEYWORDS_EXPR = 'any(dns.domains[*] matches "(?i).*(blowjob|threesome|gangbang|deepthroat|bukkake|tits|fuck|onlyfans|porn|xxx|sex).*")'
@@ -121,12 +117,10 @@ POLICIES = [
             "HaGeZi Social", 
             "HaGeZi Anti Piracy", 
             "HaGeZi DynDNS"
-            #"1Hosts Xtra"
         ], 
         "exclude": ["HaGeZi Normal"]
     }
 ]
-
 
 # ---------------------------------------------------------------------------
 # 2. Cloudflare API Client
@@ -291,31 +285,6 @@ def fetch_url(session: requests.Session, name: str, url: str | list[str], checke
     logger.info(f"Fetched {name}: {len(kept_domains):,} kept (Pruned via relevance: {total_irrelevant_count:,})")
     return name, kept_domains, total_irrelevant_count
 
-def fetch_raw_tlds(session: requests.Session) -> list[str]:
-    logger.info("Fetching target Spam TLD source dataset...")
-    tlds = []
-    try:
-        resp = session.get(SPAM_TLD_URL, timeout=Config.REQUEST_TIMEOUT)
-        resp.raise_for_status()
-        for line in resp.text.splitlines():
-            line = line.strip().lower()
-            if not line or line.startswith(("#", "!", "/")): continue
-            clean_tld = line.split()[-1].strip(".")
-            if clean_tld and "." not in clean_tld and "*" not in clean_tld:
-                tlds.append(clean_tld)
-        logger.info(f"Compiled {len(tlds):,} raw target entries from TLD blocklist.")
-        return sorted(list(set(tlds)))
-    except Exception as exc:
-        logger.error(f"Failed to fetch baseline TLD requirements: {exc}")
-        return []
-
-def build_cloudflare_tld_expression(tlds: list[str]) -> str:
-    if not tlds: return ""
-    # Cloudflare's RE2 engine handles the entire list perfectly in one run.
-    # We use a raw f-string (rf) so the literal dot (\.) escapes properly into the API payload,
-    # and (?i) forces case-insensitivity on the match.
-    return rf'any(dns.domains[*] matches "(?i)\.({"|".join(tlds)})$")'
-
 def optimize_domains(domains: set[str]) -> list[str]:
     sorted_domains = sorted(domains, key=lambda d: d.split('.')[::-1])
     optimized, last_kept = [], None
@@ -354,8 +323,8 @@ def build_policy_sets(policies_config, fetched_lists):
 # ---------------------------------------------------------------------------
 # 4. Cloudflare Sync & Cleanup
 # ---------------------------------------------------------------------------
-def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], domains: list[str], policy: dict, raw_tld_expr: str = "") -> tuple[list[str], list[str]]:
-    if not domains and not raw_tld_expr and not policy.get("category_condition"): return [], []
+def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_rules: list[dict], domains: list[str], policy: dict) -> tuple[list[str], list[str]]:
+    if not domains and not policy.get("category_condition"): return [], []
     
     used_ids = []
     if domains:
@@ -384,9 +353,6 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
             used_ids = [f.result() for f in futures]
 
     list_items = [f"any(dns.domains[*] in ${lid})" for lid in used_ids]
-    
-    if raw_tld_expr:
-        list_items.append(f"({raw_tld_expr})")
         
     # Re-inject expression explicitly to match structural profile settings
     if policy["prefix"] == "L_Restrictive":
@@ -467,10 +433,6 @@ def main() -> None:
     else:
         logger.info("Relevance filter disabled via config. Skipping dataset build.")
         checker = None
-
-    #tld_raw_list = fetch_raw_tlds(download_session)
-    #tld_regex_expression = build_cloudflare_tld_expression(tld_raw_list)
-    tld_regex_expression = ""
 
     fetched_lists = {}
     total_irrelevant_pruned = 0
@@ -584,8 +546,7 @@ def main() -> None:
     all_active_list_ids, all_active_rule_names = [], []
 
     for policy, optimized_domains in compiled_policies:
-        tld_expr = tld_regex_expression if policy["prefix"] == "L_Restrictive" else ""
-        used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy, raw_tld_expr=tld_expr)
+        used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy)
         all_active_list_ids.extend(used_ids)
         all_active_rule_names.extend(rule_names)
 
