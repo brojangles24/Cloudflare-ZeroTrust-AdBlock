@@ -1,39 +1,3 @@
-POLICIES = [
-    {
-        "prefix": "L_Relaxed", 
-        "policy_name": "Block: Relaxed Profile", 
-        "action": "block", 
-        "identity_condition": None, 
-        "category_condition": "any(dns.security_category[*] in {178 80 187 83 176 175 117 131 134 153}) or any(dns.content_category[*] in {133})",
-        "include": [
-            "HaGeZi Normal",
-            "Hagezi NSFW", 
-            "HaGeZi Fake", 
-            "HaGeZi No SafeSearch", 
-            "HaGeZi TIF Full",
-        ], 
-        "exclude": [],
-        "use_spam_tld": False
-    },
-    {
-        "prefix": "L_Restrictive", 
-        "policy_name": "Block: Restrictive Profile", 
-        "action": "block", 
-        "identity_condition": TARGET_IDENTITY, 
-        "category_condition": "any(dns.security_category[*] in {151 191 188 68}) or any(dns.content_category[*] in {67 125})",
-        "include": [
-            "HaGeZi Pro", 
-            "HaGeZi Bypass Prevention", 
-            "HaGeZi Social", 
-            "HaGeZi Anti Piracy", 
-            "HaGeZi DynDNS"
-        ], 
-        "exclude": ["HaGeZi Normal"],
-        "use_spam_tld": False
-    }
-]
-
-
 import os
 import re
 import logging
@@ -55,7 +19,10 @@ class Config:
     API_TOKEN                 = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID                = os.environ.get("ACCOUNT_ID", "")
     PRIMARY_EMAIL             = os.environ.get("PRIMARY_EMAIL", "")    
+    SECONDARY_EMAIL           = os.environ.get("SECONDARY_EMAIL", "")  
+    TERTIARY_EMAIL            = os.environ.get("TERTIARY_EMAIL", "")
     
+    # --- TOGGLES ---
     ENABLE_RELEVANCE_FILTER = True
     
     MAX_LIST_SIZE             = 1000  
@@ -64,6 +31,7 @@ class Config:
     REQUEST_TIMEOUT           = (5, 25)
     MAX_WORKERS               = 5
 
+    # Targets to scrub orphaned rules/lists
     SCRUB_TARGETS = [
         "Base", "Pro++", "Ultimate", "Normal", "Social", 
         "Block:", "Allow:", "L_", "ProMini", "ProPlus", 
@@ -112,14 +80,50 @@ BLOCKLIST_URLS = {
 
 SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
+# Dynamic keyword-matching payload definition
 ADULT_KEYWORDS_EXPR = 'any(dns.domains[*] matches "(?i).*(blowjob|threesome|gangbang|deepthroat|bukkake|tits|fuck|onlyfans|porn|xxx|sex).*")'
 
-excluded_emails = [e for e in [os.environ.get("SECONDARY_EMAIL", ""), os.environ.get("TERTIARY_EMAIL", "")] if e]
+excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
 if excluded_emails:
     emails_cond = " or ".join([f'identity.email == "{e}"' for e in excluded_emails])
     TARGET_IDENTITY = f"not ({emails_cond})"
 else:
     TARGET_IDENTITY = None
+
+POLICIES = [
+    {
+        "prefix": "L_Relaxed", 
+        "policy_name": "Block: Relaxed Profile", 
+        "action": "block", 
+        "identity_condition": None, 
+        "category_condition": "any(dns.security_category[*] in {178 80 187 83 176 175 117 131 134 153}) or any(dns.content_category[*] in {133})",
+        "include": [
+            "HaGeZi Normal",
+            "HageziNSFW", 
+            "HaGeZi Fake", 
+            "HaGeZi No SafeSearch", 
+            "HaGeZi TIF Full",
+        ], 
+        "exclude": [],
+        "use_spam_tld": False
+    },
+    {
+        "prefix": "L_Restrictive", 
+        "policy_name": "Block: Restrictive Profile", 
+        "action": "block", 
+        "identity_condition": TARGET_IDENTITY, 
+        "category_condition": "any(dns.security_category[*] in {151 191 188 68}) or any(dns.content_category[*] in {67 125})",
+        "include": [
+            "HaGeZi Pro", 
+            "HaGeZi Bypass Prevention", 
+            "HaGeZi Social", 
+            "HaGeZi Anti Piracy", 
+            "HaGeZi DynDNS"
+        ], 
+        "exclude": ["HaGeZi Normal"],
+        "use_spam_tld": False
+    }
+]
 
 
 # ---------------------------------------------------------------------------
@@ -179,10 +183,10 @@ class CloudflareAPI:
     def get_rules(self):                                        return self._get_paginated("rules")
     def delete_list(self, lid):                                 return self._request("DELETE", f"lists/{lid}")
     def delete_rule(self, rid):                                 return self._request("DELETE", f"rules/{rid}")
-    def create_list(self, name, items, desc=""):               return self._request("POST",   "lists",        json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
-    def update_list(self, lid, name, items, desc=""):           return self._request("PUT",    f"lists/{lid}", json={"name": name, "items": items, "description": desc})
-    def create_rule(self, data):                                return self._request("POST",   "rules",        json={**data, "rule_settings": {"block_page_enabled": False}})
-    def update_rule(self, rid, data):                           return self._request("PUT",    f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": False}})
+    def create_list(self, name, items, desc=""):              return self._request("POST",    "lists",        json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
+    def update_list(self, lid, name, items, desc=""):          return self._request("PUT",     f"lists/{lid}", json={"name": name, "items": items, "description": desc})
+    def create_rule(self, data):                                return self._request("POST",    "rules",        json={**data, "rule_settings": {"block_page_enabled": False}})
+    def update_rule(self, rid, data):                           return self._request("PUT",     f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": False}})
 
 # ---------------------------------------------------------------------------
 # 3. Relevance Filtering & Domain Logic
@@ -375,7 +379,7 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
 
     list_items = [f"any(dns.domains[*] in ${lid})" for lid in used_ids]
     
-    if raw_tld_expr:
+    if raw_tld_expr and policy.get("use_spam_tld", False):
         list_items.append(f"({raw_tld_expr})")
         
     if policy["prefix"] == "L_Restrictive":
