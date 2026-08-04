@@ -76,6 +76,7 @@ BLOCKLIST_URLS = {
     "HaGeZi Bypass Prevention": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
     "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
     "HaGeZi DynDNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
+    "NoAI": "https://codeberg.org/lumiworx/HPT-AI-Blocklist/raw/branch/main/HPT-partial-RootTLD-AI-List",
 }
 
 SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
@@ -119,6 +120,7 @@ POLICIES = [
             "HaGeZi Social", 
             "HaGeZi Anti Piracy", 
             "HaGeZi DynDNS"
+            "NoAI"
         ], 
         "exclude": ["HaGeZi Normal"],
         "use_spam_tld": False
