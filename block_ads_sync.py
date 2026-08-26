@@ -123,7 +123,7 @@ POLICIES = [
             "NoAI",
         ], 
         "exclude": ["HaGeZi Normal"],
-        "use_spam_tld": True
+        "use_spam_tld": False
     }
 ]
 
