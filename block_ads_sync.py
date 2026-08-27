@@ -59,9 +59,9 @@ IP_PATTERN = re.compile(
 )
 
 BLOCKLIST_URLS = {
-    "HaGeZi Normal": [
-        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-    ],
+    #"HaGeZi Normal": [
+       # "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+    #],
     "HaGeZi Pro": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
     "Hagezi NSFW": [
         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
@@ -384,7 +384,7 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
         
     cat_expr = policy.get("category_condition")
     if cat_expr:
-        list_items.append(f"({cat_expr})")
+        list_items.append(cat_expr)  # Removed the outer parentheses wrapping
 
     traffic_expr, identity_expr = "", ""
     cond = policy.get("identity_condition")
