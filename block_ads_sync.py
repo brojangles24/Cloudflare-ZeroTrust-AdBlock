@@ -24,7 +24,7 @@ class Config:
     
     # --- TOGGLES ---
     # Disabled by default so high-risk security/malware domains aren't dropped.
-    ENABLE_RELEVANCE_FILTER     = False
+    ENABLE_RELEVANCE_FILTER     = True
     
     MAX_LIST_SIZE               = 1000  
     MAX_RETRIES                 = 5
