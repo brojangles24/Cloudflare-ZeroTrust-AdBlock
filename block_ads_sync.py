@@ -16,20 +16,20 @@ from urllib3.util import Retry
 # 1. Config & Lists
 # ---------------------------------------------------------------------------
 class Config:
-    API_TOKEN                 = os.environ.get("API_TOKEN", "")
-    ACCOUNT_ID                = os.environ.get("ACCOUNT_ID", "")
-    PRIMARY_EMAIL             = os.environ.get("PRIMARY_EMAIL", "")    
-    SECONDARY_EMAIL           = os.environ.get("SECONDARY_EMAIL", "")  
-    TERTIARY_EMAIL            = os.environ.get("TERTIARY_EMAIL", "")
+    API_TOKEN                   = os.environ.get("API_TOKEN", "")
+    ACCOUNT_ID                  = os.environ.get("ACCOUNT_ID", "")
+    PRIMARY_EMAIL               = os.environ.get("PRIMARY_EMAIL", "")    
+    SECONDARY_EMAIL             = os.environ.get("SECONDARY_EMAIL", "")  
+    TERTIARY_EMAIL              = os.environ.get("TERTIARY_EMAIL", "")
     
     # --- TOGGLES ---
     ENABLE_RELEVANCE_FILTER = True
     
-    MAX_LIST_SIZE             = 1000  
-    MAX_RETRIES               = 5
-    TOTAL_QUOTA               = 300_000
-    REQUEST_TIMEOUT           = (5, 25)
-    MAX_WORKERS               = 5
+    MAX_LIST_SIZE               = 1000  
+    MAX_RETRIES                 = 5
+    TOTAL_QUOTA                 = 300_000
+    REQUEST_TIMEOUT             = (5, 25)
+    MAX_WORKERS                 = 5
 
     # Targets to scrub orphaned rules/lists
     SCRUB_TARGETS = [
@@ -81,9 +81,6 @@ BLOCKLIST_URLS = {
 
 SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
-# Dynamic keyword-matching payload definition
-ADULT_KEYWORDS_EXPR = 'any(dns.domains[*] matches "(?i).*(blowjob|threesome|gangbang|deepthroat|bukkake|tits|fuck|onlyfans|porn|xxx|sex).*")'
-
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
 if excluded_emails:
     emails_cond = " or ".join([f'identity.email == "{e}"' for e in excluded_emails])
@@ -99,7 +96,8 @@ POLICIES = [
         "identity_condition": None, 
         "category_condition": "any(dns.security_category[*] in {178 80 187 83 176 175 117 131 134 153}) or any(dns.content_category[*] in {133})",
         "include": [
-            "HaGeZi Normal",
+            "HaGeZi Pro",
+            #"HaGeZi Normal",
             "Hagezi NSFW", 
             "HaGeZi Fake", 
             "HaGeZi No SafeSearch", 
@@ -115,14 +113,14 @@ POLICIES = [
         "identity_condition": TARGET_IDENTITY, 
         "category_condition": "any(dns.security_category[*] in {151 191 188 68}) or any(dns.content_category[*] in {67 125})",
         "include": [
-            "HaGeZi Pro", 
+            #"HaGeZi Pro", 
             "HaGeZi Bypass Prevention", 
             "HaGeZi Social", 
             "HaGeZi Anti Piracy", 
             "HaGeZi DynDNS",
             "NoAI",
         ], 
-        "exclude": ["HaGeZi Normal"],
+        "exclude": ["HaGeZi Pro"],
         "use_spam_tld": False
     }
 ]
@@ -183,8 +181,8 @@ class CloudflareAPI:
 
     def get_lists(self):                                        return self._get_paginated("lists")
     def get_rules(self):                                        return self._get_paginated("rules")
-    def delete_list(self, lid):                                 return self._request("DELETE", f"lists/{lid}")
-    def delete_rule(self, rid):                                 return self._request("DELETE", f"rules/{rid}")
+    def delete_list(self, lid):                                  return self._request("DELETE", f"lists/{lid}")
+    def delete_rule(self, rid):                                  return self._request("DELETE", f"rules/{rid}")
     def create_list(self, name, items, desc=""):              return self._request("POST",    "lists",        json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
     def update_list(self, lid, name, items, desc=""):          return self._request("PUT",     f"lists/{lid}", json={"name": name, "items": items, "description": desc})
     def create_rule(self, data):                                return self._request("POST",    "rules",        json={**data, "rule_settings": {"block_page_enabled": True}})
@@ -384,9 +382,6 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     if raw_tld_expr and policy.get("use_spam_tld", False):
         list_items.append(f"({raw_tld_expr})")
         
-    if policy["prefix"] == "L_Restrictive":
-        list_items.append(ADULT_KEYWORDS_EXPR)
-        
     cat_expr = policy.get("category_condition")
     if cat_expr:
         list_items.append(f"({cat_expr})")
@@ -502,8 +497,7 @@ def main() -> None:
         existing_rule = next((r for r in existing_rules if r["name"] == final_rule_name), None)
         if existing_rule:
             cat_expr = policy.get("category_condition")
-            extra_restrictive_buffer = f" or {ADULT_KEYWORDS_EXPR}" if policy["prefix"] == "L_Restrictive" else ""
-            fallback_traffic = f"({cat_expr}){extra_restrictive_buffer}" if cat_expr else 'dns.domains == "detached.placeholder"'
+            fallback_traffic = f"({cat_expr})" if cat_expr else 'dns.domains == "detached.placeholder"'
             payload = {
                 "name": final_rule_name,
                 "action": policy.get("action", "block"),
