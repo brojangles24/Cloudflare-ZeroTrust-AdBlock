@@ -11,7 +11,6 @@ import gzip
 import sys
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
-
 # ---------------------------------------------------------------------------
 # 1. Config & Lists
 # ---------------------------------------------------------------------------
@@ -389,7 +388,7 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
         
     cat_expr = policy.get("category_condition")
     if cat_expr:
-        list_items.append(f"({cat_expr})")
+        list_items.append(cat_expr)  # Removed the outer parentheses wrapping
 
     traffic_expr, identity_expr = "", ""
     cond = policy.get("identity_condition")
