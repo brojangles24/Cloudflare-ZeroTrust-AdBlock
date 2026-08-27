@@ -23,7 +23,8 @@ class Config:
     TERTIARY_EMAIL              = os.environ.get("TERTIARY_EMAIL", "")
     
     # --- TOGGLES ---
-    ENABLE_RELEVANCE_FILTER = True
+    # Disabled by default so high-risk security/malware domains aren't dropped.
+    ENABLE_RELEVANCE_FILTER     = False
     
     MAX_LIST_SIZE               = 1000  
     MAX_RETRIES                 = 5
@@ -112,7 +113,6 @@ POLICIES = [
         "identity_condition": TARGET_IDENTITY, 
         "category_condition": "any(dns.security_category[*] in {151 191 188 68}) or any(dns.content_category[*] in {67 125})",
         "include": [
-            #"HaGeZi Pro", 
             "HaGeZi Bypass Prevention", 
             "HaGeZi Social", 
             "HaGeZi Anti Piracy", 
@@ -123,7 +123,6 @@ POLICIES = [
         "use_spam_tld": False
     }
 ]
-
 
 # ---------------------------------------------------------------------------
 # 2. Cloudflare API Client
@@ -180,8 +179,8 @@ class CloudflareAPI:
 
     def get_lists(self):                                        return self._get_paginated("lists")
     def get_rules(self):                                        return self._get_paginated("rules")
-    def delete_list(self, lid):                                  return self._request("DELETE", f"lists/{lid}")
-    def delete_rule(self, rid):                                  return self._request("DELETE", f"rules/{rid}")
+    def delete_list(self, lid):                                 return self._request("DELETE", f"lists/{lid}")
+    def delete_rule(self, rid):                                 return self._request("DELETE", f"rules/{rid}")
     def create_list(self, name, items, desc=""):              return self._request("POST",    "lists",        json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
     def update_list(self, lid, name, items, desc=""):          return self._request("PUT",     f"lists/{lid}", json={"name": name, "items": items, "description": desc})
     def create_rule(self, data):                                return self._request("POST",    "rules",        json={**data, "rule_settings": {"block_page_enabled": False}})
@@ -253,7 +252,15 @@ class RelevanceChecker:
         return has_suffix_match(clean_domain, self.master_allowlist)
 
 def is_valid_domain(domain: str) -> str | None:
-    domain = domain.strip().strip(".")
+    domain = domain.strip().lower()
+    
+    # Process wildcard prefixes properly
+    if domain.startswith("*."):
+        domain = domain[2:]
+        
+    domain = domain.strip(".")
+    
+    # Reject strings with remaining invalid chars, missing dots, or IP addresses
     if not domain or any(c in domain for c in "*/[]") or "." not in domain or IP_PATTERN.match(domain):
         return None
     return domain
@@ -268,15 +275,14 @@ def fetch_url(session: requests.Session, name: str, url: str | list[str], checke
         try:
             resp = session.get(target_url, timeout=Config.REQUEST_TIMEOUT)
             resp.raise_for_status()
-            
-            skip_relevance = False #name == "HaGeZi Normal") 
 
             for line in resp.text.splitlines():
                 line = line.strip()
                 if not line or line[0] in ("#", "!", "/"): continue
-                cleaned = is_valid_domain(line.split()[-1].lower())
+                
+                cleaned = is_valid_domain(line.split()[-1])
                 if cleaned: 
-                    if checker and not skip_relevance and not checker.is_relevant(cleaned): 
+                    if checker and not checker.is_relevant(cleaned): 
                         total_irrelevant_count += 1
                     else: 
                         kept_domains.add(cleaned)
@@ -383,7 +389,7 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
         
     cat_expr = policy.get("category_condition")
     if cat_expr:
-        list_items.append(cat_expr)  # Removed the outer parentheses wrapping
+        list_items.append(f"({cat_expr})")
 
     traffic_expr, identity_expr = "", ""
     cond = policy.get("identity_condition")
@@ -484,7 +490,8 @@ def main() -> None:
         logger.error(f"Total compiled payload matrix size ({total_domains:,}) exceeds infrastructure limits. Execution halted.")
         return
 
-    logger.info(f"Domains pruned via Relevance Filter: {total_irrelevant_pruned:,}")
+    if Config.ENABLE_RELEVANCE_FILTER:
+        logger.info(f"Domains pruned via Relevance Filter: {total_irrelevant_pruned:,}")
     logger.info(f"Target payload footprint to sync: {total_domains:,} elements.")
 
     existing_lists = cf.get_lists()
