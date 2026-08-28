@@ -16,21 +16,20 @@ from urllib3.util import Retry
 # 1. Config & Lists
 # ---------------------------------------------------------------------------
 class Config:
-    API_TOKEN                   = os.environ.get("API_TOKEN", "")
-    ACCOUNT_ID                  = os.environ.get("ACCOUNT_ID", "")
-    PRIMARY_EMAIL               = os.environ.get("PRIMARY_EMAIL", "")   
-    SECONDARY_EMAIL             = os.environ.get("SECONDARY_EMAIL", "")  
-    TERTIARY_EMAIL              = os.environ.get("TERTIARY_EMAIL", "")
+    API_TOKEN                 = os.environ.get("API_TOKEN", "")
+    ACCOUNT_ID                = os.environ.get("ACCOUNT_ID", "")
+    PRIMARY_EMAIL             = os.environ.get("PRIMARY_EMAIL", "")    
+    SECONDARY_EMAIL           = os.environ.get("SECONDARY_EMAIL", "")  
+    TERTIARY_EMAIL            = os.environ.get("TERTIARY_EMAIL", "")
     
     # --- TOGGLES ---
-    # Disabled by default so high-risk security/malware domains aren't dropped.
-    ENABLE_RELEVANCE_FILTER     = True
+    ENABLE_RELEVANCE_FILTER      = True
     
-    MAX_LIST_SIZE               = 1000  
-    MAX_RETRIES                 = 5
-    TOTAL_QUOTA                 = 300_000
-    REQUEST_TIMEOUT             = (5, 25)
-    MAX_WORKERS                 = 5
+    MAX_LIST_SIZE             = 1000  
+    MAX_RETRIES               = 5
+    TOTAL_QUOTA               = 300_000
+    REQUEST_TIMEOUT           = (5, 25)
+    MAX_WORKERS               = 5
 
     # Targets to scrub orphaned rules/lists
     SCRUB_TARGETS = [
@@ -191,19 +190,18 @@ class CloudflareAPI:
 
     def get_lists(self):                                        return self._get_paginated("lists")
     def get_rules(self):                                        return self._get_paginated("rules")
-    def delete_list(self, lid):                                 return self._request("DELETE", f"lists/{lid}")
-    def delete_rule(self, rid):                                 return self._request("DELETE", f"rules/{rid}")
-    def create_list(self, name, items, desc=""):                return self._request("POST",    "lists",        json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
-    def update_list(self, lid, name, items, desc=""):           return self._request("PUT",     f"lists/{lid}", json={"name": name, "items": items, "description": desc})
-    def create_rule(self, data):                                return self._request("POST",    "rules",        json={**data, "rule_settings": {"block_page_enabled": True}})
-    def update_rule(self, rid, data):                           return self._request("PUT",     f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": True}})
+    def delete_list(self, lid):                                   return self._request("DELETE", f"lists/{lid}")
+    def delete_rule(self, rid):                                   return self._request("DELETE", f"rules/{rid}")
+    def create_list(self, name, items, desc=""):                 return self._request("POST",    "lists",        json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
+    def update_list(self, lid, name, items, desc=""):            return self._request("PUT",     f"lists/{lid}", json={"name": name, "items": items, "description": desc})
+    def create_rule(self, data):                                  return self._request("POST",    "rules",        json={**data, "rule_settings": {"block_page_enabled": True}})
+    def update_rule(self, rid, data):                            return self._request("PUT",     f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": True}})
 
 # ---------------------------------------------------------------------------
 # 3. Relevance Filtering & Domain Logic
 # ---------------------------------------------------------------------------
 TOP_LISTS = [
     ("https://tranco-list.eu/top-1m.csv.zip", 1, False, "zip"),
-    ("http://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip", 1, False, "zip"),
     ("https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz", 0, True, "gzip"),
     ("https://downloads.majestic.com/majestic_million.csv", 2, True, "raw"),
     ("https://www.domcop.com/files/top/top10milliondomains.csv.zip", 1, True, "zip"),
@@ -242,8 +240,8 @@ def fetch_top_list(url: str, col_idx: int, skip_header: bool, compression: str, 
         else:
             return _parse_csv_lines(r.text.splitlines(), col_idx, skip_header)
     except Exception as e:
-        logger.critical(f"Critical failure fetching top list {url}: {e}", exc_info=True)
-        sys.exit(1)
+        logger.warning(f"Non-critical failure fetching top list {url}: {e}. Continuing with partial allowlist.")
+        return set()
 
 class RelevanceChecker:
     def __init__(self, session: requests.Session):
@@ -266,13 +264,11 @@ class RelevanceChecker:
 def is_valid_domain(domain: str) -> str | None:
     domain = domain.strip().lower()
     
-    # Process wildcard prefixes properly
     if domain.startswith("*."):
         domain = domain[2:]
         
     domain = domain.strip(".")
     
-    # Reject strings with remaining invalid chars, missing dots, or IP addresses
     if not domain or any(c in domain for c in "*/[]") or "." not in domain or IP_PATTERN.match(domain):
         return None
     return domain
@@ -340,7 +336,6 @@ def build_policy_sets(policies_config, fetched_lists):
     sets = []
     base_household_set = fetched_lists.get("HaGeZi Normal", set())
 
-    # Compile a master set of all blocked domains
     all_blocked_domains = set()
     for name, domains in fetched_lists.items():
         if name != "HaGeZi Spam Allow":
@@ -357,7 +352,6 @@ def build_policy_sets(policies_config, fetched_lists):
             if exc in fetched_lists:
                 p_set -= fetched_lists[exc]
         
-        # Strip blocklisted domains from the allowlist
         if policy.get("action") == "allow":
             p_set -= all_blocked_domains
         elif (
@@ -378,10 +372,11 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
     if not domains and not raw_tld_expr and not policy.get("category_condition"): return [], []
     
     used_ids = []
+    policy_existing_lists = sorted([l for l in existing_lists if l["name"].startswith(policy["prefix"] + " ")], key=lambda x: x["name"])
+    
     if domains:
         sorted_domains = sorted(domains)
         chunks = [sorted_domains[i : i + Config.MAX_LIST_SIZE] for i in range(0, len(sorted_domains), Config.MAX_LIST_SIZE)]
-        policy_existing_lists = sorted([l for l in existing_lists if l["name"].startswith(policy["prefix"] + " ")], key=lambda x: x["name"])
         
         def process_chunk(idx: int, chunk: list[str]) -> str:
             list_name = f"{policy['prefix']} {idx + 1:03d}"
