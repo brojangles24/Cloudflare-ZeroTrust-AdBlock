@@ -11,13 +11,14 @@ import gzip
 import sys
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
+
 # ---------------------------------------------------------------------------
 # 1. Config & Lists
 # ---------------------------------------------------------------------------
 class Config:
     API_TOKEN                   = os.environ.get("API_TOKEN", "")
     ACCOUNT_ID                  = os.environ.get("ACCOUNT_ID", "")
-    PRIMARY_EMAIL               = os.environ.get("PRIMARY_EMAIL", "")    
+    PRIMARY_EMAIL               = os.environ.get("PRIMARY_EMAIL", "")   
     SECONDARY_EMAIL             = os.environ.get("SECONDARY_EMAIL", "")  
     TERTIARY_EMAIL              = os.environ.get("TERTIARY_EMAIL", "")
     
@@ -77,14 +78,15 @@ BLOCKLIST_URLS = {
     "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
     "HaGeZi DynDNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
     "NoAI": "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt",
+    "HaGeZi Spam Allow": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt",
 }
 
 SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
 excluded_emails = [e for e in [Config.SECONDARY_EMAIL, Config.TERTIARY_EMAIL] if e]
 if excluded_emails:
-    emails_cond = " or ".join([f'identity.email == "{e}"' for e in excluded_emails])
-    TARGET_IDENTITY = f"not ({emails_cond})"
+    formatted_emails = " ".join([f'"{e}"' for e in excluded_emails])
+    TARGET_IDENTITY = f"not(identity.email in {{{formatted_emails}}})"
 else:
     TARGET_IDENTITY = None
 
@@ -121,6 +123,16 @@ POLICIES = [
         ], 
         "exclude": ["HaGeZi Normal"],
         "use_spam_tld": True
+    },
+    {
+        "prefix": "L_AllowSpam", 
+        "policy_name": "Allow: Spam Exceptions", 
+        "action": "allow", 
+        "identity_condition": None, 
+        "category_condition": None,
+        "include": ["HaGeZi Spam Allow"], 
+        "exclude": [],
+        "use_spam_tld": False
     }
 ]
 
@@ -181,8 +193,8 @@ class CloudflareAPI:
     def get_rules(self):                                        return self._get_paginated("rules")
     def delete_list(self, lid):                                 return self._request("DELETE", f"lists/{lid}")
     def delete_rule(self, rid):                                 return self._request("DELETE", f"rules/{rid}")
-    def create_list(self, name, items, desc=""):              return self._request("POST",    "lists",        json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
-    def update_list(self, lid, name, items, desc=""):          return self._request("PUT",     f"lists/{lid}", json={"name": name, "items": items, "description": desc})
+    def create_list(self, name, items, desc=""):                return self._request("POST",    "lists",        json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
+    def update_list(self, lid, name, items, desc=""):           return self._request("PUT",     f"lists/{lid}", json={"name": name, "items": items, "description": desc})
     def create_rule(self, data):                                return self._request("POST",    "rules",        json={**data, "rule_settings": {"block_page_enabled": False}})
     def update_rule(self, rid, data):                           return self._request("PUT",     f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": False}})
 
@@ -328,6 +340,12 @@ def build_policy_sets(policies_config, fetched_lists):
     sets = []
     base_household_set = fetched_lists.get("HaGeZi Normal", set())
 
+    # Compile a master set of all blocked domains
+    all_blocked_domains = set()
+    for name, domains in fetched_lists.items():
+        if name != "HaGeZi Spam Allow":
+            all_blocked_domains.update(domains)
+
     for policy in policies_config:
         p_set = set()
         
@@ -339,7 +357,10 @@ def build_policy_sets(policies_config, fetched_lists):
             if exc in fetched_lists:
                 p_set -= fetched_lists[exc]
         
-        if (
+        # Strip blocklisted domains from the allowlist
+        if policy.get("action") == "allow":
+            p_set -= all_blocked_domains
+        elif (
             policy["prefix"] != "L_Normal" 
             and "HaGeZi Normal" not in policy.get("include", [])
             and "HaGeZi Normal" not in policy.get("exclude", []) 
@@ -389,7 +410,7 @@ def sync_to_cloudflare(cf: CloudflareAPI, existing_lists: list[dict], existing_r
         
     cat_expr = policy.get("category_condition")
     if cat_expr:
-        list_items.append(cat_expr)  # Removed the outer parentheses wrapping
+        list_items.append(cat_expr) 
 
     traffic_expr, identity_expr = "", ""
     cond = policy.get("identity_condition")
@@ -580,19 +601,6 @@ def main() -> None:
         used_ids, rule_names = sync_to_cloudflare(cf, existing_lists, existing_rules, optimized_domains, policy, raw_tld_expr=tld_expr)
         all_active_list_ids.extend(used_ids)
         all_active_rule_names.extend(rule_names)
-
-    logger.info("Compiling absolute master aggregate blocklist payload...")
-    aggregate_master_set = set()
-    for _, domains in compiled_policies:
-        aggregate_master_set.update(domains)
-        
-    try:
-        with open("aggregate_blocklist.txt", "w", encoding="utf-8") as f:
-            for domain in sorted(list(aggregate_master_set)):
-                f.write(f"{domain}\n")
-        logger.info(f"Successfully dumped {len(aggregate_master_set):,} total consolidated entries to aggregate_blocklist.txt")
-    except Exception as e:
-        logger.error(f"Failed writing target aggregate blocklist dump matrix: {e}")
 
     cleanup_orphans(cf, existing_lists, existing_rules, all_active_list_ids, all_active_rule_names)
 
