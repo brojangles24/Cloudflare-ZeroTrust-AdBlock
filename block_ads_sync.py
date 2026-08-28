@@ -519,7 +519,7 @@ def main() -> None:
         existing_rule = next((r for r in existing_rules if r["name"] == final_rule_name), None)
         if existing_rule:
             cat_expr = policy.get("category_condition")
-            fallback_traffic = f"({cat_expr})" if cat_expr else 'dns.domains == "detached.placeholder"'
+            fallback_traffic = f"({cat_expr})" if cat_expr else 'any(dns.domains[*] == "detached.placeholder")'
             payload = {
                 "name": final_rule_name,
                 "action": policy.get("action", "block"),
