@@ -22,9 +22,6 @@ class Config:
     SECONDARY_EMAIL           = os.environ.get("SECONDARY_EMAIL", "")  
     TERTIARY_EMAIL            = os.environ.get("TERTIARY_EMAIL", "")
     
-    # --- TOGGLES ---
-    ENABLE_RELEVANCE_FILTER      = True
-    
     MAX_LIST_SIZE             = 1000  
     MAX_RETRIES               = 5
     TOTAL_QUOTA               = 300_000
@@ -58,26 +55,71 @@ IP_PATTERN = re.compile(
     r"^(?:[A-Fa-f0-9]{1,4}:)*:[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*$"
 )
 
-BLOCKLIST_URLS = {
-    "HaGeZi Normal": [
-        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
-    ],
-    "HaGeZi Pro": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
-    "Hagezi NSFW": [
-        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
-        "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
-    ],
-    "HaGeZi Fake": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
-    "HaGeZi TIF Full": [
-        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
-    ],
-    "HaGeZi Social": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
-    "HaGeZi No SafeSearch": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
-    "HaGeZi Bypass Prevention": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
-    "HaGeZi Anti Piracy": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
-    "HaGeZi DynDNS": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-    "NoAI": "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt",
-    "HaGeZi Spam Allow": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt",
+BLOCKLIST_SOURCES = [
+    {
+        "name": "HaGeZi Normal",
+        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt"],
+        "enable_relevance": False
+    },
+    {
+        "name": "HaGeZi Pro",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
+        "enable_relevance": True
+    },
+    {
+        "name": "Hagezi NSFW",
+        "url": [
+            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
+            "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
+        ],
+        "enable_relevance": True
+    },
+    {
+        "name": "HaGeZi Fake",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
+        "enable_relevance": True
+    },
+    {
+        "name": "HaGeZi TIF Full",
+        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"],
+        "enable_relevance": True
+    },
+    {
+        "name": "HaGeZi Social",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
+        "enable_relevance": True
+    },
+    {
+        "name": "HaGeZi No SafeSearch",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
+        "enable_relevance": True
+    },
+    {
+        "name": "HaGeZi Bypass Prevention",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+        "enable_relevance": True
+    },
+    {
+        "name": "HaGeZi Anti Piracy",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
+        "enable_relevance": True
+    },
+    {
+        "name": "HaGeZi DynDNS",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
+        "enable_relevance": True
+    },
+    {
+        "name": "NoAI",
+        "url": "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt",
+        "enable_relevance": True
+    },
+]
+
+SPAM_ALLOW_SOURCE = {
+    "name": "HaGeZi Spam Allow",
+    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt",
+    "enable_relevance": False
 }
 
 SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
@@ -89,51 +131,55 @@ if excluded_emails:
 else:
     TARGET_IDENTITY = None
 
-POLICIES = [
-    {
-        "prefix": "L_Relaxed", 
-        "policy_name": "Block: Relaxed Profile", 
-        "action": "block", 
-        "identity_condition": None, 
-        "category_condition": "any(dns.security_category[*] in {178 80 187 83 176 175 117 131 134 153}) or any(dns.content_category[*] in {133})",
-        "include": [
-            "HaGeZi Normal",
-            "Hagezi NSFW", 
-            "HaGeZi Fake", 
-            "HaGeZi No SafeSearch", 
-            "HaGeZi TIF Full",
-        ], 
-        "exclude": [],
-        "use_spam_tld": False
-    },
-    {
-        "prefix": "L_Restrictive", 
-        "policy_name": "Block: Restrictive Profile", 
-        "action": "block", 
-        "identity_condition": TARGET_IDENTITY, 
-        "category_condition": "any(dns.security_category[*] in {151 191 188 68}) or any(dns.content_category[*] in {67 125})",
-        "include": [
-            "HaGeZi Pro",
-            "HaGeZi Bypass Prevention", 
-            "HaGeZi Social", 
-            "HaGeZi Anti Piracy", 
-            "HaGeZi DynDNS",
-            "NoAI",
-        ], 
-        "exclude": ["HaGeZi Normal"],
-        "use_spam_tld": True
-    },
-    {
-        "prefix": "L_AllowSpam", 
-        "policy_name": "Allow: Spam Exceptions", 
-        "action": "allow", 
-        "identity_condition": None, 
-        "category_condition": None,
-        "include": ["HaGeZi Spam Allow"], 
-        "exclude": [],
-        "use_spam_tld": False
-    }
-]
+def get_active_policies():
+    policies = [
+        {
+            "prefix": "L_Relaxed", 
+            "policy_name": "Block: Relaxed Profile", 
+            "action": "block", 
+            "identity_condition": None, 
+            "category_condition": "any(dns.security_category[*] in {178 80 187 83 176 175 117 131 134 153}) or any(dns.content_category[*] in {133})",
+            "include": [
+                "HaGeZi Normal",
+                "Hagezi NSFW", 
+                "HaGeZi Fake", 
+                "HaGeZi No SafeSearch", 
+                "HaGeZi TIF Full",
+            ], 
+            "exclude": [],
+            "use_spam_tld": False
+        },
+        {
+            "prefix": "L_Restrictive", 
+            "policy_name": "Block: Restrictive Profile", 
+            "action": "block", 
+            "identity_condition": TARGET_IDENTITY, 
+            "category_condition": "any(dns.security_category[*] in {151 191 188 68}) or any(dns.content_category[*] in {67 125})",
+            "include": [
+                "HaGeZi Pro",
+                "HaGeZi Bypass Prevention", 
+                "HaGeZi Social", 
+                "HaGeZi Anti Piracy", 
+                "HaGeZi DynDNS",
+                "NoAI",
+            ], 
+            "exclude": ["HaGeZi Normal"],
+            "use_spam_tld": False
+        }
+    ]
+    
+    if any(p.get("use_spam_tld", False) for p in policies):
+        policies.append({
+            "prefix": "L_AllowSpam", 
+            "policy_name": "Allow: Spam Exceptions", 
+            "action": "allow", 
+            "identity_condition": None, 
+            "category_condition": None,
+            "include": ["HaGeZi Spam Allow"], 
+            "exclude": [],
+            "use_spam_tld": False
+        })
+    return policies
 
 # ---------------------------------------------------------------------------
 # 2. Cloudflare API Client
@@ -194,8 +240,8 @@ class CloudflareAPI:
     def delete_rule(self, rid):                                   return self._request("DELETE", f"rules/{rid}")
     def create_list(self, name, items, desc=""):                 return self._request("POST",    "lists",        json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
     def update_list(self, lid, name, items, desc=""):            return self._request("PUT",     f"lists/{lid}", json={"name": name, "items": items, "description": desc})
-    def create_rule(self, data):                                  return self._request("POST",    "rules",        json={**data, "rule_settings": {"block_page_enabled": False}})
-    def update_rule(self, rid, data):                            return self._request("PUT",     f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": False}})
+    def create_rule(self, data):                                  return self._request("POST",    "rules",        json={**data, "rule_settings": {"block_page_enabled": True}})
+    def update_rule(self, rid, data):                            return self._request("PUT",     f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": True}})
 
 # ---------------------------------------------------------------------------
 # 3. Relevance Filtering & Domain Logic
@@ -465,18 +511,23 @@ def main() -> None:
     Config.validate()
     cf = CloudflareAPI()
     
-    active_blocklist_urls = BLOCKLIST_URLS
-    active_policies = POLICIES
+    active_policies = get_active_policies()
     
+    active_sources = list(BLOCKLIST_SOURCES)
+    if any("HaGeZi Spam Allow" in p.get("include", []) for p in active_policies):
+        active_sources.append(SPAM_ALLOW_SOURCE)
+        
     download_session = requests.Session()
     dl_retry = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
     download_session.mount("https://", HTTPAdapter(pool_connections=Config.MAX_WORKERS, pool_maxsize=Config.MAX_WORKERS + 2, max_retries=dl_retry))
 
-    if Config.ENABLE_RELEVANCE_FILTER:
+    # Build master relevance dataset only if at least one active source requires it
+    any_relevance_needed = any(source.get("enable_relevance", False) for source in active_sources)
+    if any_relevance_needed:
         checker = RelevanceChecker(download_session)
         checker.build_dataset(max_workers=Config.MAX_WORKERS)
     else:
-        logger.info("Relevance filter disabled via config. Skipping dataset build.")
+        logger.info("Relevance filter disabled across all active blocklists. Skipping dataset build.")
         checker = None
 
     tld_raw_list = fetch_raw_tlds(download_session)
@@ -486,7 +537,13 @@ def main() -> None:
     total_irrelevant_pruned = 0
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=Config.MAX_WORKERS) as pool:
-        futures = {pool.submit(fetch_url, download_session, name, url, checker): name for name, url in active_blocklist_urls.items()}
+        futures = {}
+        for source in active_sources:
+            name = source["name"]
+            url = source["url"]
+            source_checker = checker if (checker and source.get("enable_relevance", False)) else None
+            futures[pool.submit(fetch_url, download_session, name, url, source_checker)] = name
+
         for future in concurrent.futures.as_completed(futures):
             name = futures[future]
             try:
@@ -506,7 +563,7 @@ def main() -> None:
         logger.error(f"Total compiled payload matrix size ({total_domains:,}) exceeds infrastructure limits. Execution halted.")
         return
 
-    if Config.ENABLE_RELEVANCE_FILTER:
+    if any_relevance_needed:
         logger.info(f"Domains pruned via Relevance Filter: {total_irrelevant_pruned:,}")
     logger.info(f"Target payload footprint to sync: {total_domains:,} elements.")
 
