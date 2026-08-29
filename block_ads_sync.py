@@ -59,7 +59,7 @@ BLOCKLIST_SOURCES = [
     {
         "name": "HaGeZi Normal",
         "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
-        "enable_relevance": False
+        "enable_relevance": True
     },
     {
         "name": "HaGeZi Pro",
@@ -156,7 +156,7 @@ def get_active_policies():
             "identity_condition": TARGET_IDENTITY, 
             "category_condition": "any(dns.security_category[*] in {151 191 188 68}) or any(dns.content_category[*] in {67 125})",
             "include": [
-                #"HaGeZi Pro",
+                "HaGeZi Pro",
                 "HaGeZi Bypass Prevention", 
                 "HaGeZi Social", 
                 "HaGeZi Anti Piracy", 
