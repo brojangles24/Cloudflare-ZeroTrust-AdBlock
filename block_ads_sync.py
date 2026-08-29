@@ -58,7 +58,7 @@ IP_PATTERN = re.compile(
 BLOCKLIST_SOURCES = [
     {
         "name": "HaGeZi Normal",
-        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt"],
+        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/normal-onlydomains.txt"],
         "enable_relevance": False
     },
     {
