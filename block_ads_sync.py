@@ -156,7 +156,7 @@ def get_active_policies():
             "identity_condition": TARGET_IDENTITY, 
             "category_condition": "any(dns.security_category[*] in {151 191 188 68}) or any(dns.content_category[*] in {67 125})",
             "include": [
-                "HaGeZi Pro",
+                #"HaGeZi Pro",
                 "HaGeZi Bypass Prevention", 
                 "HaGeZi Social", 
                 "HaGeZi Anti Piracy", 
@@ -240,8 +240,8 @@ class CloudflareAPI:
     def delete_rule(self, rid):                                   return self._request("DELETE", f"rules/{rid}")
     def create_list(self, name, items, desc=""):                 return self._request("POST",    "lists",        json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
     def update_list(self, lid, name, items, desc=""):            return self._request("PUT",     f"lists/{lid}", json={"name": name, "items": items, "description": desc})
-    def create_rule(self, data):                                  return self._request("POST",    "rules",        json={**data, "rule_settings": {"block_page_enabled": True}})
-    def update_rule(self, rid, data):                            return self._request("PUT",     f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": True}})
+    def create_rule(self, data):                                  return self._request("POST",    "rules",        json={**data, "rule_settings": {"block_page_enabled": False}})
+    def update_rule(self, rid, data):                            return self._request("PUT",     f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": False}})
 
 # ---------------------------------------------------------------------------
 # 3. Relevance Filtering & Domain Logic
