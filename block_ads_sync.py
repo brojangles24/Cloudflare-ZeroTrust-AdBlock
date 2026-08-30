@@ -81,7 +81,7 @@ BLOCKLIST_SOURCES = [
     },
     {
         "name": "HaGeZi Badware",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txtv",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
         "enable_relevance": True
     },
     {
