@@ -58,7 +58,7 @@ IP_PATTERN = re.compile(
 BLOCKLIST_SOURCES = [
    {
         "name": "HaGeZi Normal",
-        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt"],
+        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
         "enable_relevance": False
     },
  #   {
@@ -84,31 +84,31 @@ BLOCKLIST_SOURCES = [
  #       "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
  #       "enable_relevance": True
  #   },
-    {
-        "name": "HaGeZi Fake",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
-        "enable_relevance": True
-    },
+ #   {
+ #       "name": "HaGeZi Fake",
+ #       "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
+ #       "enable_relevance": True
+ #   },
     {
         "name": "HaGeZi TIF Full",
         "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt"],
         "enable_relevance": False
     },
-    {
-        "name": "HaGeZi Social",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
-        "enable_relevance": True
-    },
-    {
-        "name": "HaGeZi No SafeSearch",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
-        "enable_relevance": True
-    },
-    {
-        "name": "HaGeZi Bypass Prevention",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
-        "enable_relevance": True
-    },
+    #{
+    #   "name": "HaGeZi Social",
+    #    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
+    #    "enable_relevance": True
+    #},
+    #{
+    #    "name": "HaGeZi No SafeSearch",
+    #    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
+    #    "enable_relevance": True
+    #},
+    #{
+    #    "name": "HaGeZi Bypass Prevention",
+    #    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+    #    "enable_relevance": True
+    #},
    # {
    #     "name": "HaGeZi Anti Piracy",
    #    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
@@ -119,11 +119,11 @@ BLOCKLIST_SOURCES = [
    #     "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
    #     "enable_relevance": True
    # },
-    {
-        "name": "NoAI",
-        "url": "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt",
-        "enable_relevance": True
-    },
+   # {
+   #     "name": "NoAI",
+   #     "url": "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt",
+   #     "enable_relevance": True
+   # },
 ]
 
 SPAM_ALLOW_SOURCE = {
@@ -154,8 +154,8 @@ def get_active_policies():
                 #"Hagezi NSFW", 
                 #"HaGeZi Popups",
                 #"HaGeZi Badware",
-                "HaGeZi Fake", 
-                "HaGeZi No SafeSearch", 
+                #"HaGeZi Fake", 
+                #"HaGeZi No SafeSearch", 
                 "HaGeZi TIF Full",
                 #"HaGeZi DynDNS",
                 #"HaGeZi Anti Piracy", 
@@ -171,9 +171,9 @@ def get_active_policies():
             "category_condition": "any(dns.security_category[*] in {151 191 188 68}) or any(dns.content_category[*] in {67 125})",
             "include": [
                 #"HaGeZi Pro",
-                "HaGeZi Bypass Prevention", 
-                "HaGeZi Social", 
-                "NoAI",
+                #"HaGeZi Bypass Prevention", 
+                #"HaGeZi Social", 
+                #"NoAI",
             ], 
             "exclude": ["HaGeZi Normal"],
             "use_spam_tld": False
