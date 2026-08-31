@@ -92,7 +92,7 @@ BLOCKLIST_SOURCES = [
     {
         "name": "HaGeZi TIF Full",
         "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt"],
-        "enable_relevance": True
+        "enable_relevance": False
     },
     {
         "name": "HaGeZi Social",
