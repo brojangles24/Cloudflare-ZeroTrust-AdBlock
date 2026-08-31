@@ -161,7 +161,7 @@ def get_active_policies():
                 "HaGeZi Anti Piracy", 
             ], 
             "exclude": [],
-            "use_spam_tld": True
+            "use_spam_tld": False
         },
         {
             "prefix": "L_Restrictive", 
