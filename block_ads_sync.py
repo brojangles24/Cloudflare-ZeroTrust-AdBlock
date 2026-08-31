@@ -61,11 +61,11 @@ BLOCKLIST_SOURCES = [
         "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
         "enable_relevance": True
     },
-    #{
-    #    "name": "HaGeZi Pro",
-    #    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
-    #    "enable_relevance": True
-    #},
+    {
+        "name": "HaGeZi Pro",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
+        "enable_relevance": True
+    },
     {
         "name": "Hagezi NSFW",
         "url": [
@@ -74,16 +74,16 @@ BLOCKLIST_SOURCES = [
         ],
         "enable_relevance": True
     },
-    {
-        "name": "HaGeZi Popups",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/popupads-onlydomains.txt",
-        "enable_relevance": True
-    },
-    {
-        "name": "HaGeZi Badware",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
-        "enable_relevance": True
-    },
+    #{
+    #    "name": "HaGeZi Popups",
+    #    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/popupads-onlydomains.txt",
+    #    "enable_relevance": True
+    #},
+    #{
+    #    "name": "HaGeZi Badware",
+    #    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
+    #    "enable_relevance": True
+    #},
     {
         "name": "HaGeZi Fake",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
@@ -152,7 +152,7 @@ def get_active_policies():
             "include": [
                 "HaGeZi Normal",
                 "Hagezi NSFW", 
-                "HaGeZi Popups",
+                #"HaGeZi Popups",
                 #"HaGeZi Badware",
                 "HaGeZi Fake", 
                 "HaGeZi No SafeSearch", 
@@ -161,7 +161,7 @@ def get_active_policies():
                 "HaGeZi Anti Piracy", 
             ], 
             "exclude": [],
-            "use_spam_tld": False
+            "use_spam_tld": True
         },
         {
             "prefix": "L_Restrictive", 
@@ -170,12 +170,12 @@ def get_active_policies():
             "identity_condition": TARGET_IDENTITY, 
             "category_condition": "any(dns.security_category[*] in {151 191 188 68}) or any(dns.content_category[*] in {67 125})",
             "include": [
-                #"HaGeZi Pro",
+                "HaGeZi Pro",
                 "HaGeZi Bypass Prevention", 
                 "HaGeZi Social", 
                 "NoAI",
             ], 
-            "exclude": [""],
+            "exclude": ["HaGeZi Normal"],
             "use_spam_tld": False
         }
     ]
