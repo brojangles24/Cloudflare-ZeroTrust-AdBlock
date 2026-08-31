@@ -161,7 +161,7 @@ def get_active_policies():
                 "HaGeZi Anti Piracy", 
             ], 
             "exclude": [],
-            "use_spam_tld": False
+            "use_spam_tld": True
         },
         {
             "prefix": "L_Restrictive", 
@@ -176,7 +176,7 @@ def get_active_policies():
                 "NoAI",
             ], 
             "exclude": ["HaGeZi Normal"],
-            "use_spam_tld": True
+            "use_spam_tld": False
         }
     ]
     
