@@ -64,7 +64,7 @@ BLOCKLIST_SOURCES = [
     {
         "name": "HaGeZi Pro",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
-        "enable_relevance": True
+        "enable_relevance": False
     },
     {
         "name": "Hagezi NSFW",
@@ -89,11 +89,11 @@ BLOCKLIST_SOURCES = [
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
         "enable_relevance": True
     },
-    {
-        "name": "HaGeZi TIF Full",
-        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"],
-        "enable_relevance": True
-    },
+    #{
+    #    "name": "HaGeZi TIF Full",
+    #    "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"],
+    #    "enable_relevance": True
+    #},
     {
        "name": "HaGeZi Social",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
