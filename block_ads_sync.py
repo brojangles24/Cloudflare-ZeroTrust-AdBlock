@@ -61,11 +61,11 @@ BLOCKLIST_SOURCES = [
         "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
         "enable_relevance": True
    },
-   {
-        "name": "HaGeZi Pro",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
-        "enable_relevance": True
-    },
+   #{
+   #     "name": "HaGeZi Pro",
+   #     "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
+   #     "enable_relevance": True
+   # },
     {
         "name": "Hagezi NSFW",
         "url": [
@@ -168,15 +168,20 @@ def get_active_policies():
             "policy_name": "Block: Restrictive Profile", 
             "action": "block", 
             "identity_condition": TARGET_IDENTITY, 
-            "category_condition": "any(dns.security_category[*] in {151, 191, 188, 68}) or any(dns.content_category[*] in {67, 125}) or any(app.ids[*] in {534, 541, 572, 600, 604, 618, 628, 633, 1110, 1122, 1130, 1135, 1138, 1853, 2678, 2680, 2826, 2831, 2844, 2845, 2848, 2852, 3097, 3098}) or any(dns.domains[*] in {'web.archive.org', 'steamcommunity.com', 'steampowered.com', 'linkvertise.com', 'vercel.com'})",
+            "category_condition": (
+                "any(dns.security_category[*] in {151 191 188 68}) or "
+                "any(dns.content_category[*] in {67 125}) or "
+                "any(app.ids[*] in {534 541 572 600 604 618 628 633 1110 1122 1130 1135 1138 1853 2678 2680 2826 2831 2844 2845 2848 2852 3097 3098}) or "
+                'any(dns.domains[*] in {"web.archive.org" "steamcommunity.com" "steampowered.com" "linkvertise.com" "vercel.com"})'
+            ),
             "include": [
-                "HaGeZi Pro",
+                #"HaGeZi Pro",
                 "HaGeZi Bypass Prevention", 
                 "HaGeZi Social", 
                 "NoAI",
             ], 
             "exclude": ["HaGeZi Normal"],
-            "use_spam_tld": True
+            "use_spam_tld": False
         }
     ]
     
