@@ -56,14 +56,14 @@ IP_PATTERN = re.compile(
 )
 
 BLOCKLIST_SOURCES = [
-   #{
-   #     "name": "HaGeZi Normal",
-   #     "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
-   #     "enable_relevance": True
-   #},
-    {
+   {
+        "name": "HaGeZi Normal",
+        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
+        "enable_relevance": True
+   },
+   {
         "name": "HaGeZi Pro",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
         "enable_relevance": True
     },
     {
@@ -150,7 +150,7 @@ def get_active_policies():
             "identity_condition": None, 
             "category_condition": "any(dns.security_category[*] in {178 80 187 83 176 175 117 131 134 153}) or any(dns.content_category[*] in {133})",
             "include": [
-                "HaGeZi Pro",
+                "HaGeZi Normal",
                 "Hagezi NSFW", 
                 #"HaGeZi Popups",
                 #"HaGeZi Badware",
@@ -170,13 +170,13 @@ def get_active_policies():
             "identity_condition": TARGET_IDENTITY, 
             "category_condition": "any(dns.security_category[*] in {151 191 188 68}) or any(dns.content_category[*] in {67 125}) or any(app.ids[*] in {534 541 572 600 604 618 628 633 1110 1122 1130 1135 1138 1853 2678 2680 2826 2831 2844 2845 2848 2852 3097 3098})",
             "include": [
-                #"HaGeZi Pro",
+                "HaGeZi Pro",
                 "HaGeZi Bypass Prevention", 
                 "HaGeZi Social", 
                 "NoAI",
             ], 
-            "exclude": [""],
-            "use_spam_tld": False
+            "exclude": ["HaGeZi Normal"],
+            "use_spam_tld": True
         }
     ]
     
