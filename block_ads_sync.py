@@ -56,16 +56,16 @@ IP_PATTERN = re.compile(
 )
 
 BLOCKLIST_SOURCES = [
-   {
-        "name": "HaGeZi Normal",
-        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
+   #{
+   #     "name": "HaGeZi Normal",
+   #     "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
+   #     "enable_relevance": True
+   #},
+    {
+        "name": "HaGeZi Pro",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
         "enable_relevance": True
     },
-    #{
-    #    "name": "HaGeZi Pro",
-    #    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
-    #    "enable_relevance": True
-    #},
     {
         "name": "Hagezi NSFW",
         "url": [
@@ -150,7 +150,7 @@ def get_active_policies():
             "identity_condition": None, 
             "category_condition": "any(dns.security_category[*] in {178 80 187 83 176 175 117 131 134 153}) or any(dns.content_category[*] in {133})",
             "include": [
-                "HaGeZi Normal",
+                "HaGeZi Pro",
                 "Hagezi NSFW", 
                 #"HaGeZi Popups",
                 #"HaGeZi Badware",
@@ -175,7 +175,7 @@ def get_active_policies():
                 "HaGeZi Social", 
                 "NoAI",
             ], 
-            "exclude": ["HaGeZi Normal"],
+            "exclude": [""],
             "use_spam_tld": False
         }
     ]
