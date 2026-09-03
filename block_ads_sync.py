@@ -58,22 +58,22 @@ IP_PATTERN = re.compile(
 BLOCKLIST_SOURCES = [
    {
         "name": "HaGeZi Normal",
-        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
-        "enable_relevance": True
+        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt"],
+        "enable_relevance": False
    },
    #{
    #     "name": "HaGeZi Pro",
    #     "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
    #     "enable_relevance": True
    # },
-    {
-        "name": "Hagezi NSFW",
-        "url": [
-            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
-            "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
-        ],
-        "enable_relevance": True
-    },
+    #{
+    #    "name": "Hagezi NSFW",
+    #    "url": [
+    #        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
+    #        "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
+    #    ],
+    #    "enable_relevance": True
+    #},
     #{
     #    "name": "HaGeZi Popups",
     #    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/popupads-onlydomains.txt",
@@ -87,43 +87,43 @@ BLOCKLIST_SOURCES = [
     {
         "name": "HaGeZi Fake",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
-        "enable_relevance": True
+        "enable_relevance": False
     },
     {
         "name": "HaGeZi TIF Full",
-        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"],
-        "enable_relevance": True
+        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.mini-onlydomains.txt"],
+        "enable_relevance": False
     },
-    {
-       "name": "HaGeZi Social",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
-        "enable_relevance": True
-    },
-    {
-        "name": "HaGeZi No SafeSearch",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
-        "enable_relevance": True
-    },
-    {
-        "name": "HaGeZi Bypass Prevention",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
-        "enable_relevance": True
-    },
-    {
-       "name": "HaGeZi Anti Piracy",
-       "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
-        "enable_relevance": True
-    },
-    {
-        "name": "HaGeZi DynDNS",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-        "enable_relevance": True
-    },
-    {
-        "name": "NoAI",
-        "url": "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt",
-        "enable_relevance": True
-    },
+   # {
+   #    "name": "HaGeZi Social",
+   #     "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
+   #     "enable_relevance": True
+   # },
+   # {
+   #     "name": "HaGeZi No SafeSearch",
+   #     "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
+   #     "enable_relevance": True
+   # },
+   # {
+   #     "name": "HaGeZi Bypass Prevention",
+   #     "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+   #     "enable_relevance": True
+   # },
+   # {
+   #    "name": "HaGeZi Anti Piracy",
+   #    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
+   #     "enable_relevance": True
+   # },
+   # {
+   #     "name": "HaGeZi DynDNS",
+   #     "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
+   #     "enable_relevance": True
+   # },
+   # {
+   #     "name": "NoAI",
+   #     "url": "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt",
+   #     "enable_relevance": True
+   # },
 ]
 
 SPAM_ALLOW_SOURCE = {
@@ -151,14 +151,14 @@ def get_active_policies():
             "category_condition": "any(dns.security_category[*] in {178 80 187 83 176 175 117 131 134 153}) or any(dns.content_category[*] in {133})",
             "include": [
                 "HaGeZi Normal",
-                "Hagezi NSFW", 
+                #"Hagezi NSFW", 
                 #"HaGeZi Popups",
                 #"HaGeZi Badware",
                 "HaGeZi Fake", 
-                "HaGeZi No SafeSearch", 
+                #"HaGeZi No SafeSearch", 
                 "HaGeZi TIF Full",
-                "HaGeZi DynDNS",
-                "HaGeZi Anti Piracy", 
+                #"HaGeZi DynDNS",
+                #"HaGeZi Anti Piracy", 
             ], 
             "exclude": [],
             "use_spam_tld": False
@@ -176,9 +176,9 @@ def get_active_policies():
             ),
             "include": [
                 #"HaGeZi Pro",
-                "HaGeZi Bypass Prevention", 
-                "HaGeZi Social", 
-                "NoAI",
+                #"HaGeZi Bypass Prevention", 
+                #"HaGeZi Social", 
+                #"NoAI",
             ], 
             "exclude": ["HaGeZi Normal"],
             "use_spam_tld": False
