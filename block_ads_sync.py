@@ -172,7 +172,7 @@ def get_active_policies():
                 "any(dns.security_category[*] in {151 191 188 68}) or "
                 "any(dns.content_category[*] in {67 125}) or "
                 "any(app.ids[*] in {534 541 572 600 604 618 628 633 1110 1122 1130 1135 1138 1853 2678 2680 2826 2831 2844 2845 2848 2852 3097 3098}) or "
-                'any(dns.domains[*] in {"web.archive.org" "steamcommunity.com" "steampowered.com" "linkvertise.com" "vercel.com"})'
+                'any(dns.domains[*] in {"web.archive.org" "steamcommunity.com" "linkvertise.com" "vercel.com"})'
             ),
             "include": [
                 "HaGeZi Pro",
