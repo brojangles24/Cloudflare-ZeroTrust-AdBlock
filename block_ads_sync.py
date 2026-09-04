@@ -63,7 +63,10 @@ BLOCKLIST_SOURCES = [
    },
    {
         "name": "HaGeZi Pro",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
+        "url": [
+            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt",
+            "https://raw.githubusercontent.com/luckmagnet/1Hosts/refs/heads/master/Xtra/domains.wildcards"
+        ],
         "enable_relevance": True
     },
     {
