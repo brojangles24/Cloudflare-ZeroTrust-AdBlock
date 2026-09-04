@@ -93,7 +93,10 @@ BLOCKLIST_SOURCES = [
     },
     {
         "name": "HaGeZi TIF Full",
-        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"],
+        "url": [
+            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
+            "https://raw.githubusercontent.com/DNSBunker/CTI/refs/heads/main/domains.txt",
+        ],
         "enable_relevance": True
     },
     {
