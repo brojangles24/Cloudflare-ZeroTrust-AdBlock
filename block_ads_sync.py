@@ -63,7 +63,7 @@ BLOCKLIST_SOURCES = [
    },
    {
         "name": "HaGeZi Pro",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
         "enable_relevance": True
     },
     {
@@ -161,7 +161,7 @@ def get_active_policies():
                 "HaGeZi Anti Piracy", 
             ], 
             "exclude": [],
-            "use_spam_tld": False
+            "use_spam_tld": True
         },
         {
             "prefix": "L_Restrictive", 
