@@ -59,7 +59,7 @@ BLOCKLIST_SOURCES = [
    {
         "name": "HaGeZi Normal",
         "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
-        "enable_relevance": False
+        "enable_relevance": True
    },
    #{
    #     "name": "HaGeZi Pro",
@@ -95,9 +95,15 @@ BLOCKLIST_SOURCES = [
         "name": "HaGeZi TIF Full",
         "url": [
             "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
-            "https://raw.githubusercontent.com/DNSBunker/CTI/refs/heads/main/domains.txt",
         ],
         "enable_relevance": True
+    },
+    {
+        "name": "Cyber Threat Intel",
+        "url": [
+            "https://raw.githubusercontent.com/DNSBunker/CTI/refs/heads/main/domains.txt",
+        ],
+        "enable_relevance": False
     },
     {
        "name": "HaGeZi Social",
@@ -162,6 +168,7 @@ def get_active_policies():
                 "HaGeZi Fake", 
                 "HaGeZi No SafeSearch", 
                 "HaGeZi TIF Full",
+                "Cyber Threat Intel",
                 "HaGeZi DynDNS",
                 "HaGeZi Anti Piracy", 
             ], 
