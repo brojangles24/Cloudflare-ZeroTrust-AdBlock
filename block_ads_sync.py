@@ -118,12 +118,12 @@ BLOCKLIST_SOURCES = [
     {
         "name": "HaGeZi Bypass Prevention",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
-        "enable_relevance": True
+        "enable_relevance": False
     },
     {
        "name": "HaGeZi Anti Piracy",
        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
-        "enable_relevance": False
+        "enable_relevance": True
     },
     {
         "name": "HaGeZi DynDNS",
