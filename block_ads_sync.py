@@ -89,7 +89,7 @@ BLOCKLIST_SOURCES = [
     {
         "name": "HaGeZi Fake",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
-        "enable_relevance": True
+        "enable_relevance": False
     },
     {
         "name": "HaGeZi TIF Full",
@@ -108,12 +108,12 @@ BLOCKLIST_SOURCES = [
     {
        "name": "HaGeZi Social",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
-        "enable_relevance": True
+        "enable_relevance": False
     },
     {
         "name": "HaGeZi No SafeSearch",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
-        "enable_relevance": True
+        "enable_relevance": False
     },
     {
         "name": "HaGeZi Bypass Prevention",
@@ -123,17 +123,17 @@ BLOCKLIST_SOURCES = [
     {
        "name": "HaGeZi Anti Piracy",
        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
-        "enable_relevance": True
+        "enable_relevance": False
     },
     {
         "name": "HaGeZi DynDNS",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-        "enable_relevance": True
+        "enable_relevance": False
     },
     {
         "name": "NoAI",
         "url": "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt",
-        "enable_relevance": True
+        "enable_relevance": False
     },
 ]
 
