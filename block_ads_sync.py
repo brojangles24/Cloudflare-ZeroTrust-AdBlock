@@ -59,7 +59,7 @@ BLOCKLIST_SOURCES = [
    {
         "name": "HaGeZi Normal",
         "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt"],
-        "enable_relevance": False
+        "enable_relevance": True
    },
    {
         "name": "HaGeZi Pro",
@@ -89,7 +89,7 @@ BLOCKLIST_SOURCES = [
     {
         "name": "HaGeZi Fake",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
-        "enable_relevance": False
+        "enable_relevance": True
     },
     {
         "name": "HaGeZi TIF Full",
@@ -108,32 +108,32 @@ BLOCKLIST_SOURCES = [
     {
        "name": "HaGeZi Social",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
-        "enable_relevance": False
+        "enable_relevance": True
     },
     {
         "name": "HaGeZi No SafeSearch",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
-        "enable_relevance": False
+        "enable_relevance": True
     },
     {
         "name": "HaGeZi Bypass Prevention",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
-        "enable_relevance": False
+        "enable_relevance": True
     },
     {
        "name": "HaGeZi Anti Piracy",
        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
-        "enable_relevance": False
+        "enable_relevance": True
     },
     {
         "name": "HaGeZi DynDNS",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-        "enable_relevance": False
+        "enable_relevance": True
     },
     {
         "name": "NoAI",
         "url": "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt",
-        "enable_relevance": False
+        "enable_relevance": True
     },
 ]
 
