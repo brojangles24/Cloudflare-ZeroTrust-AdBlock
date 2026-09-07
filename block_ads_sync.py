@@ -140,7 +140,7 @@ BLOCKLIST_SOURCES = [
 SPAM_ALLOW_SOURCE = {
     "name": "HaGeZi Spam Allow",
     "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt",
-    "enable_relevance": False
+    "enable_relevance": True
 }
 
 SPAM_TLD_URL = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
