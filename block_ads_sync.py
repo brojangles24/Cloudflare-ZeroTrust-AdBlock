@@ -58,16 +58,16 @@ IP_PATTERN = re.compile(
 BLOCKLIST_SOURCES = [
    {
         "name": "HaGeZi Normal",
-        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt"],
-        "enable_relevance": True
+        "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/normal-onlydomains.txt"],
+        "enable_relevance": False
    },
-   {
-        "name": "HaGeZi Pro",
-        "url": [
-            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
-        ],
-        "enable_relevance": True
-    },
+   #{
+   #     "name": "HaGeZi Pro",
+   #     "url": [
+   #         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+   #     ],
+   #     "enable_relevance": True
+   # },
     {
         "name": "Hagezi NSFW",
         "url": [
@@ -187,7 +187,7 @@ def get_active_policies():
                 'any(dns.domains[*] in {"web.archive.org" "steamcommunity.com" "linkvertise.com" "vercel.com"})'
             ),
             "include": [
-                "HaGeZi Pro",
+                #"HaGeZi Pro",
                 "HaGeZi Bypass Prevention", 
                 "HaGeZi Social", 
                 "NoAI",
