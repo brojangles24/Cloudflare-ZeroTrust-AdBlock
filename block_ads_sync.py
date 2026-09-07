@@ -59,7 +59,7 @@ BLOCKLIST_SOURCES = [
    {
         "name": "HaGeZi Normal",
         "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt"],
-        "enable_relevance": True
+        "enable_relevance": False
    },
    #{
    #     "name": "HaGeZi Pro",
@@ -123,7 +123,7 @@ BLOCKLIST_SOURCES = [
     {
        "name": "HaGeZi Anti Piracy",
        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
-        "enable_relevance": True
+        "enable_relevance": False
     },
     {
         "name": "HaGeZi DynDNS",
