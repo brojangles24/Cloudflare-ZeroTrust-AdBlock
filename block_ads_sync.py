@@ -61,13 +61,13 @@ BLOCKLIST_SOURCES = [
         "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
         "enable_relevance": True
    },
-   #{
-   #     "name": "HaGeZi Pro",
-   #     "url": [
-   #         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
-   #     ],
-   #     "enable_relevance": True
-   # },
+   {
+        "name": "HaGeZi Pro",
+        "url": [
+            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+        ],
+        "enable_relevance": True
+    },
     {
         "name": "Hagezi NSFW",
         "url": [
@@ -81,11 +81,11 @@ BLOCKLIST_SOURCES = [
     #    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/popupads-onlydomains.txt",
     #    "enable_relevance": True
     #},
-    #{
-    #    "name": "HaGeZi Badware",
-    #    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
-    #    "enable_relevance": True
-    #},
+    {
+        "name": "HaGeZi Badware",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
+        "enable_relevance": True
+    },
     {
         "name": "HaGeZi Fake",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
@@ -164,7 +164,7 @@ def get_active_policies():
                 "HaGeZi Normal",
                 "Hagezi NSFW", 
                 #"HaGeZi Popups",
-                #"HaGeZi Badware",
+                "HaGeZi Badware",
                 "HaGeZi Fake", 
                 "HaGeZi No SafeSearch", 
                 "HaGeZi TIF Full",
@@ -187,7 +187,7 @@ def get_active_policies():
                 'any(dns.domains[*] in {"web.archive.org" "steamcommunity.com" "linkvertise.com" "vercel.com"})'
             ),
             "include": [
-                #"HaGeZi Pro",
+                "HaGeZi Pro",
                 "HaGeZi Bypass Prevention", 
                 "HaGeZi Social", 
                 "NoAI",
