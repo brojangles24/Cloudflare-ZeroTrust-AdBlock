@@ -76,11 +76,6 @@ BLOCKLIST_SOURCES = [
         ],
         "enable_relevance": True
     },
-    #{
-    #    "name": "HaGeZi Popups",
-    #    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/popupads-onlydomains.txt",
-    #    "enable_relevance": True
-    #},
     {
         "name": "HaGeZi Badware",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt",
@@ -163,7 +158,6 @@ def get_active_policies():
             "include": [
                 "HaGeZi Normal",
                 "Hagezi NSFW", 
-                #"HaGeZi Popups",
                 "HaGeZi Badware",
                 "HaGeZi Fake", 
                 "HaGeZi No SafeSearch", 
@@ -268,9 +262,9 @@ class CloudflareAPI:
     def delete_list(self, lid):                                   return self._request("DELETE", f"lists/{lid}")
     def delete_rule(self, rid):                                   return self._request("DELETE", f"rules/{rid}")
     def create_list(self, name, items, desc=""):                 return self._request("POST",    "lists",        json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
-    def update_list(self, lid, name, items, desc=""):            return self._request("PUT",     f"lists/{lid}", json={"name": name, "items": items, "description": desc})
+    def update_list(self, lid, name, items, desc=""):             return self._request("PUT",     f"lists/{lid}", json={"name": name, "items": items, "description": desc})
     def create_rule(self, data):                                  return self._request("POST",    "rules",        json={**data, "rule_settings": {"block_page_enabled": False}})
-    def update_rule(self, rid, data):                            return self._request("PUT",     f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": False}})
+    def update_rule(self, rid, data):                             return self._request("PUT",     f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": False}})
 
 # ---------------------------------------------------------------------------
 # 3. Relevance Filtering & Domain Logic
@@ -407,9 +401,10 @@ def optimize_domains(domains: set[str]) -> list[str]:
         last_kept = dom
     return optimized
 
-def build_policy_sets(policies_config, fetched_lists):
+def build_policy_sets(policies_config, fetched_lists, spam_tlds):
     sets = []
     base_household_set = fetched_lists.get("HaGeZi Normal", set())
+    spam_tlds_set = set(spam_tlds) # For fast lookups
 
     all_blocked_domains = set()
     for name, domains in fetched_lists.items():
@@ -436,6 +431,16 @@ def build_policy_sets(policies_config, fetched_lists):
             and base_household_set
         ):
             p_set = {dom for dom in p_set if not has_suffix_match(dom, base_household_set)}
+
+        # ---------------------------------------------------------
+        # NEW: Prune domains ending with a spam TLD to save list quota
+        # ---------------------------------------------------------
+        if policy.get("use_spam_tld", False) and spam_tlds_set:
+            original_count = len(p_set)
+            p_set = {dom for dom in p_set if dom.split('.')[-1] not in spam_tlds_set}
+            removed_count = original_count - len(p_set)
+            if removed_count > 0:
+                logger.info(f"[{policy['policy_name']}] Pruned {removed_count:,} domains matching Spam TLDs to save quota.")
 
         sets.append((policy, optimize_domains(p_set)))
     return sets
@@ -585,7 +590,8 @@ def main() -> None:
                     return
                 logger.warning(f"Non-critical list source offline: {name}. Error context: {e}")
 
-    compiled_policies = build_policy_sets(active_policies, fetched_lists)
+    # NEW: Passing the tld_raw_list to build_policy_sets
+    compiled_policies = build_policy_sets(active_policies, fetched_lists, tld_raw_list)
     total_domains = sum(len(domains) for _, domains in compiled_policies)
 
     if total_domains > Config.TOTAL_QUOTA:
