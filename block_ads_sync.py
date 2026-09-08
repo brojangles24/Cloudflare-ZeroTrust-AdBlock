@@ -432,10 +432,8 @@ def build_policy_sets(policies_config, fetched_lists, spam_tlds):
         ):
             p_set = {dom for dom in p_set if not has_suffix_match(dom, base_household_set)}
 
-        # ---------------------------------------------------------
-        # NEW: Prune domains ending with a spam TLD to save list quota
-        # ---------------------------------------------------------
-        if policy.get("use_spam_tld", False) and spam_tlds_set:
+        # Prune domains ending with a spam TLD to save list quota across ALL policies
+        if spam_tlds_set:
             original_count = len(p_set)
             p_set = {dom for dom in p_set if dom.split('.')[-1] not in spam_tlds_set}
             removed_count = original_count - len(p_set)
@@ -590,7 +588,6 @@ def main() -> None:
                     return
                 logger.warning(f"Non-critical list source offline: {name}. Error context: {e}")
 
-    # NEW: Passing the tld_raw_list to build_policy_sets
     compiled_policies = build_policy_sets(active_policies, fetched_lists, tld_raw_list)
     total_domains = sum(len(domains) for _, domains in compiled_policies)
 
