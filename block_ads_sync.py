@@ -59,7 +59,7 @@ BLOCKLIST_SOURCES = [
    {
         "name": "HaGeZi Normal",
         "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
-        "enable_relevance": True
+        "enable_relevance": False
    },
    #{
    #     "name": "HaGeZi Pro",
