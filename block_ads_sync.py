@@ -161,10 +161,20 @@ class CloudflareAPI:
         return self.req("POST", "lists", json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
     def update_list(self, lid: str, name: str, items: list[dict], desc: str = ""):
         return self.req("PUT", f"lists/{lid}", json={"name": name, "items": items, "description": desc})
+
     def create_rule(self, data: dict):
-        return self.req("POST", "rules", json={**data, "rule_settings": {"block_page_enabled": False}})
+        payload = dict(data)
+        settings = dict(payload.get("rule_settings") or {})
+        settings.setdefault("block_page_enabled", False)
+        payload["rule_settings"] = settings
+        return self.req("POST", "rules", json=payload)
+
     def update_rule(self, rid: str, data: dict):
-        return self.req("PUT", f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": False}})
+        payload = dict(data)
+        settings = dict(payload.get("rule_settings") or {})
+        settings.setdefault("block_page_enabled", False)
+        payload["rule_settings"] = settings
+        return self.req("PUT", f"rules/{rid}", json=payload)
 
     def get_graphql_analytics(self) -> dict:
         seven_days_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -174,9 +184,8 @@ class CloudflareAPI:
           viewer {
             accounts(filter: {accountTag: $accountTag}) {
               dailyTrends: gatewayResolverQueriesAdaptiveGroups(
-                limit: 30
+                limit: 100
                 filter: {datetime_geq: $start}
-                orderBy: [datetimeDay_ASC]
               ) {
                 count
                 dimensions {
