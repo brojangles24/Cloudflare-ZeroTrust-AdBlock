@@ -173,16 +173,6 @@ class CloudflareAPI:
         query GetGatewayAnalytics($accountTag: String!, $start: Time!) {
           viewer {
             accounts(filter: {accountTag: $accountTag}) {
-              rulesUsage: gatewayResolverQueriesAdaptiveGroups(
-                limit: 100
-                filter: {datetime_geq: $start}
-                orderBy: [count_DESC]
-              ) {
-                count
-                dimensions {
-                  ruleId
-                }
-              }
               dailyTrends: gatewayResolverQueriesAdaptiveGroups(
                 limit: 30
                 filter: {datetime_geq: $start}
@@ -249,7 +239,6 @@ class CloudflareAPI:
         """
 
         analytics = {
-            "rules_usage": {},
             "daily_trends": [],
             "top_domains": [],
             "top_categories": [],
@@ -272,11 +261,6 @@ class CloudflareAPI:
             viewer = data_obj.get("viewer") or {}
             accounts = viewer.get("accounts") or []
             acc_data = accounts[0] if accounts else {}
-
-            for row in acc_data.get("rulesUsage") or []:
-                rid = (row.get("dimensions") or {}).get("ruleId")
-                if rid:
-                    analytics["rules_usage"][rid] = row.get("count", 0)
 
             daily_map = {}
             for row in acc_data.get("dailyTrends") or []:
@@ -817,18 +801,6 @@ def main() -> None:
     analytics = cf.get_graphql_analytics()
     fresh_rules = cf.get_rules()
 
-    compiled_rules_telemetry = []
-    for r in fresh_rules:
-        rid = r["id"]
-        compiled_rules_telemetry.append({
-            "id": rid,
-            "name": r["name"],
-            "action": r.get("action", "unknown"),
-            "enabled": r.get("enabled", True),
-            "usage_7d": analytics["rules_usage"].get(rid, 0),
-            "updated_at": r.get("updated_at", "")
-        })
-
     attributed_domains = []
     source_hits: dict[str, int] = {s["name"]: 0 for s in sources}
     source_hits["Spam TLD Shield"] = 0
@@ -856,6 +828,31 @@ def main() -> None:
             "name": d_name,
             "count": cnt,
             "sources": matched_feeds
+        })
+
+    rule_usage_map = {}
+    for p in policies:
+        r_name = p.get("name")
+        hits = 0
+        for inc in p.get("include", []):
+            hits += source_hits.get(inc, 0)
+        if p.get("use_spam_tld"):
+            hits += source_hits.get("Spam TLD Shield", 0)
+        if p.get("domains"):
+            hits += source_hits.get("Custom Policy Rules", 0)
+        rule_usage_map[r_name] = hits
+
+    compiled_rules_telemetry = []
+    for r in fresh_rules:
+        rid = r["id"]
+        r_name = r["name"]
+        compiled_rules_telemetry.append({
+            "id": rid,
+            "name": r_name,
+            "action": r.get("action", "unknown"),
+            "enabled": r.get("enabled", True),
+            "usage_7d": rule_usage_map.get(r_name, 0),
+            "updated_at": r.get("updated_at", "")
         })
 
     top_blocklist_sources = [
