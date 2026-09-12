@@ -1,25 +1,17 @@
 {
-  "last_sync": "2026-09-12T22:09:07.191012+00:00",
-  "duration_seconds": 34.4,
+  "last_sync": "2026-09-12T22:18:49.502727+00:00",
+  "duration_seconds": 38.03,
   "total_quota": 300000,
-  "total_domains_synced": 177042,
-  "total_lists_used": 178,
+  "total_domains_synced": 162657,
+  "total_lists_used": 164,
   "summary": {
-    "total_raw_fetched": 3494661,
-    "total_pruned_relevance": 3241810,
-    "total_subdomain_duplicates": 7160,
+    "total_raw_fetched": 3470598,
+    "total_pruned_relevance": 3235415,
+    "total_subdomain_duplicates": 2737,
     "total_base_overlap_pruned": 0,
-    "total_spam_tld_pruned": 13946
+    "total_spam_tld_pruned": 13449
   },
   "cloudflare_rules": [
-    {
-      "id": "1a7f1d37-89e0-4c63-9aff-8a5edb9874d3",
-      "name": "Allow: Spam Exceptions",
-      "action": "allow",
-      "enabled": true,
-      "usage_7d": 0,
-      "updated_at": "2026-09-12T18:30:49Z"
-    },
     {
       "id": "f43549cb-7761-4f5c-b563-5c2e0cba3fa2",
       "name": "SafeSearch",
@@ -69,6 +61,14 @@
       "updated_at": "2026-09-12T22:09:05Z"
     },
     {
+      "id": "1a7f1d37-89e0-4c63-9aff-8a5edb9874d3",
+      "name": "Allow: Spam Exceptions",
+      "action": "allow",
+      "enabled": true,
+      "usage_7d": 0,
+      "updated_at": "2026-09-12T22:13:30Z"
+    },
+    {
       "id": "e0fb24d3-1a6d-49e2-a15a-bb6152fd0755",
       "name": "Download Block",
       "action": "block",
@@ -90,7 +90,7 @@
       "action": "block",
       "enabled": true,
       "usage_7d": 0,
-      "updated_at": "2026-09-12T22:09:06Z"
+      "updated_at": "2026-09-12T22:18:41Z"
     },
     {
       "id": "95509161-25a2-4d63-a203-9d2e79e47552",
@@ -98,7 +98,7 @@
       "action": "block",
       "enabled": true,
       "usage_7d": 0,
-      "updated_at": "2026-09-12T20:23:28Z"
+      "updated_at": "2026-09-12T22:18:44Z"
     }
   ],
   "daily_trends": [
@@ -110,9 +110,9 @@
     },
     {
       "date": "2026-09-06",
-      "allowed": 880,
+      "allowed": 870,
       "blocked": 0,
-      "total": 880
+      "total": 870
     },
     {
       "date": "2026-09-07",
@@ -140,15 +140,15 @@
     },
     {
       "date": "2026-09-11",
-      "allowed": 1260,
+      "allowed": 1280,
       "blocked": 0,
-      "total": 1260
+      "total": 1280
     },
     {
       "date": "2026-09-12",
-      "allowed": 1090,
+      "allowed": 1100,
       "blocked": 0,
-      "total": 1090
+      "total": 1100
     }
   ],
   "top_blocklist_sources": [],
@@ -167,11 +167,11 @@
     },
     "L_Restrictive": {
       "name": "Block: Restrictive Profile",
-      "raw_total": 45750,
+      "raw_total": 26444,
       "base_overlap_pruned": 0,
-      "spam_tld_pruned": 1343,
-      "subdomain_duplicates_pruned": 5658,
-      "final_unique_domains": 38749
+      "spam_tld_pruned": 846,
+      "subdomain_duplicates_pruned": 1235,
+      "final_unique_domains": 24363
     },
     "L_AllowSpam": {
       "name": "Allow: Spam Exceptions",
@@ -179,29 +179,34 @@
       "base_overlap_pruned": 0,
       "spam_tld_pruned": 0,
       "subdomain_duplicates_pruned": 0,
-      "final_unique_domains": 672
+      "final_unique_domains": 673
     }
   },
   "sources": {
-    "HaGeZi Social": {
-      "raw": 900,
-      "kept": 548,
-      "pruned_relevance": 352
-    },
     "HaGeZi Fake": {
       "raw": 16708,
       "kept": 546,
       "pruned_relevance": 16162
+    },
+    "HaGeZi No SafeSearch": {
+      "raw": 203,
+      "kept": 111,
+      "pruned_relevance": 92
     },
     "HaGeZi Bypass Prevention": {
       "raw": 16284,
       "kept": 5479,
       "pruned_relevance": 10805
     },
-    "HaGeZi No SafeSearch": {
-      "raw": 203,
-      "kept": 111,
-      "pruned_relevance": 92
+    "HaGeZi Social": {
+      "raw": 900,
+      "kept": 548,
+      "pruned_relevance": 352
+    },
+    "HaGeZi Pro": {
+      "raw": 222511,
+      "kept": 72438,
+      "pruned_relevance": 150073
     },
     "HaGeZi DynDNS": {
       "raw": 1533,
@@ -213,30 +218,25 @@
       "kept": 1247,
       "pruned_relevance": 959
     },
-    "HaGeZi Normal": {
-      "raw": 180141,
-      "kept": 56100,
-      "pruned_relevance": 124041
-    },
     "Cyber Threat Intel": {
       "raw": 8705,
       "kept": 8705,
       "pruned_relevance": 0
-    },
-    "HaGeZi Spam Allow": {
-      "raw": 1021,
-      "kept": 714,
-      "pruned_relevance": 307
     },
     "HaGeZi Anti Piracy": {
       "raw": 49310,
       "kept": 5022,
       "pruned_relevance": 44288
     },
-    "HaGeZi Pro++": {
-      "raw": 246574,
-      "kept": 90106,
-      "pruned_relevance": 156468
+    "HaGeZi Spam Allow": {
+      "raw": 1021,
+      "kept": 714,
+      "pruned_relevance": 307
+    },
+    "HaGeZi Normal": {
+      "raw": 180141,
+      "kept": 56100,
+      "pruned_relevance": 124041
     },
     "Hagezi NSFW": {
       "raw": 538988,
