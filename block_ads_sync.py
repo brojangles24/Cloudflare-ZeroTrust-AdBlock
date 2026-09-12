@@ -196,7 +196,7 @@ class CloudflareAPI:
               }
               topBlockedDomains: gatewayResolverQueriesAdaptiveGroups(
                 limit: 50
-                filter: {datetime_geq: $start, resolverDecision: "block"}
+                filter: {datetime_geq: $start, resolverDecision: 2}
                 orderBy: [count_DESC]
               ) {
                 count
@@ -206,7 +206,7 @@ class CloudflareAPI:
               }
               topBlockedUsers: gatewayResolverQueriesAdaptiveGroups(
                 limit: 10
-                filter: {datetime_geq: $start, resolverDecision: "block"}
+                filter: {datetime_geq: $start, resolverDecision: 2}
                 orderBy: [count_DESC]
               ) {
                 count
@@ -216,7 +216,7 @@ class CloudflareAPI:
               }
               topBlockedDevices: gatewayResolverQueriesAdaptiveGroups(
                 limit: 10
-                filter: {datetime_geq: $start, resolverDecision: "block"}
+                filter: {datetime_geq: $start, resolverDecision: 2}
                 orderBy: [count_DESC]
               ) {
                 count
@@ -235,7 +235,7 @@ class CloudflareAPI:
             accounts(filter: {accountTag: $accountTag}) {
               topBlockedCategories: gatewayResolverByCategoryAdaptiveGroups(
                 limit: 10
-                filter: {datetime_geq: $start, resolverDecision: "block"}
+                filter: {datetime_geq: $start, resolverDecision: 2}
                 orderBy: [count_DESC]
               ) {
                 count
@@ -277,12 +277,13 @@ class CloudflareAPI:
                 dims = row.get("dimensions") or {}
                 raw_dt = dims.get("datetime") or ""
                 day = raw_dt[:10]
-                dec = (dims.get("resolverDecision") or "").lower()
+                raw_dec = dims.get("resolverDecision")
+                dec = str(raw_dec).lower() if raw_dec is not None else ""
                 cnt = row.get("count", 0)
                 if day:
                     if day not in daily_map:
                         daily_map[day] = {"date": day, "allowed": 0, "blocked": 0, "total": 0}
-                    if dec == "block":
+                    if dec in ("block", "2"):
                         daily_map[day]["blocked"] += cnt
                     else:
                         daily_map[day]["allowed"] += cnt
