@@ -204,24 +204,14 @@ class CloudflareAPI:
                   queryNameReversed
                 }
               }
-              topBlockedUsers: gatewayResolverQueriesAdaptiveGroups(
+              topBlockedLocations: gatewayResolverQueriesAdaptiveGroups(
                 limit: 10
                 filter: {datetime_geq: $start, resolverDecision: 2}
                 orderBy: [count_DESC]
               ) {
                 count
                 dimensions {
-                  userEmail
-                }
-              }
-              topBlockedDevices: gatewayResolverQueriesAdaptiveGroups(
-                limit: 10
-                filter: {datetime_geq: $start, resolverDecision: 2}
-                orderBy: [count_DESC]
-              ) {
-                count
-                dimensions {
-                  deviceName
+                  locationName
                 }
               }
             }
@@ -297,17 +287,10 @@ class CloudflareAPI:
                     clean_dom = ".".join(qnr.split(".")[::-1]).strip(".")
                     analytics["top_domains"].append({"name": clean_dom, "count": row.get("count", 0)})
 
-            for row in acc_data.get("topBlockedUsers") or []:
+            for row in acc_data.get("topBlockedLocations") or []:
                 dims = row.get("dimensions") or {}
-                u = dims.get("userEmail")
-                if u:
-                    analytics["top_users"].append({"name": u, "count": row.get("count", 0)})
-
-            for row in acc_data.get("topBlockedDevices") or []:
-                dims = row.get("dimensions") or {}
-                d = dims.get("deviceName")
-                if d:
-                    analytics["top_devices"].append({"name": d, "count": row.get("count", 0)})
+                loc = dims.get("locationName") or "Default / WARP"
+                analytics["top_devices"].append({"name": loc, "count": row.get("count", 0)})
 
         except Exception as e:
             logger.warning(f"GraphQL primary query exception: {e}")
