@@ -1,11 +1,11 @@
 {
-  "last_sync": "2026-09-12T21:49:55.164248+00:00",
-  "duration_seconds": 32.37,
+  "last_sync": "2026-09-12T21:57:45.685188+00:00",
+  "duration_seconds": 55.1,
   "total_quota": 300000,
-  "total_domains_synced": 177041,
+  "total_domains_synced": 177042,
   "total_lists_used": 178,
   "summary": {
-    "total_raw_fetched": 3494660,
+    "total_raw_fetched": 3494661,
     "total_pruned_relevance": 3241810,
     "total_subdomain_duplicates": 7160,
     "total_base_overlap_pruned": 0,
@@ -66,7 +66,7 @@
       "action": "override",
       "enabled": true,
       "usage_7d": 0,
-      "updated_at": "2026-09-12T21:43:50Z"
+      "updated_at": "2026-09-12T21:57:23Z"
     },
     {
       "id": "e0fb24d3-1a6d-49e2-a15a-bb6152fd0755",
@@ -90,7 +90,7 @@
       "action": "block",
       "enabled": true,
       "usage_7d": 0,
-      "updated_at": "2026-09-12T21:49:54Z"
+      "updated_at": "2026-09-12T21:57:43Z"
     },
     {
       "id": "95509161-25a2-4d63-a203-9d2e79e47552",
@@ -104,9 +104,9 @@
   "daily_trends": [
     {
       "date": "2026-09-05",
-      "allowed": 60,
+      "allowed": 50,
       "blocked": 0,
-      "total": 60
+      "total": 50
     },
     {
       "date": "2026-09-06",
@@ -128,9 +128,9 @@
     },
     {
       "date": "2026-09-09",
-      "allowed": 410,
+      "allowed": 420,
       "blocked": 0,
-      "total": 410
+      "total": 420
     },
     {
       "date": "2026-09-10",
@@ -159,11 +159,11 @@
   "policies": {
     "L_Relaxed": {
       "name": "Block: Relaxed Profile",
-      "raw_total": 151725,
+      "raw_total": 151726,
       "base_overlap_pruned": 0,
       "spam_tld_pruned": 12603,
       "subdomain_duplicates_pruned": 1502,
-      "final_unique_domains": 137620
+      "final_unique_domains": 137621
     },
     "L_Restrictive": {
       "name": "Block: Restrictive Profile",
@@ -219,8 +219,8 @@
       "pruned_relevance": 44288
     },
     "Cyber Threat Intel": {
-      "raw": 8704,
-      "kept": 8704,
+      "raw": 8705,
+      "kept": 8705,
       "pruned_relevance": 0
     },
     "HaGeZi Spam Allow": {
