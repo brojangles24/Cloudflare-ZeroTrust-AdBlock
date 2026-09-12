@@ -45,4 +45,4 @@ jobs:
           SECONDARY_EMAIL: ${{ secrets.SECONDARY_EMAIL }}
           TERTIARY_EMAIL: ${{ secrets.TERTIARY_EMAIL }}
           EXCLUDED_EMAILS: ${{ secrets.EXCLUDED_EMAILS }}
-        run: python cf_sync.py
+        run: python block_ads_sync.py
