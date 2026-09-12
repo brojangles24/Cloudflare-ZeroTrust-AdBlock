@@ -96,7 +96,6 @@ BLOCKLIST_SOURCES = [
             "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt",
         ],
         "enable_relevance": True,
-        "required": True,
     },
     {
         "name": "HageZi NSFW",
@@ -105,61 +104,51 @@ BLOCKLIST_SOURCES = [
             "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt",
         ],
         "enable_relevance": True,
-        "required": True,
     },
     {
         "name": "HaGeZi Fake",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt",
         "enable_relevance": True,
-        "required": True,
     },
     {
         "name": "HaGeZi TIF Full",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt",
         "enable_relevance": True,
-        "required": True,
     },
     {
         "name": "Cyber Threat Intel",
         "url": "https://raw.githubusercontent.com/DNSBunker/CTI/refs/heads/main/domains.txt",
         "enable_relevance": False,
-        "required": True,
     },
     {
         "name": "HaGeZi Social",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt",
         "enable_relevance": True,
-        "required": True,
     },
     {
         "name": "HaGeZi No SafeSearch",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt",
         "enable_relevance": True,
-        "required": True,
     },
     {
         "name": "HaGeZi Bypass Prevention",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
         "enable_relevance": True,
-        "required": True,
     },
     {
         "name": "HaGeZi Anti Piracy",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt",
         "enable_relevance": True,
-        "required": True,
     },
     {
         "name": "HaGeZi DynDNS",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
         "enable_relevance": True,
-        "required": True,
     },
     {
         "name": "NoAI",
         "url": "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt",
         "enable_relevance": True,
-        "required": True,
     },
 ]
 
@@ -167,7 +156,6 @@ SPAM_ALLOW_SOURCE = {
     "name": "HaGeZi Spam Allow",
     "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt",
     "enable_relevance": True,
-    "required": True,
 }
 
 SPAM_TLD_URL = (
@@ -709,10 +697,6 @@ class CloudflareAPI:
 
 def managed_list(name: str) -> bool:
     return name.startswith(Config.MANAGED_LIST_PREFIXES)
-
-
-def managed_rule(rule: dict) -> bool:
-    return rule.get("name", "") in Config.MANAGED_RULE_NAMES
 
 
 def digest_domains(domains: list[str]) -> str:
