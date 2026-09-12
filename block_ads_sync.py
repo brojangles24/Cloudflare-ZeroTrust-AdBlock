@@ -96,7 +96,7 @@ class CloudflareAPI:
             if resp.status_code == 429:
                 retry_after = resp.headers.get("Retry-After")
                 wait_time = int(retry_after) if retry_after and retry_after.isdigit() else (base_delay * (2 ** attempt))
-                logger.warning(f"Rate limited (429) on {endpoint}. Retrying in {wait_time}s.")
+                logger.warning(f"Rate limited (429) on {endpoint}. Backing off for {wait_time}s.")
                 time.sleep(wait_time)
                 continue
 
@@ -375,7 +375,7 @@ def sync_policy_in_place(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict
         identity_expr = ""
 
     if len(traffic_expr) > 4096:
-        logger.warning(f"Expression for '{policy_name}' has {len(traffic_expr)} chars (Cloudflare limits wirefilters to 4096). Increase max_list_size.")
+        logger.warning(f"Expression for '{policy_name}' has {len(traffic_expr)} chars. Increase max_list_size to prevent truncation.")
 
     rule = next((r for r in existing_rules if r["name"] == policy_name), None)
     payload = {
