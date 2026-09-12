@@ -167,7 +167,7 @@ class CloudflareAPI:
         query GetGatewayAnalytics($accountTag: String!, $start: Time!) {
           viewer {
             accounts(filter: {accountTag: $accountTag}) {
-              rulesUsage: gatewayDnsRulesAdaptive(limit: 100, filter: {datetime_geq: $start}) {
+              rulesUsage: gatewayDnsRulesAdaptiveGroups(limit: 100, filter: {datetime_geq: $start}) {
                 count
                 dimensions {
                   ruleId
