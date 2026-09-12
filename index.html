@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Control D Gateway Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #0b0e14;
+      color: #e6edf3;
+    }
+    .font-display { font-family: 'Space Grotesk', sans-serif; }
+    .cd-bg-surface { background-color: #121721; }
+    .cd-bg-card { background-color: #161c28; }
+    .cd-bg-card-hover:hover { background-color: #1c2433; }
+    .cd-border { border-color: #222b3d; }
+    .cd-accent-bg { background-color: #22c55e; }
+    
+    .cd-switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+    }
+    .cd-switch input { opacity: 0; width: 0; height: 0; }
+    .cd-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #222b3d;
+      transition: .2s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 9999px;
+    }
+    .cd-slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: #94a3b8;
+      transition: .2s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 50%;
+    }
+    input:checked + .cd-slider {
+      background-color: #22c55e;
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.35);
+    }
+    input:checked + .cd-slider:before {
+      transform: translateX(20px);
+      background-color: #052e16;
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0b0e14; }
+    ::-webkit-scrollbar-thumb { background: #222b3d; border-radius: 3px; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-emerald-500/20 selection:text-emerald-300">
+
+  <!-- Navigation -->
+  <header class="border-b cd-border bg-[#0b0e14]/90 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-6">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <span class="font-display font-bold text-sm tracking-wide text-white uppercase">Control <span class="text-emerald-400">D</span></span>
+        </div>
+
+        <div class="h-5 w-[1px] bg-slate-800"></div>
+
+        <div class="relative">
+          <button id="profileDropdownBtn" onclick="toggleProfileMenu()" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg cd-bg-surface border cd-border hover:border-slate-700 transition text-xs font-medium text-slate-200">
+            <span class="h-2 w-2 rounded-full bg-emerald-400"></span>
+            <span id="activeProfileLabel">Relaxed Profile</span>
+            <svg class="w-3.5 h-3.5 text-slate-400 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          
+          <div id="profileMenu" class="hidden absolute top-full left-0 mt-1.5 w-52 cd-bg-surface border cd-border rounded-xl shadow-2xl p-1 z-50">
+            <button onclick="switchProfile('relaxed')" class="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs hover:bg-slate-800 text-left transition">
+              <div>
+                <div class="font-semibold text-white">Relaxed</div>
+                <div class="text-[10px] text-slate-400">Network baseline blocklist</div>
+              </div>
+              <span id="check-relaxed" class="text-emerald-400 font-bold">✓</span>
+            </button>
+            <button onclick="switchProfile('restrictive')" class="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs hover:bg-slate-800 text-left transition">
+              <div>
+                <div class="font-semibold text-white">Restrictive</div>
+                <div class="text-[10px] text-slate-400">Strict blocks & app filters</div>
+              </div>
+              <span id="check-restrictive" class="text-emerald-400 font-bold hidden">✓</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button onclick="openTokenModal()" class="p-2 text-slate-400 hover:text-white cd-bg-surface border cd-border hover:border-slate-700 rounded-lg transition" title="GitHub Credentials">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+
+        <button id="commitBtn" onclick="commitConfig()" class="px-3.5 py-1.5 text-xs font-semibold text-slate-200 cd-bg-surface hover:bg-slate-800 border cd-border hover:border-slate-700 rounded-lg transition">
+          Save
+        </button>
+
+        <button id="syncBtn" onclick="triggerWorkflow()" class="px-3.5 py-1.5 text-xs font-bold text-slate-950 cd-accent-bg hover:bg-emerald-400 rounded-lg shadow-lg shadow-emerald-500/20 transition flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Deploy
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Telemetry Metrics Bar -->
+  <section class="border-b cd-border bg-[#0e121a]">
+    <div class="max-w-7xl mx-auto px-6 py-5">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span class="h-2 w-2 rounded-full bg-emerald-400"></span>
+          <h2 class="text-xs font-bold uppercase tracking-wider text-slate-300 font-display">Engine Telemetry & Filter Metrics</h2>
+        </div>
+        <div class="text-[11px] text-slate-500 font-mono">
+          Last Sync: <span id="stat-last-sync" class="text-slate-300">Never</span> (<span id="stat-duration">0s</span>)
+        </div>
+      </div>
+
+      <!-- Stat Cards -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div class="cd-bg-surface border cd-border rounded-xl p-3">
+          <div class="text-[10px] text-slate-500 uppercase font-semibold">Active In Gateway</div>
+          <div id="stat-total-synced" class="text-lg font-bold font-mono text-white mt-0.5">--</div>
+          <div class="text-[10px] text-slate-400 mt-1">Lists Used: <span id="stat-lists-used" class="text-emerald-400 font-mono">--</span></div>
+        </div>
+
+        <div class="cd-bg-surface border cd-border rounded-xl p-3">
+          <div class="text-[10px] text-amber-400/90 uppercase font-semibold">TLD Matches Removed</div>
+          <div id="stat-spam-tld" class="text-lg font-bold font-mono text-amber-400 mt-0.5">--</div>
+          <div class="text-[10px] text-slate-400 mt-1">Pruned via Regex Shield</div>
+        </div>
+
+        <div class="cd-bg-surface border cd-border rounded-xl p-3">
+          <div class="text-[10px] text-slate-500 uppercase font-semibold">Subdomains Deduplicated</div>
+          <div id="stat-subdomains" class="text-lg font-bold font-mono text-slate-200 mt-0.5">--</div>
+          <div class="text-[10px] text-slate-400 mt-1">Cleaned via wildcard trees</div>
+        </div>
+
+        <div class="cd-bg-surface border cd-border rounded-xl p-3">
+          <div class="text-[10px] text-slate-500 uppercase font-semibold">Base Profile Overlaps</div>
+          <div id="stat-base-overlap" class="text-lg font-bold font-mono text-slate-200 mt-0.5">--</div>
+          <div class="text-[10px] text-slate-400 mt-1">Deduplicated from Normal</div>
+        </div>
+
+        <div class="cd-bg-surface border cd-border rounded-xl p-3 col-span-2 sm:col-span-1">
+          <div class="text-[10px] text-slate-500 uppercase font-semibold">Relevance Inactive Drops</div>
+          <div id="stat-relevance" class="text-lg font-bold font-mono text-rose-400 mt-0.5">--</div>
+          <div class="text-[10px] text-slate-400 mt-1">Dead domains excluded</div>
+        </div>
+      </div>
+
+      <!-- Quota Usage Bar -->
+      <div class="mt-4 pt-3 border-t cd-border flex flex-col gap-1.5">
+        <div class="flex items-center justify-between text-xs font-mono">
+          <span class="text-slate-400">Gateway Quota Utilization</span>
+          <span class="text-slate-300"><span id="quotaUsedText" class="text-emerald-400 font-bold">0</span> / <span id="quotaMaxText">300,000</span> (<span id="quotaPct">0%</span>)</span>
+        </div>
+        <div class="w-full h-1.5 bg-[#1a2230] rounded-full overflow-hidden">
+          <div id="quotaBar" class="h-full bg-emerald-400 rounded-full transition-all duration-500" style="width: 0%"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Filter Controls Subheader -->
+  <div class="border-b cd-border bg-[#0b0e14]">
+    <div class="max-w-7xl mx-auto px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-1">
+        <button onclick="setCategoryFilter('all')" id="tab-cat-all" class="px-3 py-1.5 text-xs font-medium rounded-lg text-emerald-400 bg-emerald-500/10 border border-emerald-500/30">
+          All Filters
+        </button>
+        <button onclick="setCategoryFilter('Security')" id="tab-cat-Security" class="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
+          Security
+        </button>
+        <button onclick="setCategoryFilter('Privacy')" id="tab-cat-Privacy" class="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
+          Privacy
+        </button>
+        <button onclick="setCategoryFilter('Content')" id="tab-cat-Content" class="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
+          Content
+        </button>
+        <button onclick="setCategoryFilter('Productivity')" id="tab-cat-Productivity" class="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
+          Productivity
+        </button>
+      </div>
+
+      <div class="flex items-center gap-4">
+        <div class="relative">
+          <input type="text" id="searchInput" oninput="handleSearch(this.value)" placeholder="Filter lists..." class="w-56 pl-8 pr-3 py-1.5 bg-[#121721] border cd-border rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500 transition placeholder-slate-500">
+          <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </div>
+
+        <div class="text-xs text-slate-500 font-mono">
+          Active: <span id="activeCountDisplay" class="text-emerald-400 font-semibold">0</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main View -->
+  <main class="max-w-7xl mx-auto px-6 py-6 flex-1 w-full space-y-6">
+    <div id="restrictivePanel" class="hidden cd-bg-card border cd-border rounded-xl p-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+          </svg>
+        </div>
+        <div>
+          <div class="text-xs font-semibold text-white">Authorized Account Bypass</div>
+          <div class="text-[11px] text-slate-400">Secondary & tertiary identities ignore restrictive block rules</div>
+        </div>
+      </div>
+      <label class="cd-switch">
+        <input type="checkbox" id="restrictUsersToggle" onchange="toggleRestrictUsers(this.checked)">
+        <span class="cd-slider"></span>
+      </label>
+    </div>
+
+    <div class="cd-bg-card border cd-border rounded-xl p-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <div>
+          <div class="text-xs font-semibold text-white">Spam TLD Wildcard Shield</div>
+          <div class="text-[11px] text-slate-400">Applies regex wildcard match and auto-prunes individual domains from lists</div>
+        </div>
+      </div>
+      <label class="cd-switch">
+        <input type="checkbox" id="spamTldToggle" onchange="toggleSpamTld(this.checked)">
+        <span class="cd-slider"></span>
+      </label>
+    </div>
+
+    <!-- Feed Table -->
+    <div class="border cd-border rounded-2xl overflow-hidden cd-bg-surface">
+      <div class="px-5 py-3 border-b cd-border flex items-center justify-between bg-[#141a24]">
+        <span class="text-xs font-bold uppercase tracking-wider text-slate-400 font-display">Native & Third-Party Filters</span>
+        <span class="text-[11px] text-slate-500 font-mono">Telemetry Active</span>
+      </div>
+
+      <div id="sourcesList" class="divide-y cd-border"></div>
+    </div>
+  </main>
+
+  <!-- GitHub Credentials Modal -->
+  <div id="tokenModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="cd-bg-card rounded-2xl max-w-md w-full p-6 border cd-border shadow-2xl">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold">GH</div>
+        <div>
+          <h3 class="text-sm font-bold text-white">Repository Settings</h3>
+          <p class="text-[11px] text-slate-400">Personal Access Token for GitHub API operations</p>
+        </div>
+      </div>
+
+      <div class="space-y-4 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1">Target Repository</label>
+          <input type="text" id="cfgRepo" value="brojangles24/Cloudflare-ZeroTrust-AdBlock" class="w-full px-3 py-2 bg-[#0b0e14] border cd-border rounded-lg text-slate-200 focus:outline-none focus:border-emerald-500">
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1">Personal Access Token (PAT)</label>
+          <input type="password" id="cfgToken" placeholder="github_pat_..." class="w-full px-3 py-2 bg-[#0b0e14] border cd-border rounded-lg text-slate-200 focus:outline-none focus:border-emerald-500 font-mono">
+          <p class="text-[10px] text-slate-500 mt-1">Requires scopes: Contents (Read & Write), Actions (Read & Write).</p>
+        </div>
+      </div>
+
+      <div class="mt-6 flex justify-end gap-2">
+        <button onclick="closeTokenModal()" class="px-3 py-1.5 text-xs text-slate-400 hover:text-white">Cancel</button>
+        <button onclick="saveTokenModal()" class="px-4 py-1.5 text-xs font-semibold cd-accent-bg text-slate-950 rounded-lg">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Run Deployment Modal -->
+  <div id="statusModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="cd-bg-card rounded-2xl max-w-lg w-full p-5 border cd-border shadow-2xl space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span id="pipelineIndicator" class="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
+          <h3 id="pipelineStatusTitle" class="text-xs font-bold uppercase tracking-wider text-white">Triggering Workflow...</h3>
+        </div>
+        <button onclick="closeStatusModal()" class="text-slate-400 hover:text-white text-xs">✕</button>
+      </div>
+
+      <div id="pipelineLog" class="p-4 bg-[#0b0e14] font-mono text-xs text-slate-300 rounded-xl space-y-1 max-h-56 overflow-y-auto leading-relaxed border cd-border">
+        <div>> Sending workflow dispatch signal...</div>
+      </div>
+
+      <div class="flex justify-end gap-2">
+        <a id="workflowRunLink" href="#" target="_blank" class="hidden px-3 py-1.5 text-xs font-medium text-emerald-400 border border-emerald-500/30 bg-emerald-500/10 rounded-lg hover:bg-emerald-500/20">
+          View Live Run ↗
+        </a>
+        <button onclick="closeStatusModal()" class="px-3.5 py-1.5 text-xs font-medium cd-bg-surface hover:bg-slate-800 text-slate-200 border cd-border rounded-lg transition">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let repoName = localStorage.getItem("gh_repo") || "brojangles24/Cloudflare-ZeroTrust-AdBlock";
+    let githubToken = localStorage.getItem("gh_token") || "";
+    let fileSha = "";
+    let rawTomlContent = "";
+    let parsedConfig = null;
+    let statsData = null;
+    let currentProfileKey = "relaxed";
+    let currentCategory = "all";
+    let currentSearchTerm = "";
+
+    const SOURCE_METADATA = {
+      "HaGeZi Normal": { desc: "Baseline ad blocking, tracking, telemetry, and web junk.", tag: "Privacy" },
+      "Hagezi NSFW": { desc: "Pornography, adult content, and explicit material.", tag: "Content" },
+      "HaGeZi Fake": { desc: "Scams, fake shops, rogue landers, and phishing.", tag: "Security" },
+      "HaGeZi TIF Full": { desc: "High-confidence threat intelligence feed for malicious domains.", tag: "Security" },
+      "Cyber Threat Intel": { desc: "Real-time threat feed curated by DNSBunker.", tag: "Security" },
+      "HaGeZi Social": { desc: "Restricts social networks and video platforms.", tag: "Productivity" },
+      "HaGeZi No SafeSearch": { desc: "Blocks search engines that cannot enforce SafeSearch.", tag: "Content" },
+      "HaGeZi Bypass Prevention": { desc: "Stops DoH, public VPN endpoints, and web proxies.", tag: "Security" },
+      "HaGeZi Anti Piracy": { desc: "Blocks warez, torrent sites, and streaming links.", tag: "Productivity" },
+      "HaGeZi DynDNS": { desc: "Blocks malicious domains hosted on dynamic DNS providers.", tag: "Security" },
+      "NoAI": { desc: "Blocks AI data scrapers, LLM endpoints, and bots.", tag: "Productivity" }
+    };
+
+    function b64DecodeUnicode(str) {
+      return decodeURIComponent(atob(str).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+    }
+
+    function b64EncodeUnicode(str) {
+      return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
+    }
+
+    async function loadDashboard() {
+      if (!githubToken) {
+        openTokenModal();
+        return;
+      }
+
+      await Promise.all([fetchConfigFromGitHub(), fetchStatsFromGitHub()]);
+      renderStats();
+      renderList();
+    }
+
+    async function fetchConfigFromGitHub() {
+      try {
+        const resp = await fetch(`https://api.github.com/repos/${repoName}/contents/config.toml`, {
+          headers: {
+            "Authorization": `Bearer ${githubToken}`,
+            "Accept": "application/vnd.github+json"
+          }
+        });
+        if (!resp.ok) {
+          openTokenModal();
+          return;
+        }
+        const data = await resp.json();
+        fileSha = data.sha;
+        rawTomlContent = b64DecodeUnicode(data.content);
+        parseTomlData(rawTomlContent);
+      } catch (err) {
+        console.error("Config fetch error:", err);
+      }
+    }
+
+    async function fetchStatsFromGitHub() {
+      try {
+        const resp = await fetch(`https://api.github.com/repos/${repoName}/contents/stats.json`, {
+          headers: {
+            "Authorization": `Bearer ${githubToken}`,
+            "Accept": "application/vnd.github+json"
+          }
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          statsData = JSON.parse(b64DecodeUnicode(data.content));
+        }
+      } catch (err) {
+        console.warn("No stats.json found in repository yet. Run a sync to generate telemetry.");
+      }
+    }
+
+    function renderStats() {
+      if (!statsData) return;
+
+      const summary = statsData.summary || {};
+      document.getElementById("stat-total-synced").innerText = (statsData.total_domains_synced || 0).toLocaleString();
+      document.getElementById("stat-lists-used").innerText = statsData.total_lists_used || 0;
+      document.getElementById("stat-spam-tld").innerText = (summary.total_spam_tld_pruned || 0).toLocaleString();
+      document.getElementById("stat-subdomains").innerText = (summary.total_subdomain_duplicates || 0).toLocaleString();
+      document.getElementById("stat-base-overlap").innerText = (summary.total_base_overlap_pruned || 0).toLocaleString();
+      document.getElementById("stat-relevance").innerText = (summary.total_pruned_relevance || 0).toLocaleString();
+
+      if (statsData.last_sync) {
+        const d = new Date(statsData.last_sync);
+        document.getElementById("stat-last-sync").innerText = d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+      document.getElementById("stat-duration").innerText = (statsData.duration_seconds || 0) + "s";
+
+      const quotaMax = statsData.total_quota || 300000;
+      const quotaUsed = statsData.total_domains_synced || 0;
+      const pct = Math.min(100, Math.round((quotaUsed / quotaMax) * 100));
+
+      document.getElementById("quotaUsedText").innerText = quotaUsed.toLocaleString();
+      document.getElementById("quotaMaxText").innerText = quotaMax.toLocaleString();
+      document.getElementById("quotaPct").innerText = pct + "%";
+      document.getElementById("quotaBar").style.width = pct + "%";
+    }
+
+    function parseTomlData(text) {
+      parsedConfig = {
+        sources: {},
+        policies: {
+          relaxed: { include: [], exclude: [], use_spam_tld: false },
+          restrictive: { include: [], exclude: [], use_spam_tld: false, restrict_users: false }
+        }
+      };
+
+      const sourceRegex = /"([^"]+)"\s*=\s*("([^"]+)"|\[([^\]]+)\]|\{\s*url\s*=\s*"([^"]+)"(?:,\s*relevance\s*=\s*(true|false))?\s*\})/g;
+      let match;
+      while ((match = sourceRegex.exec(text)) !== null) {
+        parsedConfig.sources[match[1]] = true;
+      }
+
+      function extractPolicy(sectionName) {
+        const sectionMatch = text.match(new RegExp(`\\[policies\\.${sectionName}\\]([\\s\\S]*?)(?=\\n\\[|$)`));
+        if (!sectionMatch) return;
+        const block = sectionMatch[1];
+
+        const useSpam = block.match(/use_spam_tld\s*=\s*(true|false)/);
+        const restrictUsers = block.match(/restrict_users\s*=\s*(true|false)/);
+        const incMatch = block.match(/include\s*=\s*\[([\s\S]*?)\]/);
+
+        const target = parsedConfig.policies[sectionName];
+        if (useSpam) target.use_spam_tld = useSpam[1] === "true";
+        if (restrictUsers) target.restrict_users = restrictUsers[1] === "true";
+        if (incMatch) {
+          target.include = [...incMatch[1].matchAll(/"([^"]+)"/g)].map(m => m[1]);
+        }
+      }
+
+      extractPolicy("relaxed");
+      extractPolicy("restrictive");
+    }
+
+    function serializeTomlData() {
+      let updated = rawTomlContent;
+
+      function updatePolicy(name) {
+        const pol = parsedConfig.policies[name];
+        const sectionRegex = new RegExp(`(\\[policies\\.${name}\\][\\s\\S]*?)(?=\\n\\[|$)`);
+        const match = updated.match(sectionRegex);
+        if (!match) return;
+
+        let block = match[1];
+        block = block.replace(/use_spam_tld\s*=\s*(true|false)/, `use_spam_tld = ${pol.use_spam_tld}`);
+        if (name === "restrictive") {
+          block = block.replace(/restrict_users\s*=\s*(true|false)/, `restrict_users = ${pol.restrict_users}`);
+        }
+
+        const formattedInc = pol.include.map(x => `"${x}"`).join(", ");
+        block = block.replace(/include\s*=\s*\[[\s\S]*?\]/, `include      = [${formattedInc}]`);
+
+        updated = updated.replace(sectionRegex, block);
+      }
+
+      updatePolicy("relaxed");
+      updatePolicy("restrictive");
+      return updated;
+    }
+
+    function toggleProfileMenu() {
+      document.getElementById("profileMenu").classList.toggle("hidden");
+    }
+
+    function switchProfile(profileKey) {
+      currentProfileKey = profileKey;
+      document.getElementById("profileMenu").classList.add("hidden");
+      
+      const isRelaxed = profileKey === "relaxed";
+      document.getElementById("activeProfileLabel").innerText = isRelaxed ? "Relaxed Profile" : "Restrictive Profile";
+      document.getElementById("check-relaxed").classList.toggle("hidden", !isRelaxed);
+      document.getElementById("check-restrictive").classList.toggle("hidden", isRelaxed);
+      document.getElementById("restrictivePanel").classList.toggle("hidden", isRelaxed);
+
+      renderList();
+    }
+
+    function setCategoryFilter(cat) {
+      currentCategory = cat;
+      ["all", "Security", "Privacy", "Content", "Productivity"].forEach(c => {
+        const btn = document.getElementById(`tab-cat-${c}`);
+        if (c === cat) {
+          btn.className = "px-3 py-1.5 text-xs font-medium rounded-lg text-emerald-400 bg-emerald-500/10 border border-emerald-500/30";
+        } else {
+          btn.className = "px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition";
+        }
+      });
+      renderList();
+    }
+
+    function handleSearch(term) {
+      currentSearchTerm = term.toLowerCase().trim();
+      renderList();
+    }
+
+    function renderList() {
+      if (!parsedConfig) return;
+      const pol = parsedConfig.policies[currentProfileKey];
+      const incList = pol.include || [];
+
+      document.getElementById("spamTldToggle").checked = pol.use_spam_tld;
+      if (currentProfileKey === "restrictive") {
+        document.getElementById("restrictUsersToggle").checked = pol.restrict_users;
+      }
+
+      document.getElementById("activeCountDisplay").innerText = incList.length;
+
+      const container = document.getElementById("sourcesList");
+      container.innerHTML = "";
+
+      const keys = Object.keys(parsedConfig.sources).filter(name => {
+        const meta = SOURCE_METADATA[name] || { tag: "General", desc: "" };
+        const matchesCat = currentCategory === "all" || meta.tag === currentCategory;
+        const matchesSearch = !currentSearchTerm || name.toLowerCase().includes(currentSearchTerm) || meta.desc.toLowerCase().includes(currentSearchTerm);
+        return matchesCat && matchesSearch;
+      });
+
+      if (keys.length === 0) {
+        container.innerHTML = `<div class="p-8 text-center text-xs text-slate-500">No matching filters found.</div>`;
+        return;
+      }
+
+      keys.forEach(name => {
+        const isEnabled = incList.includes(name);
+        const meta = SOURCE_METADATA[name] || { desc: "Threat feed", tag: "General" };
+        const sourceTelemetry = (statsData && statsData.sources && statsData.sources[name]) ? statsData.sources[name] : null;
+
+        let statsBadges = "";
+        if (sourceTelemetry) {
+          statsBadges = `
+            <div class="flex items-center gap-2 mt-1 font-mono text-[10px]">
+              <span class="text-emerald-400/90 font-semibold">${sourceTelemetry.kept.toLocaleString()} active</span>
+              <span class="text-slate-600">·</span>
+              <span class="text-slate-500">${sourceTelemetry.raw.toLocaleString()} raw</span>
+              ${sourceTelemetry.pruned_relevance > 0 ? `<span class="text-slate-600">·</span><span class="text-rose-400/80">${sourceTelemetry.pruned_relevance.toLocaleString()} dead pruned</span>` : ''}
+            </div>
+          `;
+        }
+
+        const row = document.createElement("div");
+        row.className = "px-5 py-3.5 flex items-center justify-between cd-bg-card-hover transition";
+        row.innerHTML = `
+          <div class="flex items-center gap-4">
+            <div class="w-7 h-7 rounded-lg bg-[#121721] border cd-border flex items-center justify-center text-slate-400">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-semibold text-white tracking-tight">${name}</span>
+                <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">${meta.tag}</span>
+              </div>
+              <p class="text-[11px] text-slate-400 leading-normal mt-0.5">${meta.desc}</p>
+              ${statsBadges}
+            </div>
+          </div>
+          <label class="cd-switch flex-shrink-0">
+            <input type="checkbox" ${isEnabled ? "checked" : ""} onchange="toggleSource('${name}', this.checked)">
+            <span class="cd-slider"></span>
+          </label>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function toggleSource(name, checked) {
+      const pol = parsedConfig.policies[currentProfileKey];
+      pol.include = pol.include || [];
+      if (checked) {
+        if (!pol.include.includes(name)) pol.include.push(name);
+      } else {
+        pol.include = pol.include.filter(x => x !== name);
+      }
+      document.getElementById("activeCountDisplay").innerText = pol.include.length;
+    }
+
+    function toggleSpamTld(checked) {
+      parsedConfig.policies[currentProfileKey].use_spam_tld = checked;
+    }
+
+    function toggleRestrictUsers(checked) {
+      if (currentProfileKey === "restrictive") {
+        parsedConfig.policies.restrictive.restrict_users = checked;
+      }
+    }
+
+    async function commitConfig() {
+      const btn = document.getElementById("commitBtn");
+      btn.innerText = "Saving...";
+      btn.disabled = true;
+
+      const serialized = serializeTomlData();
+      try {
+        const resp = await fetch(`https://api.github.com/repos/${repoName}/contents/config.toml`, {
+          method: "PUT",
+          headers: {
+            "Authorization": `Bearer ${githubToken}`,
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            message: "Update blocklists via Control D web interface",
+            content: b64EncodeUnicode(serialized),
+            sha: fileSha,
+            branch: "main"
+          })
+        });
+
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const resData = await resp.json();
+        fileSha = resData.content.sha;
+        rawTomlContent = serialized;
+        btn.innerText = "Saved";
+        setTimeout(() => { btn.innerText = "Save"; btn.disabled = false; }, 1500);
+      } catch (err) {
+        alert("Failed to commit: " + err.message);
+        btn.innerText = "Save";
+        btn.disabled = false;
+      }
+    }
+
+    async function triggerWorkflow() {
+      await commitConfig();
+
+      const modal = document.getElementById("statusModal");
+      const logBox = document.getElementById("pipelineLog");
+      const linkBtn = document.getElementById("workflowRunLink");
+      modal.classList.remove("hidden");
+      linkBtn.classList.add("hidden");
+
+      logBox.innerHTML = "<div>> Triggering workflow dispatch signal...</div>";
+
+      try {
+        const dispatchResp = await fetch(`https://api.github.com/repos/${repoName}/actions/workflows/main.yml/dispatches`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${githubToken}`,
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ ref: "main" })
+        });
+
+        if (!dispatchResp.ok) throw new Error(`Dispatch failed: HTTP ${dispatchResp.status}`);
+        logBox.innerHTML += "<div>> Dispatch accepted. Polling runner...</div>";
+
+        let runId = null;
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 3000));
+          const listResp = await fetch(`https://api.github.com/repos/${repoName}/actions/runs?event=workflow_dispatch&per_page=1`, {
+            headers: { "Authorization": `Bearer ${githubToken}` }
+          });
+          const listData = await listResp.json();
+          if (listData.workflow_runs && listData.workflow_runs.length > 0) {
+            const latest = listData.workflow_runs[0];
+            const triggeredRecently = (new Date() - new Date(latest.created_at)) < 60000;
+            if (triggeredRecently) {
+              runId = latest.id;
+              linkBtn.href = latest.html_url;
+              linkBtn.classList.remove("hidden");
+              logBox.innerHTML += `<div>> Assigned runner: Run #${latest.run_number} (${latest.status})</div>`;
+              break;
+            }
+          }
+        }
+
+        if (!runId) {
+          logBox.innerHTML += "<div>> Run active in background. View the Actions tab for live streaming.</div>";
+          return;
+        }
+
+        const interval = setInterval(async () => {
+          const checkResp = await fetch(`https://api.github.com/repos/${repoName}/actions/runs/${runId}`, {
+            headers: { "Authorization": `Bearer ${githubToken}` }
+          });
+          const checkData = await checkResp.json();
+          document.getElementById("pipelineStatusTitle").innerText = `Status: ${checkData.status}`;
+
+          if (checkData.status === "completed") {
+            clearInterval(interval);
+            const color = checkData.conclusion === "success" ? "text-emerald-400" : "text-rose-400";
+            logBox.innerHTML += `<div class="${color} font-bold mt-2">> Finished: ${checkData.conclusion.toUpperCase()}</div>`;
+            document.getElementById("pipelineIndicator").classList.remove("animate-ping");
+            // Refresh telemetry stats after successful sync
+            setTimeout(loadDashboard, 2000);
+          }
+        }, 4000);
+
+      } catch (err) {
+        logBox.innerHTML += `<div class="text-rose-400">> Error: ${err.message}</div>`;
+      }
+    }
+
+    function openTokenModal() {
+      document.getElementById("cfgRepo").value = repoName;
+      document.getElementById("cfgToken").value = githubToken;
+      document.getElementById("tokenModal").classList.remove("hidden");
+    }
+
+    function closeTokenModal() {
+      document.getElementById("tokenModal").classList.add("hidden");
+    }
+
+    function saveTokenModal() {
+      repoName = document.getElementById("cfgRepo").value.trim();
+      githubToken = document.getElementById("cfgToken").value.trim();
+      localStorage.setItem("gh_repo", repoName);
+      localStorage.setItem("gh_token", githubToken);
+      closeTokenModal();
+      loadDashboard();
+    }
+
+    function closeStatusModal() {
+      document.getElementById("statusModal").classList.add("hidden");
+    }
+
+    window.onclick = function(e) {
+      if (!e.target.closest('#profileDropdownBtn') && !e.target.closest('#profileMenu')) {
+        document.getElementById("profileMenu").classList.add("hidden");
+      }
+    };
+
+    window.onload = loadDashboard;
+  </script>
+</body>
+</html>
