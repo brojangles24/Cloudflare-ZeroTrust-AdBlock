@@ -2,6 +2,7 @@ import concurrent.futures
 import gzip
 import hashlib
 import io
+import json
 import logging
 import os
 import re
@@ -222,68 +223,152 @@ def _parse_csv_stream(iterable, col: int, skip_header: bool) -> set[str]:
                 domains.add(d)
     return domains
 
-def fetch_top_list_streamed(item: dict, session: requests.Session) -> set[str]:
-    url = item["url"]
-    col = item["col"]
-    skip_header = item["skip_header"]
-    compression = item["compression"]
-
-    try:
-        with tempfile.NamedTemporaryFile(delete=True) as tmp:
-            with session.get(url, headers={"User-Agent": "Mozilla/5.0"}, stream=True, timeout=90) as r:
-                r.raise_for_status()
-                shutil.copyfileobj(r.raw, tmp)
-            tmp.seek(0)
-
-            if compression == "zip":
-                with zipfile.ZipFile(tmp.name) as z:
-                    with z.open(z.namelist()[0]) as zf, io.TextIOWrapper(zf, encoding="utf-8", errors="ignore") as text_io:
-                        return _parse_csv_stream(text_io, col, skip_header)
-            elif compression == "gzip":
-                with gzip.open(tmp.name, mode="rt", encoding="utf-8", errors="ignore") as gz:
-                    return _parse_csv_stream(gz, col, skip_header)
-            else:
-                with open(tmp.name, "r", encoding="utf-8", errors="ignore") as f:
-                    return _parse_csv_stream(f, col, skip_header)
-    except Exception as e:
-        logger.warning(f"Failed to fetch top list ({url}): {e}")
-        return set()
-
 class RelevanceChecker:
-    CACHE_FILE = Path(".relevance_cache.gz")
-    CACHE_TTL_SECONDS = 86400
+    CACHE_DIR = Path(".relevance_cache")
+    METADATA_FILE = CACHE_DIR / "metadata.json"
+    MASTER_FILE = CACHE_DIR / "master.txt.gz"
 
     def __init__(self, session: requests.Session, workers: int):
         self.master_allowlist: set[str] = set()
         self.session = session
         self.workers = workers
 
-    def build_dataset(self) -> None:
-        if self.CACHE_FILE.exists():
-            file_age = time.time() - self.CACHE_FILE.stat().st_mtime
-            if file_age < self.CACHE_TTL_SECONDS:
-                logger.info(f"Loading relevance dataset from cache ({file_age / 3600:.1f}h old)...")
-                try:
-                    with gzip.open(self.CACHE_FILE, "rt", encoding="utf-8") as f:
-                        self.master_allowlist = {line.strip() for line in f if line.strip()}
-                    logger.info(f"Relevance dataset loaded: {len(self.master_allowlist):,} root domains.")
-                    return
-                except Exception as e:
-                    logger.warning(f"Failed reading cache: {e}. Rebuilding...")
+    @staticmethod
+    def _get_part_path(url: str) -> Path:
+        uhash = hashlib.sha256(url.encode()).hexdigest()[:12]
+        return RelevanceChecker.CACHE_DIR / f"part_{uhash}.txt.gz"
 
-        logger.info("Building relevance dataset from authority sources...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as executor:
-            futures = [executor.submit(fetch_top_list_streamed, item, self.session) for item in DEFAULT_TOP_LISTS]
-            for f in concurrent.futures.as_completed(futures):
-                self.master_allowlist.update(f.result())
+    def load_metadata(self) -> dict:
+        if self.METADATA_FILE.exists():
+            try:
+                with open(self.METADATA_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed reading cache metadata: {e}")
+        return {}
 
-        logger.info(f"Relevance dataset built: {len(self.master_allowlist):,} root domains.")
-        
+    def save_metadata(self, meta: dict) -> None:
         try:
-            with gzip.open(self.CACHE_FILE, "wt", encoding="utf-8") as f:
-                f.write("\n".join(self.master_allowlist))
+            with open(self.METADATA_FILE, "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2)
         except Exception as e:
-            logger.warning(f"Failed writing relevance cache: {e}")
+            logger.warning(f"Failed saving cache metadata: {e}")
+
+    def _fetch_source(self, item: dict, cached_meta: dict | None) -> tuple[str, set[str] | None, dict]:
+        url = item["url"]
+        col = item["col"]
+        skip_header = item["skip_header"]
+        compression = item["compression"]
+
+        headers = {"User-Agent": "Mozilla/5.0"}
+        part_path = self._get_part_path(url)
+
+        if cached_meta and part_path.exists():
+            if cached_meta.get("etag"):
+                headers["If-None-Match"] = cached_meta["etag"]
+            if cached_meta.get("last_modified"):
+                headers["If-Modified-Since"] = cached_meta["last_modified"]
+
+        try:
+            with self.session.get(url, headers=headers, stream=True, timeout=90) as r:
+                if r.status_code == 304:
+                    logger.info(f"ETag matched (304 Not Modified): {url}")
+                    return url, None, cached_meta
+
+                r.raise_for_status()
+                new_meta = {
+                    "etag": r.headers.get("ETag"),
+                    "last_modified": r.headers.get("Last-Modified"),
+                    "updated_at": time.time()
+                }
+
+                with tempfile.NamedTemporaryFile(delete=True) as tmp:
+                    shutil.copyfileobj(r.raw, tmp)
+                    tmp.seek(0)
+
+                    if compression == "zip":
+                        with zipfile.ZipFile(tmp.name) as z:
+                            with z.open(z.namelist()[0]) as zf, io.TextIOWrapper(zf, encoding="utf-8", errors="ignore") as text_io:
+                                domains = _parse_csv_stream(text_io, col, skip_header)
+                    elif compression == "gzip":
+                        with gzip.open(tmp.name, mode="rt", encoding="utf-8", errors="ignore") as gz:
+                            domains = _parse_csv_stream(gz, col, skip_header)
+                    else:
+                        with open(tmp.name, "r", encoding="utf-8", errors="ignore") as f:
+                            domains = _parse_csv_stream(f, col, skip_header)
+
+                try:
+                    with gzip.open(part_path, "wt", encoding="utf-8") as f:
+                        f.write("\n".join(domains))
+                except Exception as e:
+                    logger.warning(f"Failed saving part cache for {url}: {e}")
+
+                logger.info(f"Fetched & updated {len(domains):,} domains from {url}")
+                return url, domains, new_meta
+        except Exception as e:
+            logger.warning(f"Failed to fetch top list ({url}): {e}")
+            if part_path.exists():
+                logger.info(f"Falling back to existing part cache for {url}")
+                return url, None, cached_meta or {}
+            return url, set(), {}
+
+    def build_dataset(self) -> None:
+        self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cached_meta = self.load_metadata()
+
+        logger.info("Verifying relevance datasets via conditional HTTP requests (ETag)...")
+        results = {}
+        updated_meta = dict(cached_meta)
+        any_modified = False
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as executor:
+            futures = [
+                executor.submit(self._fetch_source, item, cached_meta.get(item["url"]))
+                for item in DEFAULT_TOP_LISTS
+            ]
+            for f in concurrent.futures.as_completed(futures):
+                url, domains, meta = f.result()
+                if domains is not None:
+                    any_modified = True
+                    results[url] = domains
+                    if meta:
+                        updated_meta[url] = meta
+                else:
+                    results[url] = None
+
+        if not any_modified and self.MASTER_FILE.exists():
+            logger.info("All sources unchanged (ETags validated). Reading master allowlist from cache...")
+            try:
+                with gzip.open(self.MASTER_FILE, "rt", encoding="utf-8") as f:
+                    self.master_allowlist = {line.strip() for line in f if line.strip()}
+                logger.info(f"Relevance dataset loaded: {len(self.master_allowlist):,} root domains.")
+                return
+            except Exception as e:
+                logger.warning(f"Failed reading master cache: {e}. Reconstructing from parts...")
+
+        logger.info("Rebuilding master relevance dataset from updated parts...")
+        for item in DEFAULT_TOP_LISTS:
+            url = item["url"]
+            doms = results.get(url)
+            if doms is not None:
+                self.master_allowlist.update(doms)
+            else:
+                part_path = self._get_part_path(url)
+                if part_path.exists():
+                    try:
+                        with gzip.open(part_path, "rt", encoding="utf-8") as f:
+                            self.master_allowlist.update(line.strip() for line in f if line.strip())
+                    except Exception as e:
+                        logger.warning(f"Failed reading part {part_path}: {e}")
+
+        logger.info(f"Relevance dataset compiled: {len(self.master_allowlist):,} root domains.")
+
+        try:
+            with gzip.open(self.MASTER_FILE, "wt", encoding="utf-8") as f:
+                f.write("\n".join(self.master_allowlist))
+            self.save_metadata(updated_meta)
+        except Exception as e:
+            logger.warning(f"Failed writing cache files: {e}")
 
     def is_relevant(self, domain: str) -> bool:
         clean = domain.lower().strip(".")
@@ -461,27 +546,39 @@ def sync_policy_in_place(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict
     else:
         rule_enabled = policy.get("enabled", True) if rule is None else rule.get("enabled", True)
 
+    block_page = policy.get(
+        "block_page_enabled",
+        cfg.get("settings", {}).get("block_page_enabled", False)
+    )
+
     payload = {
         "name": policy_name,
         "action": policy.get("action", "block"),
         "enabled": rule_enabled,
         "filters": ["dns"],
-        "traffic": traffic_expr
+        "traffic": traffic_expr,
+        "rule_settings": {
+            "block_page_enabled": block_page
+        }
     }
     if identity_expr:
         payload["identity"] = identity_expr
 
     if rule:
+        existing_settings = rule.get("rule_settings") or {}
+        settings_changed = existing_settings.get("block_page_enabled") != block_page
+
         if (
             rule.get("traffic") != traffic_expr
             or rule.get("identity", "") != identity_expr
             or rule.get("enabled") != rule_enabled
+            or settings_changed
         ):
             cf.update_rule(rule["id"], payload)
-            logger.info(f"Updated firewall rule: {policy_name} (enabled={rule_enabled})")
+            logger.info(f"Updated firewall rule: {policy_name} (enabled={rule_enabled}, block_page={block_page})")
     else:
         cf.create_rule(payload)
-        logger.info(f"Created firewall rule: {policy_name} (enabled={rule_enabled})")
+        logger.info(f"Created firewall rule: {policy_name} (enabled={rule_enabled}, block_page={block_page})")
 
     return active_ids, [l["id"] for l in surplus_lists], [policy_name]
 
