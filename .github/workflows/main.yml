@@ -9,6 +9,9 @@ concurrency:
   group: cloudflare-sync
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   run-sync:
     runs-on: ubuntu-latest
@@ -35,3 +38,11 @@ jobs:
           TERTIARY_EMAIL: ${{ secrets.TERTIARY_EMAIL }}
           EXCLUDED_EMAILS: ${{ secrets.EXCLUDED_EMAILS }}
         run: python3 block_ads_sync.py
+
+      - name: Commit Sync Telemetry
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add stats.json
+          git commit -m "Update Gateway sync stats [skip ci]" || echo "No changes in stats.json"
+          git push origin main
