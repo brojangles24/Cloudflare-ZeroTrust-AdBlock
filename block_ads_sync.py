@@ -87,7 +87,9 @@ def create_session(workers: int) -> requests.Session:
 
 class CloudflareAPI:
     def __init__(self, cfg: dict):
-        self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{cfg['account_id']}/gateway"
+        self.account_id = cfg["account_id"]
+        self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{self.account_id}/gateway"
+        self.graphql_url = "https://api.cloudflare.com/client/v4/graphql"
         self.headers = {"Authorization": f"Bearer {cfg['api_token']}", "Content-Type": "application/json"}
         self.session = create_session(cfg["settings"]["max_workers"])
         self.timeout = tuple(cfg["settings"]["request_timeout"])
@@ -137,6 +139,43 @@ class CloudflareAPI:
         return self.req("POST", "rules", json={**data, "rule_settings": {"block_page_enabled": False}})
     def update_rule(self, rid: str, data: dict):
         return self.req("PUT", f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": False}})
+
+    def get_7day_rule_usage(self) -> dict[str, int]:
+        seven_days_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        query = """
+        query GetGatewayRuleUsage($accountTag: String!, $start: Time!) {
+          viewer {
+            accounts(filter: {accountTag: $accountTag}) {
+              gatewayDnsRulesAdaptive(limit: 100, filter: {datetime_geq: $start}) {
+                count
+                dimensions {
+                  ruleId
+                }
+              }
+            }
+          }
+        }
+        """
+        try:
+            resp = self.session.post(
+                self.graphql_url,
+                headers=self.headers,
+                json={"query": query, "variables": {"accountTag": self.account_id, "start": seven_days_ago}},
+                timeout=self.timeout
+            )
+            if not resp.ok:
+                return {}
+            data = resp.json()
+            rows = (data.get("data", {}).get("viewer", {}).get("accounts", [{}])[0].get("gatewayDnsRulesAdaptive") or [])
+            usage_map = {}
+            for row in rows:
+                rid = row.get("dimensions", {}).get("ruleId")
+                if rid:
+                    usage_map[rid] = row.get("count", 0)
+            return usage_map
+        except Exception as e:
+            logger.warning(f"Could not retrieve 7-day rule usage via GraphQL: {e}")
+            return {}
 
 def parse_sources(sources_table: dict) -> list[dict]:
     parsed = []
@@ -407,9 +446,6 @@ def sync_policy_in_place(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict
         traffic_expr = " or ".join(list_items)
         identity_expr = ""
 
-    if len(traffic_expr) > 4096:
-        logger.warning(f"Expression for '{policy_name}' has {len(traffic_expr)} chars. Increase max_list_size to prevent truncation.")
-
     rule = next((r for r in existing_rules if r["name"] == policy_name), None)
     payload = {
         "name": policy_name,
@@ -431,6 +467,38 @@ def sync_policy_in_place(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict
 
     return active_ids, [l["id"] for l in surplus_lists], [policy_name]
 
+def sync_standalone_policies(cf: CloudflareAPI, cfg: dict, existing_rules: list[dict]) -> None:
+    standalone_cfg = cfg.get("gateway_policies", {})
+    if not standalone_cfg:
+        return
+
+    for rule_name, desired_enabled in standalone_cfg.items():
+        matched = next((r for r in existing_rules if r["name"] == rule_name), None)
+        if not matched:
+            continue
+
+        currently_enabled = matched.get("enabled", True)
+        if currently_enabled != desired_enabled:
+            payload = {
+                "name": matched["name"],
+                "action": matched["action"],
+                "enabled": desired_enabled,
+                "filters": matched.get("filters", ["dns"]),
+                "traffic": matched.get("traffic", "")
+            }
+            if matched.get("identity"):
+                payload["identity"] = matched["identity"]
+            if matched.get("rule_settings"):
+                payload["rule_settings"] = matched["rule_settings"]
+            
+            try:
+                cf.update_rule(matched["id"], payload)
+                matched["enabled"] = desired_enabled
+                state = "enabled" if desired_enabled else "disabled"
+                logger.info(f"Updated standalone policy state: {rule_name} -> {state}")
+            except Exception as e:
+                logger.error(f"Failed to update standalone policy {rule_name}: {e}")
+
 def cleanup_orphans(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict], existing_rules: list[dict], active_ids: list[str], surplus_ids: list[str], active_rules: list[str]):
     scrub_targets = cfg["settings"]["scrub_targets"]
 
@@ -442,7 +510,7 @@ def cleanup_orphans(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict], ex
             logger.error(f"Failed deleting surplus list {sid}: {e}")
 
     for r in existing_rules:
-        if any(k in r["name"] for k in ("IoT Bypass", "Custom", "Keywords")):
+        if any(k in r["name"] for k in ("IoT Bypass", "Custom", "Keywords", "SafeSearch", "Global Blocklist", "Global Bypass", "Block IoT Network", "YouTube Restricted")):
             continue
         if r["name"] not in active_rules and any(t in r["name"] for t in scrub_targets):
             try:
@@ -523,6 +591,9 @@ def main() -> None:
     existing_lists = cf.get_lists()
     existing_rules = cf.get_rules()
 
+    # Sync standalone rules (SafeSearch, IoT, YouTube, etc.)
+    sync_standalone_policies(cf, cfg, existing_rules)
+
     all_active_ids, all_surplus_ids, all_active_rules = [], [], []
 
     for policy, optimized_domains in compiled:
@@ -540,7 +611,22 @@ def main() -> None:
 
     duration = time.perf_counter() - start
 
-    # Compile structured stats for the frontend dashboard
+    # Pull 7-day query counts directly from Cloudflare Analytics
+    usage_7d_map = cf.get_7day_rule_usage()
+    fresh_rules = cf.get_rules()
+
+    compiled_rules_telemetry = []
+    for r in fresh_rules:
+        rid = r["id"]
+        compiled_rules_telemetry.append({
+            "id": rid,
+            "name": r["name"],
+            "action": r.get("action", "unknown"),
+            "enabled": r.get("enabled", True),
+            "usage_7d": usage_7d_map.get(rid, 0),
+            "updated_at": r.get("updated_at", "")
+        })
+
     stats_data = {
         "last_sync": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "duration_seconds": round(duration, 2),
@@ -554,6 +640,7 @@ def main() -> None:
             "total_base_overlap_pruned": sum(m["base_overlap_pruned"] for m in policy_metrics.values()),
             "total_spam_tld_pruned": sum(m["spam_tld_pruned"] for m in policy_metrics.values())
         },
+        "cloudflare_rules": compiled_rules_telemetry,
         "policies": policy_metrics,
         "sources": sources_stats
     }
@@ -561,7 +648,7 @@ def main() -> None:
     with open("stats.json", "w", encoding="utf-8") as f:
         json.dump(stats_data, f, indent=2)
 
-    logger.info(f"Sync complete in {duration:.2f}s. Saved run telemetry to stats.json.")
+    logger.info(f"Sync complete in {duration:.2f}s. Exported telemetry for {len(compiled_rules_telemetry)} Cloudflare rules to stats.json.")
 
 if __name__ == "__main__":
     main()
