@@ -37,6 +37,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 ]
 
 "Cyber Threat Intel" = { url = "https://raw.githubusercontent.com/DNSBunker/CTI/refs/heads/main/domains.txt", relevance = false }
+"HaGeZi Pro++" = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
 
 [spam_allow_source]
 name = "HaGeZi Spam Allow"
@@ -58,7 +59,7 @@ name           = "Block: Restrictive Profile"
 action         = "block"
 restrict_users = true
 use_spam_tld = false
-include      = ["HaGeZi Bypass Prevention", "HaGeZi Social", "NoAI"]
+include      = ["HaGeZi Bypass Prevention", "HaGeZi Social", "NoAI", "HaGeZi Pro++"]
 exclude        = ["HaGeZi Normal"]
 security_categories = [151, 191, 188, 68]
 content_categories  = [67, 125]
@@ -66,6 +67,4 @@ app_ids = [
     534, 541, 572, 600, 604, 618, 628, 633, 1110, 1122, 1130, 1135, 1138,
     1853, 2678, 2680, 2826, 2831, 2844, 2845, 2848, 2852, 3097, 3098
 ]
-domains = [
-    "web.archive.org", "steamcommunity.com", "linkvertise.com", "vercel.com", "rumble.com"
-]
+domains = ["web.archive.org", "steamcommunity.com", "linkvertise.com", "vercel.com", "rumble.com"]
