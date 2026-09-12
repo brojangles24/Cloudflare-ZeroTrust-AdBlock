@@ -61,13 +61,13 @@ BLOCKLIST_SOURCES = [
         "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
         "enable_relevance": True
    },
-   {
-        "name": "HaGeZi Pro",
-        "url": [
-            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
-        ],
-        "enable_relevance": True
-    },
+   #{
+   #     "name": "HaGeZi Pro",
+   #     "url": [
+   #         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+   #     ],
+   #     "enable_relevance": True
+   # },
     {
         "name": "Hagezi NSFW",
         "url": [
@@ -173,7 +173,7 @@ def get_active_policies():
                 "HaGeZi Anti Piracy", 
             ], 
             "exclude": [],
-            "use_spam_tld": True
+            "use_spam_tld": False
         },
         {
             "prefix": "L_Restrictive", 
@@ -187,7 +187,7 @@ def get_active_policies():
                 'any(dns.domains[*] in {"web.archive.org" "steamcommunity.com" "linkvertise.com" "vercel.com" "rumble.com"})'
             ),
             "include": [
-                "HaGeZi Pro",
+                #"HaGeZi Pro",
                 "HaGeZi Bypass Prevention", 
                 "HaGeZi Social", 
                 "NoAI",
