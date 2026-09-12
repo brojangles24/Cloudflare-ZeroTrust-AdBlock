@@ -38,6 +38,26 @@ DEFAULT_TOP_LISTS = [
     {"url": "https://builtwith.com/dl/builtwith-top1m.zip", "col": 0, "skip_header": False, "compression": "zip"},
 ]
 
+CF_CATEGORY_MAP = {
+    178: "Adware & Telemetry",
+    80: "Spyware & Phishing",
+    187: "Command & Control",
+    83: "Malware",
+    176: "Dynamic DNS",
+    175: "Spam",
+    117: "Cryptomining",
+    131: "Anonymizers & Proxies",
+    134: "Deceptive Ads",
+    153: "Parked Domains",
+    133: "Adult Content & NSFW",
+    151: "DoH / VPN / Bypass",
+    191: "TOR Endpoints",
+    188: "Piracy & Copyright",
+    68: "Gaming",
+    67: "Social Media",
+    125: "Video Streaming",
+}
+
 def load_config() -> dict:
     cfg_path = Path("config.toml")
     if not cfg_path.exists():
@@ -140,42 +160,181 @@ class CloudflareAPI:
     def update_rule(self, rid: str, data: dict):
         return self.req("PUT", f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": False}})
 
-    def get_7day_rule_usage(self) -> dict[str, int]:
+    def get_graphql_analytics(self) -> dict:
         seven_days_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        query = """
-        query GetGatewayRuleUsage($accountTag: String!, $start: Time!) {
+        
+        main_query = """
+        query GetGatewayAnalytics($accountTag: String!, $start: Time!) {
           viewer {
             accounts(filter: {accountTag: $accountTag}) {
-              gatewayDnsRulesAdaptive(limit: 100, filter: {datetime_geq: $start}) {
+              rulesUsage: gatewayDnsRulesAdaptive(limit: 100, filter: {datetime_geq: $start}) {
                 count
                 dimensions {
                   ruleId
+                }
+              }
+              dailyTrends: gatewayResolverQueriesAdaptiveGroups(
+                limit: 30
+                filter: {datetime_geq: $start}
+                orderBy: [datetimeDay_ASC]
+              ) {
+                count
+                dimensions {
+                  datetimeDay
+                  resolverDecision
+                }
+              }
+              topBlockedDomains: gatewayResolverQueriesAdaptiveGroups(
+                limit: 15
+                filter: {datetime_geq: $start, resolverDecision: "block"}
+                orderBy: [count_DESC]
+              ) {
+                count
+                dimensions {
+                  queryNameReversed
+                }
+              }
+              topBlockedUsers: gatewayResolverQueriesAdaptiveGroups(
+                limit: 10
+                filter: {datetime_geq: $start, resolverDecision: "block"}
+                orderBy: [count_DESC]
+              ) {
+                count
+                dimensions {
+                  userEmail
+                }
+              }
+              topBlockedDevices: gatewayResolverQueriesAdaptiveGroups(
+                limit: 10
+                filter: {datetime_geq: $start, resolverDecision: "block"}
+                orderBy: [count_DESC]
+              ) {
+                count
+                dimensions {
+                  deviceName
                 }
               }
             }
           }
         }
         """
+
+        cat_query = """
+        query GetCategoryAnalytics($accountTag: String!, $start: Time!) {
+          viewer {
+            accounts(filter: {accountTag: $accountTag}) {
+              topBlockedCategories: gatewayResolverByCategoryAdaptiveGroups(
+                limit: 10
+                filter: {datetime_geq: $start, resolverDecision: "block"}
+                orderBy: [count_DESC]
+              ) {
+                count
+                dimensions {
+                  category
+                }
+              }
+            }
+          }
+        }
+        """
+
+        analytics = {
+            "rules_usage": {},
+            "daily_trends": [],
+            "top_domains": [],
+            "top_categories": [],
+            "top_users": [],
+            "top_devices": []
+        }
+
+        # Query 1: Core Traffic, Rules, Domains, Users & Devices
         try:
             resp = self.session.post(
                 self.graphql_url,
                 headers=self.headers,
-                json={"query": query, "variables": {"accountTag": self.account_id, "start": seven_days_ago}},
+                json={"query": main_query, "variables": {"accountTag": self.account_id, "start": seven_days_ago}},
                 timeout=self.timeout
             )
-            if not resp.ok:
-                return {}
-            data = resp.json()
-            rows = (data.get("data", {}).get("viewer", {}).get("accounts", [{}])[0].get("gatewayDnsRulesAdaptive") or [])
-            usage_map = {}
-            for row in rows:
-                rid = row.get("dimensions", {}).get("ruleId")
+            payload = resp.json()
+            if "errors" in payload and payload["errors"]:
+                logger.warning(f"Core GraphQL returned issues: {payload['errors']}")
+
+            data_obj = payload.get("data") or {}
+            viewer = data_obj.get("viewer") or {}
+            accounts = viewer.get("accounts") or []
+            acc_data = accounts[0] if accounts else {}
+
+            for row in acc_data.get("rulesUsage") or []:
+                rid = (row.get("dimensions") or {}).get("ruleId")
                 if rid:
-                    usage_map[rid] = row.get("count", 0)
-            return usage_map
+                    analytics["rules_usage"][rid] = row.get("count", 0)
+
+            daily_map = {}
+            for row in acc_data.get("dailyTrends") or []:
+                dims = row.get("dimensions") or {}
+                day = dims.get("datetimeDay")
+                dec = (dims.get("resolverDecision") or "").lower()
+                cnt = row.get("count", 0)
+                if day:
+                    if day not in daily_map:
+                        daily_map[day] = {"date": day, "allowed": 0, "blocked": 0, "total": 0}
+                    if dec == "block":
+                        daily_map[day]["blocked"] += cnt
+                    else:
+                        daily_map[day]["allowed"] += cnt
+                    daily_map[day]["total"] += cnt
+            analytics["daily_trends"] = sorted(daily_map.values(), key=lambda x: x["date"])
+
+            for row in acc_data.get("topBlockedDomains") or []:
+                dims = row.get("dimensions") or {}
+                qnr = dims.get("queryNameReversed")
+                if qnr:
+                    clean_dom = ".".join(qnr.split(".")[::-1]).strip(".")
+                    analytics["top_domains"].append({"name": clean_dom, "count": row.get("count", 0)})
+
+            for row in acc_data.get("topBlockedUsers") or []:
+                dims = row.get("dimensions") or {}
+                u = dims.get("userEmail")
+                if u:
+                    analytics["top_users"].append({"name": u, "count": row.get("count", 0)})
+
+            for row in acc_data.get("topBlockedDevices") or []:
+                dims = row.get("dimensions") or {}
+                d = dims.get("deviceName")
+                if d:
+                    analytics["top_devices"].append({"name": d, "count": row.get("count", 0)})
+
         except Exception as e:
-            logger.warning(f"Could not retrieve 7-day rule usage via GraphQL: {e}")
-            return {}
+            logger.warning(f"Could not retrieve primary GraphQL analytics: {e}")
+
+        # Query 2: Category Breakdown
+        try:
+            resp_cat = self.session.post(
+                self.graphql_url,
+                headers=self.headers,
+                json={"query": cat_query, "variables": {"accountTag": self.account_id, "start": seven_days_ago}},
+                timeout=self.timeout
+            )
+            payload_cat = resp_cat.json()
+            data_cat = payload_cat.get("data") or {}
+            viewer_cat = data_cat.get("viewer") or {}
+            accounts_cat = viewer_cat.get("accounts") or []
+            acc_cat = accounts_cat[0] if accounts_cat else {}
+
+            for row in acc_cat.get("topBlockedCategories") or []:
+                dims = row.get("dimensions") or {}
+                cat = dims.get("category")
+                if cat is not None:
+                    cat_id = int(cat) if str(cat).isdigit() else cat
+                    cat_name = CF_CATEGORY_MAP.get(cat_id, f"Category {cat_id}")
+                    analytics["top_categories"].append({
+                        "name": f"{cat_name} ({cat_id})",
+                        "count": row.get("count", 0)
+                    })
+        except Exception as e:
+            logger.warning(f"Could not retrieve category analytics: {e}")
+
+        return analytics
 
 def parse_sources(sources_table: dict) -> list[dict]:
     parsed = []
@@ -591,7 +750,6 @@ def main() -> None:
     existing_lists = cf.get_lists()
     existing_rules = cf.get_rules()
 
-    # Sync standalone rules (SafeSearch, IoT, YouTube, etc.)
     sync_standalone_policies(cf, cfg, existing_rules)
 
     all_active_ids, all_surplus_ids, all_active_rules = [], [], []
@@ -611,8 +769,8 @@ def main() -> None:
 
     duration = time.perf_counter() - start
 
-    # Pull 7-day query counts directly from Cloudflare Analytics
-    usage_7d_map = cf.get_7day_rule_usage()
+    # GraphQL Analytics ingestion
+    analytics = cf.get_graphql_analytics()
     fresh_rules = cf.get_rules()
 
     compiled_rules_telemetry = []
@@ -623,7 +781,7 @@ def main() -> None:
             "name": r["name"],
             "action": r.get("action", "unknown"),
             "enabled": r.get("enabled", True),
-            "usage_7d": usage_7d_map.get(rid, 0),
+            "usage_7d": analytics["rules_usage"].get(rid, 0),
             "updated_at": r.get("updated_at", "")
         })
 
@@ -641,6 +799,11 @@ def main() -> None:
             "total_spam_tld_pruned": sum(m["spam_tld_pruned"] for m in policy_metrics.values())
         },
         "cloudflare_rules": compiled_rules_telemetry,
+        "daily_trends": analytics["daily_trends"],
+        "top_blocked_domains": analytics["top_domains"],
+        "top_blocked_categories": analytics["top_categories"],
+        "top_blocked_users": analytics["top_users"],
+        "top_blocked_devices": analytics["top_devices"],
         "policies": policy_metrics,
         "sources": sources_stats
     }
@@ -648,7 +811,7 @@ def main() -> None:
     with open("stats.json", "w", encoding="utf-8") as f:
         json.dump(stats_data, f, indent=2)
 
-    logger.info(f"Sync complete in {duration:.2f}s. Exported telemetry for {len(compiled_rules_telemetry)} Cloudflare rules to stats.json.")
+    logger.info(f"Sync complete in {duration:.2f}s. Saved run telemetry and extended analytics to stats.json.")
 
 if __name__ == "__main__":
     main()
