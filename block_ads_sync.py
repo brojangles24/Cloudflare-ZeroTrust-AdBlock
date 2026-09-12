@@ -21,7 +21,7 @@ except ImportError:
     import tomli as tomllib
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", datefmt="%H:%M:%S")
-logger = logging.getLogger("cf_sync")
+logger = logging.getLogger("block_ads_sync")
 
 IP_PATTERN = re.compile(
     r"^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$|"
