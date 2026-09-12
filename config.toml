@@ -1,0 +1,66 @@
+[settings]
+max_list_size   = 1000
+total_quota     = 300000
+max_workers     = 5
+request_timeout = [5, 25]
+scrub_targets   = [
+    "Base", "Pro++", "Ultimate", "Normal", "Social", 
+    "Block:", "Allow:", "L_", "ProMini", "ProPlus", 
+    "ProUser", "ProHome", "Piracy", "DynDNS", "Hoster", "Restrictive"
+]
+
+[tld]
+url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
+
+[sources]
+"HaGeZi Normal"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
+"HaGeZi Fake"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
+"HaGeZi TIF Full"          = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
+"HaGeZi Social"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
+"HaGeZi No SafeSearch"     = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt"
+"HaGeZi Bypass Prevention" = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"
+"HaGeZi Anti Piracy"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt"
+"HaGeZi DynDNS"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
+"NoAI"                     = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
+
+"Hagezi NSFW" = [
+    "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
+    "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt"
+]
+
+"Cyber Threat Intel" = { url = "https://raw.githubusercontent.com/DNSBunker/CTI/refs/heads/main/domains.txt", relevance = false }
+
+[spam_allow_source]
+name = "HaGeZi Spam Allow"
+url  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
+
+[policies.relaxed]
+prefix       = "L_Relaxed"
+name         = "Block: Relaxed Profile"
+action       = "block"
+use_spam_tld = true
+include      = [
+    "HaGeZi Normal", "Hagezi NSFW", "HaGeZi Fake", "HaGeZi No SafeSearch",
+    "HaGeZi TIF Full", "Cyber Threat Intel", "HaGeZi DynDNS", "HaGeZi Anti Piracy"
+]
+exclude      = []
+security_categories = [178, 80, 187, 83, 176, 175, 117, 131, 134, 153]
+content_categories  = [133]
+
+[policies.restrictive]
+prefix         = "L_Restrictive"
+name           = "Block: Restrictive Profile"
+action         = "block"
+restrict_users = true
+use_spam_tld   = false
+include        = ["HaGeZi Bypass Prevention", "HaGeZi Social", "NoAI"]
+exclude        = ["HaGeZi Normal"]
+security_categories = [151, 191, 188, 68]
+content_categories  = [67, 125]
+app_ids = [
+    534, 541, 572, 600, 604, 618, 628, 633, 1110, 1122, 1130, 1135, 1138,
+    1853, 2678, 2680, 2826, 2831, 2844, 2845, 2848, 2852, 3097, 3098
+]
+domains = [
+    "web.archive.org", "steamcommunity.com", "linkvertise.com", "vercel.com", "rumble.com"
+]
