@@ -1,6 +1,6 @@
 {
-  "last_sync": "2026-09-12T21:46:35.963831+00:00",
-  "duration_seconds": 37.09,
+  "last_sync": "2026-09-12T21:49:55.164248+00:00",
+  "duration_seconds": 32.37,
   "total_quota": 300000,
   "total_domains_synced": 177041,
   "total_lists_used": 178,
@@ -90,7 +90,7 @@
       "action": "block",
       "enabled": true,
       "usage_7d": 0,
-      "updated_at": "2026-09-12T21:46:35Z"
+      "updated_at": "2026-09-12T21:49:54Z"
     },
     {
       "id": "95509161-25a2-4d63-a203-9d2e79e47552",
@@ -101,7 +101,56 @@
       "updated_at": "2026-09-12T20:23:28Z"
     }
   ],
-  "daily_trends": [],
+  "daily_trends": [
+    {
+      "date": "2026-09-05",
+      "allowed": 60,
+      "blocked": 0,
+      "total": 60
+    },
+    {
+      "date": "2026-09-06",
+      "allowed": 890,
+      "blocked": 0,
+      "total": 890
+    },
+    {
+      "date": "2026-09-07",
+      "allowed": 1200,
+      "blocked": 0,
+      "total": 1200
+    },
+    {
+      "date": "2026-09-08",
+      "allowed": 770,
+      "blocked": 0,
+      "total": 770
+    },
+    {
+      "date": "2026-09-09",
+      "allowed": 410,
+      "blocked": 0,
+      "total": 410
+    },
+    {
+      "date": "2026-09-10",
+      "allowed": 860,
+      "blocked": 0,
+      "total": 860
+    },
+    {
+      "date": "2026-09-11",
+      "allowed": 1250,
+      "blocked": 0,
+      "total": 1250
+    },
+    {
+      "date": "2026-09-12",
+      "allowed": 1090,
+      "blocked": 0,
+      "total": 1090
+    }
+  ],
   "top_blocklist_sources": [],
   "top_blocked_domains": [],
   "top_blocked_categories": [],
@@ -134,20 +183,15 @@
     }
   },
   "sources": {
-    "HaGeZi No SafeSearch": {
-      "raw": 203,
-      "kept": 111,
-      "pruned_relevance": 92
-    },
-    "HaGeZi Fake": {
-      "raw": 16708,
-      "kept": 546,
-      "pruned_relevance": 16162
-    },
     "HaGeZi Social": {
       "raw": 900,
       "kept": 548,
       "pruned_relevance": 352
+    },
+    "HaGeZi No SafeSearch": {
+      "raw": 203,
+      "kept": 111,
+      "pruned_relevance": 92
     },
     "HaGeZi Bypass Prevention": {
       "raw": 16284,
@@ -158,6 +202,11 @@
       "raw": 1533,
       "kept": 663,
       "pruned_relevance": 870
+    },
+    "HaGeZi Fake": {
+      "raw": 16708,
+      "kept": 546,
+      "pruned_relevance": 16162
     },
     "NoAI": {
       "raw": 2220,
