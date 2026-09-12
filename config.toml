@@ -14,6 +14,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 
 [sources]
 "HaGeZi Normal"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
+"HaGeZi Pro++"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
 "HaGeZi Fake"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
 "HaGeZi TIF Full"          = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
 "HaGeZi Social"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
@@ -53,7 +54,7 @@ name           = "Block: Restrictive Profile"
 action         = "block"
 restrict_users = true
 use_spam_tld   = false
-include        = ["HaGeZi Bypass Prevention", "HaGeZi Social", "NoAI"]
+include        = ["HaGeZi Pro++", "HaGeZi Bypass Prevention", "HaGeZi Social", "NoAI"]
 exclude        = ["HaGeZi Normal"]
 security_categories = [151, 191, 188, 68]
 content_categories  = [67, 125]
