@@ -12,7 +12,7 @@ import re
 import sys
 import time
 import zipfile
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -223,7 +223,7 @@ def get_active_policies() -> list[dict]:
                 "HaGeZi Anti Piracy",
             ],
             "exclude": [],
-            "use_spam_tld": env_bool("USE_SPAM_TLD_RELAXED", False),
+            "use_spam_tld": env_bool("USE_SPAM_TLD_RELAXED", True),
         },
         {
             "prefix": "L_Restrictive",
@@ -383,6 +383,13 @@ def fetch_top_list(url: str, col_idx: int, skip_header: bool, compression: str, 
     return parse_csv_lines(response.text.splitlines(), col_idx, skip_header)
 
 
+def atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_text(content, encoding="utf-8")
+    temp.replace(path)
+
+
 class RelevanceChecker:
     def __init__(self, session: requests.Session):
         self.master_allowlist: set[str] = set()
@@ -417,12 +424,12 @@ class RelevanceChecker:
         if not self.master_allowlist:
             raise RuntimeError("Relevance dataset is empty; refusing to prune sources")
 
-        cache_file.write_text(
+        atomic_write_text(
+            cache_file,
             json.dumps(
                 {"timestamp": now, "domains": sorted(self.master_allowlist)},
                 separators=(",", ":"),
             ),
-            encoding="utf-8",
         )
         logger.info("Relevance dataset built: %,d unique domains", len(self.master_allowlist))
 
@@ -480,17 +487,44 @@ def get_active_sources() -> list[dict]:
 def fetch_spam_tlds(session: requests.Session) -> set[str]:
     response = session.get(SPAM_TLD_URL, timeout=Config.DOWNLOAD_TIMEOUT)
     response.raise_for_status()
+
     tlds: set[str] = set()
-    for line in response.text.splitlines():
-        line = line.strip().lower()
+    for raw_line in response.text.splitlines():
+        line = raw_line.strip().lower().lstrip("\ufeff")
         if not line or line.startswith(("#", "!", "/")):
             continue
-        token = line.split()[0].strip(".")
+
+        # Accept plain TLDs as well as the common hosts/wildcard forms used by
+        # blocklists, while storing only the final TLD token.
+        token = line.split()[0].strip().strip(".")
+        if token.startswith("*."):
+            token = token[2:]
+        if token.startswith("||"):
+            token = token[2:]
+        token = token.rstrip("^/$")
+        if "." in token:
+            token = token.rsplit(".", 1)[-1]
+
         if TLD_RE.fullmatch(token):
             tlds.add(token)
+
     if not tlds:
         raise RuntimeError("Spam TLD source returned no usable TLDs")
+
+    logger.info("Loaded %,d spam TLDs", len(tlds))
     return tlds
+
+
+def final_tld(domain: str) -> str:
+    return domain.rstrip(".").lower().rsplit(".", 1)[-1]
+
+
+def remove_spam_tld_domains(domains: set[str], spam_tlds: set[str]) -> tuple[set[str], int]:
+    if not spam_tlds:
+        return set(domains), 0
+
+    filtered = {domain for domain in domains if final_tld(domain) not in spam_tlds}
+    return filtered, len(domains) - len(filtered)
 
 
 def build_cloudflare_tld_expression(tlds: set[str]) -> str:
@@ -526,6 +560,15 @@ def build_policy_sets(policies: list[dict], fetched_lists: dict[str, set[str]], 
         *(domains for name, domains in fetched_lists.items() if name != "HaGeZi Spam Allow")
     )
 
+    # Relaxed is global. When Relaxed uses the spam-TLD rule, every profile
+    # must remove domains covered by that rule from its list payload, even if
+    # that profile's own use_spam_tld setting is false. The profile that has
+    # use_spam_tld=true still receives the actual TLD expression below.
+    relaxed_spam_tld_global = any(
+        p.get("tier") == "relaxed" and p.get("use_spam_tld")
+        for p in policies
+    )
+
     compiled = []
     for policy in policies:
         domain_set: set[str] = set()
@@ -546,15 +589,29 @@ def build_policy_sets(policies: list[dict], fetched_lists: dict[str, set[str]], 
         ):
             domain_set = {d for d in domain_set if not has_suffix_match(d, baseline)}
 
-        if policy.get("use_spam_tld"):
-            before = len(domain_set)
-            domain_set = {
-                d for d in domain_set if d.rsplit(".", 1)[-1] not in spam_tlds
-            }
+        # Spam-TLD list pruning is global when the Relaxed profile enables it.
+        # A profile that explicitly enables use_spam_tld also prunes itself.
+        prune_spam_tlds = bool(
+            policy.get("use_spam_tld")
+            or relaxed_spam_tld_global
+        ) and policy.get("tier") in {"relaxed", "restrictive"}
+
+        if prune_spam_tlds:
+            domain_set, removed = remove_spam_tld_domains(domain_set, spam_tlds)
+            if policy.get("use_spam_tld"):
+                reason = "use_spam_tld=true"
+            else:
+                reason = "global Relaxed spam-TLD enforcement"
             logger.info(
-                "%s: removed %s domains covered by spam-TLD rule",
+                "%s: %s; removed %s domains covered by spam-TLD rule",
                 policy["policy_name"],
-                f"{before - len(domain_set):,}",
+                reason,
+                f"{removed:,}",
+            )
+        else:
+            logger.info(
+                "%s: spam-TLD pruning disabled; retaining matching-TLD domains",
+                policy["policy_name"],
             )
 
         optimized = optimize_domains(domain_set, enable_parent_collapse=True)
@@ -933,8 +990,7 @@ def load_previous_metrics() -> dict:
 
 
 def write_json(path: Path, payload: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def validate_source_metrics(results: list[SourceResult], previous: dict) -> None:
@@ -956,9 +1012,9 @@ def write_aggregate_file(compiled: list[tuple[dict, list[str]]]) -> None:
     aggregate = set()
     for _, domains in compiled:
         aggregate.update(domains)
-    Config.AGGREGATE_FILE.write_text(
+    atomic_write_text(
+        Config.AGGREGATE_FILE,
         "".join(f"{domain}\n" for domain in sorted(aggregate)),
-        encoding="utf-8",
     )
 
 
