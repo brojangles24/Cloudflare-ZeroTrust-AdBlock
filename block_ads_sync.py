@@ -59,15 +59,15 @@ BLOCKLIST_SOURCES = [
    {
         "name": "HaGeZi Normal",
         "url": ["https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"],
-        "enable_relevance": True
+        "enable_relevance": False
    },
-   {
-        "name": "HaGeZi Pro",
-        "url": [
-            "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
-        ],
-        "enable_relevance": True
-    },
+   #{
+   #     "name": "HaGeZi Pro",
+   #     "url": [
+   #         "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
+   #     ],
+   #     "enable_relevance": True
+   # },
     {
         "name": "Hagezi NSFW",
         "url": [
@@ -173,7 +173,7 @@ def get_active_policies():
                 "HaGeZi Anti Piracy", 
             ], 
             "exclude": [],
-            "use_spam_tld": True
+            "use_spam_tld": False
         },
         {
             "prefix": "L_Restrictive", 
@@ -187,7 +187,7 @@ def get_active_policies():
                 'any(dns.domains[*] in {"web.archive.org" "steamcommunity.com" "linkvertise.com" "vercel.com" "rumble.com"})'
             ),
             "include": [
-                "HaGeZi Pro",
+                #"HaGeZi Pro",
                 "HaGeZi Bypass Prevention", 
                 "HaGeZi Social", 
                 "NoAI",
@@ -269,8 +269,8 @@ class CloudflareAPI:
     def delete_rule(self, rid):                                   return self._request("DELETE", f"rules/{rid}")
     def create_list(self, name, items, desc=""):                 return self._request("POST",    "lists",        json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
     def update_list(self, lid, name, items, desc=""):            return self._request("PUT",     f"lists/{lid}", json={"name": name, "items": items, "description": desc})
-    def create_rule(self, data):                                  return self._request("POST",    "rules",        json={**data, "rule_settings": {"block_page_enabled": False}})
-    def update_rule(self, rid, data):                            return self._request("PUT",     f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": False}})
+    def create_rule(self, data):                                  return self._request("POST",    "rules",        json={**data, "rule_settings": {"block_page_enabled": True}})
+    def update_rule(self, rid, data):                            return self._request("PUT",     f"rules/{rid}", json={**data, "rule_settings": {"block_page_enabled": True}})
 
 # ---------------------------------------------------------------------------
 # 3. Relevance Filtering & Domain Logic
