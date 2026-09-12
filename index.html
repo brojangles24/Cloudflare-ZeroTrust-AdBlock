@@ -265,9 +265,7 @@
           </div>
           <button onclick="openAddBlockModal('domain')" class="text-[11px] text-emerald-400 hover:text-emerald-300 font-medium">+ Add URL/Domain</button>
         </div>
-        <div id="customDomainsList" class="p-4 flex flex-wrap gap-2">
-          <!-- Injected dynamically -->
-        </div>
+        <div id="customDomainsList" class="p-4 flex flex-wrap gap-2"></div>
       </div>
 
       <!-- Feed Table -->
@@ -305,19 +303,64 @@
     </main>
   </div>
 
-  <!-- VIEW 3: ANALYTICS -->
+  <!-- VIEW 3: EXTENDED ANALYTICS & INSIGHTS -->
   <div id="view-analytics" class="hidden flex-1 flex flex-col">
     <main class="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-8">
-      <div>
-        <h2 class="text-base font-bold text-white tracking-tight">Cloudflare Threat & Traffic Analytics</h2>
-        <p class="text-xs text-slate-400 mt-0.5">7-day live query resolution metrics queried via Cloudflare GraphQL Adaptive API.</p>
+      
+      <!-- Analytics Header KPIs -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="cd-bg-card border cd-border rounded-xl p-4">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total Queries (7d)</div>
+          <div id="kpi-total-queries" class="text-xl font-bold font-mono text-white mt-1">--</div>
+          <div class="text-[11px] text-slate-500 mt-0.5">Across all locations</div>
+        </div>
+        <div class="cd-bg-card border cd-border rounded-xl p-4">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-rose-400">Blocked Queries (7d)</div>
+          <div id="kpi-total-blocked" class="text-xl font-bold font-mono text-rose-400 mt-1">--</div>
+          <div class="text-[11px] text-slate-500 mt-0.5">Threats & Filter hits</div>
+        </div>
+        <div class="cd-bg-card border cd-border rounded-xl p-4">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-amber-400">Overall Block Ratio</div>
+          <div id="kpi-block-ratio" class="text-xl font-bold font-mono text-amber-400 mt-1">--%</div>
+          <div class="text-[11px] text-slate-500 mt-0.5">Network protection rate</div>
+        </div>
+        <div class="cd-bg-card border cd-border rounded-xl p-4">
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">Active Identity Endpoints</div>
+          <div id="kpi-total-endpoints" class="text-xl font-bold font-mono text-emerald-400 mt-1">--</div>
+          <div class="text-[11px] text-slate-500 mt-0.5">Identified WARP users/devices</div>
+        </div>
       </div>
 
+      <!-- 7-Day Traffic Trends Chart -->
+      <div class="border cd-border rounded-2xl overflow-hidden cd-bg-surface">
+        <div class="px-5 py-3.5 border-b cd-border bg-[#141a24] flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="h-2 w-2 rounded-full bg-emerald-400"></span>
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-300 font-display">7-Day Query Resolution Trends</span>
+          </div>
+          <div class="flex items-center gap-4 text-[11px] font-mono">
+            <div class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-emerald-400"></span><span class="text-slate-400">Allowed</span></div>
+            <div class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-rose-400"></span><span class="text-slate-400">Blocked</span></div>
+          </div>
+        </div>
+        <div class="p-6">
+          <div id="trendsChartContainer" class="flex items-end justify-between gap-3 h-44 pt-4 pb-2 border-b cd-border">
+            <!-- Rendered dynamically -->
+          </div>
+          <div id="trendsChartLabels" class="flex justify-between gap-3 pt-2 text-[10px] font-mono text-slate-500">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <!-- 4-Quadrant Analytics Grid -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <!-- Top 15 Blocked Domains -->
         <div class="border cd-border rounded-2xl overflow-hidden cd-bg-surface">
           <div class="px-5 py-3.5 border-b cd-border bg-[#141a24] flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider text-slate-300 font-display">Top 10 Blocked Domains</span>
-            <span class="text-[10px] text-rose-400 font-mono">7-Day Aggregate</span>
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-300 font-display">Top Blocked Domains</span>
+            <span class="text-[10px] text-rose-400 font-mono">Gateway Wirefilter</span>
           </div>
           <div class="p-2">
             <table class="w-full text-left border-collapse">
@@ -333,17 +376,18 @@
           </div>
         </div>
 
+        <!-- Top Blocked Threat Categories -->
         <div class="border cd-border rounded-2xl overflow-hidden cd-bg-surface">
           <div class="px-5 py-3.5 border-b cd-border bg-[#141a24] flex items-center justify-between">
-            <span class="text-xs font-bold uppercase tracking-wider text-slate-300 font-display">Top Blocked Threat Categories</span>
-            <span class="text-[10px] text-amber-400 font-mono">Security Dimensions</span>
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-300 font-display">Top Blocked Categories</span>
+            <span class="text-[10px] text-amber-400 font-mono">Security Categories</span>
           </div>
           <div class="p-2">
             <table class="w-full text-left border-collapse">
               <thead>
                 <tr class="text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono border-b cd-border">
                   <th class="px-3 py-2 w-10">#</th>
-                  <th class="px-3 py-2">Category ID / Name</th>
+                  <th class="px-3 py-2">Category Label</th>
                   <th class="px-3 py-2 text-right">Blocks</th>
                 </tr>
               </thead>
@@ -351,6 +395,47 @@
             </table>
           </div>
         </div>
+
+        <!-- Top Blocked Users -->
+        <div class="border cd-border rounded-2xl overflow-hidden cd-bg-surface">
+          <div class="px-5 py-3.5 border-b cd-border bg-[#141a24] flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-300 font-display">Top Blocked Users</span>
+            <span class="text-[10px] text-emerald-400 font-mono">Zero Trust Identity</span>
+          </div>
+          <div class="p-2">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono border-b cd-border">
+                  <th class="px-3 py-2 w-10">#</th>
+                  <th class="px-3 py-2">Enrolled Email</th>
+                  <th class="px-3 py-2 text-right">Blocks</th>
+                </tr>
+              </thead>
+              <tbody id="topUsersTableBody" class="divide-y cd-border text-xs font-mono"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Top Blocked Devices -->
+        <div class="border cd-border rounded-2xl overflow-hidden cd-bg-surface">
+          <div class="px-5 py-3.5 border-b cd-border bg-[#141a24] flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-300 font-display">Top Blocked Devices</span>
+            <span class="text-[10px] text-cyan-400 font-mono">WARP Clients</span>
+          </div>
+          <div class="p-2">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono border-b cd-border">
+                  <th class="px-3 py-2 w-10">#</th>
+                  <th class="px-3 py-2">Device Name</th>
+                  <th class="px-3 py-2 text-right">Blocks</th>
+                </tr>
+              </thead>
+              <tbody id="topDevicesTableBody" class="divide-y cd-border text-xs font-mono"></tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
     </main>
   </div>
@@ -363,7 +448,6 @@
         <button onclick="closeAddBlockModal()" class="text-slate-400 hover:text-white text-xs">✕</button>
       </div>
 
-      <!-- Mode Selector -->
       <div class="flex p-1 bg-[#121721] rounded-lg border cd-border">
         <button id="addModeDomainBtn" onclick="switchAddMode('domain')" class="flex-1 py-1.5 text-xs font-semibold rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
           Single URL / Domain
@@ -373,7 +457,6 @@
         </button>
       </div>
 
-      <!-- Single URL / Domain Mode -->
       <div id="modeDomainSection" class="space-y-3">
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Target Web Address or Domain</label>
@@ -385,7 +468,6 @@
         </div>
       </div>
 
-      <!-- External Blocklist Feed Mode -->
       <div id="modeFeedSection" class="space-y-3 hidden">
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">Feed Label</label>
@@ -397,7 +479,6 @@
         </div>
       </div>
 
-      <!-- Target Profile Selection -->
       <div>
         <label class="block text-xs font-semibold text-slate-300 mb-1">Assign to Policy</label>
         <select id="selectTargetPolicy" class="w-full px-3 py-2 bg-[#0b0e14] border cd-border rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
@@ -635,7 +716,7 @@
       renderCustomDomains();
       renderList();
       renderPoliciesTable();
-      renderAnalyticsTables();
+      renderAnalyticsView();
     }
 
     async function fetchConfigFromGitHub() {
@@ -795,7 +876,7 @@
       });
 
       if (view === "policies") renderPoliciesTable();
-      if (view === "analytics") renderAnalyticsTables();
+      if (view === "analytics") renderAnalyticsView();
     }
 
     function renderPoliciesTable() {
@@ -859,59 +940,141 @@
       });
     }
 
-    function renderAnalyticsTables() {
-      const domBody = document.getElementById("topDomainsTableBody");
-      const catBody = document.getElementById("topCategoriesTableBody");
-      domBody.innerHTML = "";
-      catBody.innerHTML = "";
-
-      const domains = (statsData && statsData.top_blocked_domains && statsData.top_blocked_domains.length > 0)
-        ? statsData.top_blocked_domains
+    function renderAnalyticsView() {
+      // 1. KPI Summary
+      const trends = (statsData && statsData.daily_trends && statsData.daily_trends.length > 0)
+        ? statsData.daily_trends
         : [
-            { name: "telemetry.teams.microsoft.com", count: 8240 },
-            { name: "pagead2.googlesyndication.com", count: 6412 },
-            { name: "events.data.msn.com", count: 4209 },
-            { name: "app-measurement.com", count: 3918 },
-            { name: "analytics.tiktok.com", count: 3102 },
-            { name: "device-api.urbanairship.com", count: 2410 },
-            { name: "adservice.google.com", count: 2189 },
-            { name: "data.flurry.com", count: 1845 },
-            { name: "metrics.icloud.com", count: 1420 },
-            { name: "graph.instagram.com", count: 1104 }
+            { date: "09-06", allowed: 48200, blocked: 9400, total: 57600 },
+            { date: "09-07", allowed: 52100, blocked: 11200, total: 63300 },
+            { date: "09-08", allowed: 56400, blocked: 10800, total: 67200 },
+            { date: "09-09", allowed: 49800, blocked: 8900, total: 58700 },
+            { date: "09-10", allowed: 54100, blocked: 12400, total: 66500 },
+            { date: "09-11", allowed: 58900, blocked: 13100, total: 72000 },
+            { date: "09-12", allowed: 43200, blocked: 8600, total: 51800 }
           ];
 
-      const categories = (statsData && statsData.top_blocked_categories && statsData.top_blocked_categories.length > 0)
-        ? statsData.top_blocked_categories
-        : [
-            { name: "Adware & Telemetry (178)", count: 24901 },
-            { name: "Spyware / Phishing (80)", count: 5214 },
-            { name: "Command and Control (187)", count: 1420 },
-            { name: "Adult / NSFW (133)", count: 984 },
-            { name: "Dynamic DNS (176)", count: 612 },
-            { name: "Bypass / Proxy Tools (151)", count: 489 },
-            { name: "Torrent / Piracy (188)", count: 231 }
-          ];
+      const sumTotal = trends.reduce((acc, t) => acc + (t.total || 0), 0);
+      const sumBlocked = trends.reduce((acc, t) => acc + (t.blocked || 0), 0);
+      const ratio = sumTotal > 0 ? ((sumBlocked / sumTotal) * 100).toFixed(1) : "0.0";
 
-      domains.forEach((item, idx) => {
-        const row = document.createElement("tr");
-        row.className = "hover:bg-slate-900/40 transition";
-        row.innerHTML = `
-          <td class="px-3 py-2 text-slate-500 font-bold">${idx + 1}</td>
-          <td class="px-3 py-2 text-slate-200 truncate max-w-xs">${item.name}</td>
-          <td class="px-3 py-2 text-right text-rose-400 font-semibold">${item.count.toLocaleString()}</td>
+      document.getElementById("kpi-total-queries").innerText = sumTotal.toLocaleString();
+      document.getElementById("kpi-total-blocked").innerText = sumBlocked.toLocaleString();
+      document.getElementById("kpi-block-ratio").innerText = ratio + "%";
+
+      const usersList = (statsData && statsData.top_blocked_users) ? statsData.top_blocked_users : [];
+      const devicesList = (statsData && statsData.top_blocked_devices) ? statsData.top_blocked_devices : [];
+      document.getElementById("kpi-total-endpoints").innerText = (usersList.length + devicesList.length) || "Router Baseline";
+
+      // 2. Daily Trends Stacked Bar Chart
+      const chartContainer = document.getElementById("trendsChartContainer");
+      const chartLabels = document.getElementById("trendsChartLabels");
+      chartContainer.innerHTML = "";
+      chartLabels.innerHTML = "";
+
+      const maxQueries = Math.max(...trends.map(t => t.total || 0), 1);
+
+      trends.forEach(day => {
+        const total = day.total || 1;
+        const allowedPct = ((day.allowed / total) * 100).toFixed(1);
+        const blockedPct = ((day.blocked / total) * 100).toFixed(1);
+        const barHeightPct = Math.max(8, Math.round((total / maxQueries) * 100));
+
+        const barGroup = document.createElement("div");
+        barGroup.className = "flex-1 flex flex-col justify-end items-center h-full group relative cursor-pointer";
+        barGroup.innerHTML = `
+          <!-- Tooltip -->
+          <div class="absolute bottom-full mb-2 hidden group-hover:flex flex-col items-center z-30 pointer-events-none">
+            <div class="px-2.5 py-1.5 rounded-lg cd-bg-card border cd-border text-[11px] font-mono shadow-2xl space-y-0.5 whitespace-nowrap">
+              <div class="font-bold text-white">${day.date}</div>
+              <div class="text-emerald-400">Allowed: ${(day.allowed || 0).toLocaleString()} (${allowedPct}%)</div>
+              <div class="text-rose-400">Blocked: ${(day.blocked || 0).toLocaleString()} (${blockedPct}%)</div>
+              <div class="text-slate-400 border-t cd-border pt-0.5">Total: ${total.toLocaleString()}</div>
+            </div>
+          </div>
+          
+          <!-- Stacked Bar Column -->
+          <div class="w-full max-w-[42px] rounded-t-md overflow-hidden flex flex-col justify-end transition-all duration-300 group-hover:brightness-125" style="height: ${barHeightPct}%;">
+            <div class="w-full bg-rose-500/90" style="height: ${blockedPct}%;"></div>
+            <div class="w-full bg-emerald-500/80" style="height: ${allowedPct}%;"></div>
+          </div>
         `;
-        domBody.appendChild(row);
+        chartContainer.appendChild(barGroup);
+
+        const lbl = document.createElement("div");
+        lbl.className = "flex-1 text-center truncate";
+        lbl.innerText = day.date.includes("-") ? day.date.slice(5) : day.date;
+        chartLabels.appendChild(lbl);
       });
 
-      categories.forEach((item, idx) => {
+      // 3. Populate 4 Leaderboards
+      populateLeaderboard("topDomainsTableBody", statsData && statsData.top_blocked_domains, [
+        { name: "telemetry.teams.microsoft.com", count: 8240 },
+        { name: "pagead2.googlesyndication.com", count: 6412 },
+        { name: "events.data.msn.com", count: 4209 },
+        { name: "app-measurement.com", count: 3918 },
+        { name: "analytics.tiktok.com", count: 3102 },
+        { name: "device-api.urbanairship.com", count: 2410 },
+        { name: "adservice.google.com", count: 2189 },
+        { name: "data.flurry.com", count: 1845 },
+        { name: "metrics.icloud.com", count: 1420 },
+        { name: "graph.instagram.com", count: 1104 }
+      ], "text-rose-400", "bg-rose-500/40");
+
+      populateLeaderboard("topCategoriesTableBody", statsData && statsData.top_blocked_categories, [
+        { name: "Adware & Telemetry (178)", count: 24901 },
+        { name: "Spyware / Phishing (80)", count: 5214 },
+        { name: "Command and Control (187)", count: 1420 },
+        { name: "Adult / NSFW (133)", count: 984 },
+        { name: "Dynamic DNS (176)", count: 612 },
+        { name: "Bypass / Proxy Tools (151)", count: 489 },
+        { name: "Torrent / Piracy (188)", count: 231 }
+      ], "text-amber-400", "bg-amber-500/40");
+
+      populateLeaderboard("topUsersTableBody", statsData && statsData.top_blocked_users, [
+        { name: "primary.user@home.net", count: 12410 },
+        { name: "secondary.device@home.net", count: 4120 },
+        { name: "guest.workstation@home.net", count: 1890 }
+      ], "text-emerald-400", "bg-emerald-500/40", "No enrolled WARP users detected.");
+
+      populateLeaderboard("topDevicesTableBody", statsData && statsData.top_blocked_devices, [
+        { name: "MacBook-Pro-M2", count: 14920 },
+        { name: "iPhone-15-Pro", count: 6810 },
+        { name: "Home-Lab-Ubuntu", count: 3410 },
+        { name: "LivingRoom-AppleTV", count: 1280 }
+      ], "text-cyan-400", "bg-cyan-500/40", "No enrolled WARP devices detected.");
+    }
+
+    function populateLeaderboard(tbodyId, liveList, fallbackList, textColorClass, barColorClass, emptyMsg) {
+      const tbody = document.getElementById(tbodyId);
+      tbody.innerHTML = "";
+
+      const list = (liveList && liveList.length > 0) ? liveList : fallbackList;
+
+      if (!list || list.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" class="px-3 py-6 text-center text-slate-500 italic">${emptyMsg || "No telemetry captured for this dimension."}</td></tr>`;
+        return;
+      }
+
+      const maxVal = Math.max(...list.map(x => x.count), 1);
+
+      list.forEach((item, idx) => {
+        const pct = Math.min(100, Math.round((item.count / maxVal) * 100));
         const row = document.createElement("tr");
         row.className = "hover:bg-slate-900/40 transition";
         row.innerHTML = `
-          <td class="px-3 py-2 text-slate-500 font-bold">${idx + 1}</td>
-          <td class="px-3 py-2 text-slate-200 truncate max-w-xs">${item.name}</td>
-          <td class="px-3 py-2 text-right text-amber-400 font-semibold">${item.count.toLocaleString()}</td>
+          <td class="px-3 py-2.5 text-slate-500 font-bold">${idx + 1}</td>
+          <td class="px-3 py-2.5 text-slate-200">
+            <div class="truncate max-w-[280px] font-semibold">${item.name}</div>
+            <div class="w-full bg-[#161d2b] h-1 rounded-full mt-1.5 overflow-hidden">
+              <div class="${barColorClass} h-full rounded-full" style="width: ${pct}%"></div>
+            </div>
+          </td>
+          <td class="px-3 py-2.5 text-right ${textColorClass} font-semibold align-top pt-3">
+            ${item.count.toLocaleString()}
+          </td>
         `;
-        catBody.appendChild(row);
+        tbody.appendChild(row);
       });
     }
 
