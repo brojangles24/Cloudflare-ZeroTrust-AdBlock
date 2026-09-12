@@ -8,6 +8,7 @@ scrub_targets   = [
     "Block:", "Allow:", "L_", "ProMini", "ProPlus", 
     "ProUser", "ProHome", "Piracy", "DynDNS", "Hoster", "Restrictive"
 ]
+auto_enable_rules = false
 
 [tld]
 url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
