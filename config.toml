@@ -14,13 +14,12 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 
 # Standalone Cloudflare Gateway Firewall Policies
 [gateway_policies]
-"SafeSearch"         = true
-"Global Blocklist"   = true
-"Global Bypass"      = true
-"IoT Bypass"         = true
-"Block IoT Network"  = true
+"SafeSearch" = true
+"Global Blocklist" = true
+"Global Bypass" = true
+"IoT Bypass" = true
+"Block IoT Network" = true
 "YouTube Restricted" = true
-
 [sources]
 "HaGeZi Normal"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
 "HaGeZi Fake"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
@@ -47,11 +46,8 @@ url  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-t
 prefix       = "L_Relaxed"
 name         = "Block: Relaxed Profile"
 action       = "block"
-use_spam_tld = false
-include      = [
-    "HaGeZi Normal", "Hagezi NSFW", "HaGeZi Fake", "HaGeZi No SafeSearch",
-    "HaGeZi TIF Full", "Cyber Threat Intel", "HaGeZi DynDNS", "HaGeZi Anti Piracy"
-]
+use_spam_tld = true
+include      = ["HaGeZi Normal", "Hagezi NSFW", "HaGeZi Fake", "HaGeZi No SafeSearch", "HaGeZi TIF Full", "Cyber Threat Intel", "HaGeZi DynDNS", "HaGeZi Anti Piracy"]
 exclude      = []
 security_categories = [178, 80, 187, 83, 176, 175, 117, 131, 134, 153]
 content_categories  = [133]
@@ -61,8 +57,8 @@ prefix         = "L_Restrictive"
 name           = "Block: Restrictive Profile"
 action         = "block"
 restrict_users = true
-use_spam_tld   = false
-include        = ["HaGeZi Bypass Prevention", "HaGeZi Social", "NoAI"]
+use_spam_tld = false
+include      = ["HaGeZi Bypass Prevention", "HaGeZi Social", "NoAI"]
 exclude        = ["HaGeZi Normal"]
 security_categories = [151, 191, 188, 68]
 content_categories  = [67, 125]
