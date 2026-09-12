@@ -132,7 +132,13 @@ class CloudflareAPI:
                 logger.error(f"Cloudflare API error [{resp.status_code}] on {endpoint}: {resp.text}")
                 resp.raise_for_status()
 
-            return resp.json()
+            payload = resp.json()
+            if isinstance(payload, dict) and payload.get("success") is False:
+                errors = payload.get("errors", [])
+                logger.error(f"Cloudflare API returned error payload on {endpoint}: {errors}")
+                raise RuntimeError(f"Cloudflare API failed on {endpoint}: {errors}")
+
+            return payload
 
         raise RuntimeError(f"Exceeded max retries on Cloudflare endpoint: {endpoint}")
 
@@ -167,7 +173,11 @@ class CloudflareAPI:
         query GetGatewayAnalytics($accountTag: String!, $start: Time!) {
           viewer {
             accounts(filter: {accountTag: $accountTag}) {
-              rulesUsage: gatewayDnsRulesAdaptiveGroups(limit: 100, filter: {datetime_geq: $start}) {
+              rulesUsage: gatewayResolverQueriesAdaptiveGroups(
+                limit: 100
+                filter: {datetime_geq: $start}
+                orderBy: [count_DESC]
+              ) {
                 count
                 dimensions {
                   ruleId
@@ -391,7 +401,9 @@ def find_matching_sources(host: str, domain_to_sources: dict[str, set[str]], spa
 
 def is_valid_domain(domain: str) -> str | None:
     d = domain.strip().lower().removeprefix("*.").strip(".")
-    if not d or "." not in d or any(c in d for c in "*/[]"):
+    if not d or "." not in d or any(c in d for c in "*/[]") or ".." in d:
+        return None
+    if d.startswith("-") or d.endswith("-"):
         return None
     try:
         d = d.encode("idna").decode("ascii")
@@ -587,7 +599,7 @@ def sync_policy_in_place(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict
 
         if idx < len(matched_lists):
             target = matched_lists[idx]
-            if target.get("description") == chash:
+            if target.get("description") == chash and (target.get("count") is None or target.get("count") == len(chunk)):
                 return target["id"]
             cf.update_list(target["id"], name, items, desc=chash)
             logger.info(f"Updated {name} ({len(chunk)} domains)")
@@ -612,6 +624,18 @@ def sync_policy_in_place(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict
     if cat_expr:
         list_items.append(cat_expr)
 
+    rule = next((r for r in existing_rules if r["name"] == policy_name), None)
+
+    if not list_items:
+        logger.warning(f"Policy '{policy_name}' has no active list items, categories, or expressions.")
+        if rule:
+            try:
+                cf.delete_rule(rule["id"])
+                logger.info(f"Removed inactive firewall rule: {policy_name}")
+            except Exception as e:
+                logger.error(f"Failed deleting inactive rule {policy_name}: {e}")
+        return active_ids, [l["id"] for l in surplus_lists], []
+
     cond = cfg["target_identity"] if policy.get("restrict_users") else policy.get("identity_condition")
     if cond:
         traffic_expr = " or ".join(list_items) if "dns." not in cond else " or ".join(f"({cond} and {item})" for item in list_items)
@@ -620,7 +644,6 @@ def sync_policy_in_place(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict
         traffic_expr = " or ".join(list_items)
         identity_expr = ""
 
-    rule = next((r for r in existing_rules if r["name"] == policy_name), None)
     payload = {
         "name": policy_name,
         "action": policy.get("action", "block"),
@@ -753,7 +776,6 @@ def main() -> None:
                 fetched[name] = {"domains": kept}
                 sources_stats[name] = {"raw": raw, "kept": len(kept), "pruned_relevance": pruned}
                 
-                # Invert feed index for fast reverse lookup
                 for d in kept:
                     if d not in domain_to_sources:
                         domain_to_sources[d] = set()
@@ -792,7 +814,6 @@ def main() -> None:
 
     duration = time.perf_counter() - start
 
-    # Fetch GraphQL analytics
     analytics = cf.get_graphql_analytics()
     fresh_rules = cf.get_rules()
 
@@ -808,7 +829,6 @@ def main() -> None:
             "updated_at": r.get("updated_at", "")
         })
 
-    # Reverse-map blocked domains to upstream blocklist sources
     attributed_domains = []
     source_hits: dict[str, int] = {s["name"]: 0 for s in sources}
     source_hits["Spam TLD Shield"] = 0
