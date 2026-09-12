@@ -198,12 +198,16 @@ def is_valid_domain(domain: str) -> str | None:
         return None
     if d.startswith("-") or d.endswith("-"):
         return None
-    try:
-        d = d.encode("idna").decode("ascii")
-    except (UnicodeError, ValueError):
+    
+    if not d.isascii():
+        try:
+            d = d.encode("idna").decode("ascii")
+        except (UnicodeError, ValueError):
+            return None
+
+    if (d[-1].isdigit() or ":" in d) and IP_PATTERN.match(d):
         return None
-    if IP_PATTERN.match(d):
-        return None
+
     return d
 
 def _parse_csv_stream(iterable, col: int, skip_header: bool) -> set[str]:
@@ -246,18 +250,40 @@ def fetch_top_list_streamed(item: dict, session: requests.Session) -> set[str]:
         return set()
 
 class RelevanceChecker:
+    CACHE_FILE = Path(".relevance_cache.gz")
+    CACHE_TTL_SECONDS = 86400
+
     def __init__(self, session: requests.Session, workers: int):
         self.master_allowlist: set[str] = set()
         self.session = session
         self.workers = workers
 
     def build_dataset(self) -> None:
+        if self.CACHE_FILE.exists():
+            file_age = time.time() - self.CACHE_FILE.stat().st_mtime
+            if file_age < self.CACHE_TTL_SECONDS:
+                logger.info(f"Loading relevance dataset from cache ({file_age / 3600:.1f}h old)...")
+                try:
+                    with gzip.open(self.CACHE_FILE, "rt", encoding="utf-8") as f:
+                        self.master_allowlist = {line.strip() for line in f if line.strip()}
+                    logger.info(f"Relevance dataset loaded: {len(self.master_allowlist):,} root domains.")
+                    return
+                except Exception as e:
+                    logger.warning(f"Failed reading cache: {e}. Rebuilding...")
+
         logger.info("Building relevance dataset from authority sources...")
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as executor:
             futures = [executor.submit(fetch_top_list_streamed, item, self.session) for item in DEFAULT_TOP_LISTS]
             for f in concurrent.futures.as_completed(futures):
                 self.master_allowlist.update(f.result())
+
         logger.info(f"Relevance dataset built: {len(self.master_allowlist):,} root domains.")
+        
+        try:
+            with gzip.open(self.CACHE_FILE, "wt", encoding="utf-8") as f:
+                f.write("\n".join(self.master_allowlist))
+        except Exception as e:
+            logger.warning(f"Failed writing relevance cache: {e}")
 
     def is_relevant(self, domain: str) -> bool:
         clean = domain.lower().strip(".")
@@ -269,19 +295,21 @@ def fetch_feed_source(session: requests.Session, name: str, urls: list[str], che
     kept, pruned = set(), 0
     raw_count = 0
     for u in urls:
-        resp = session.get(u, timeout=timeout)
-        resp.raise_for_status()
-        for line in resp.text.splitlines():
-            line = line.strip()
-            if not line or line[0] in "#!/":
-                continue
-            raw_count += 1
-            clean = is_valid_domain(line.split()[-1])
-            if clean:
-                if checker and not checker.is_relevant(clean):
-                    pruned += 1
-                else:
-                    kept.add(clean)
+        with session.get(u, timeout=timeout, stream=True) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                line = line.strip()
+                if not line or line[0] in "#!/":
+                    continue
+                raw_count += 1
+                clean = is_valid_domain(line.split()[-1])
+                if clean:
+                    if checker and not checker.is_relevant(clean):
+                        pruned += 1
+                    else:
+                        kept.add(clean)
 
     logger.info(f"Fetched {name}: {len(kept):,} kept (Raw: {raw_count:,}, Pruned: {pruned:,})")
     return name, kept, pruned, raw_count
@@ -306,13 +334,17 @@ def fetch_spam_tlds(session: requests.Session, url: str, timeout: tuple) -> tupl
 def optimize_domains(domains: set[str]) -> tuple[list[str], int]:
     sorted_domains = sorted(domains, key=lambda d: d.split(".")[::-1])
     optimized, last_kept = [], None
+    last_kept_suffix = ""
     subdomain_duplicates = 0
+    
     for dom in sorted_domains:
-        if last_kept and dom.endswith(f".{last_kept}"):
+        if last_kept and dom.endswith(last_kept_suffix):
             subdomain_duplicates += 1
             continue
         optimized.append(dom)
         last_kept = dom
+        last_kept_suffix = f".{dom}"
+        
     return optimized, subdomain_duplicates
 
 def build_policy_sets(policies: list[dict], fetched: dict, spam_tlds: set[str] = None) -> list[tuple[dict, list[str]]]:
@@ -360,6 +392,7 @@ def sync_policy_in_place(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict
     policy_name = policy["name"]
     max_size = cfg["settings"]["max_list_size"]
     workers = cfg["settings"]["max_workers"]
+    allow_auto_enable = cfg.get("settings", {}).get("auto_enable_rules", True)
 
     matched_lists = sorted([l for l in existing_lists if l["name"].startswith(f"{prefix} ")], key=lambda x: x["name"])
     chunks = [domains[i : i + max_size] for i in range(0, len(domains), max_size)] if domains else []
@@ -419,10 +452,19 @@ def sync_policy_in_place(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict
         traffic_expr = " or ".join(list_items)
         identity_expr = ""
 
+    if policy.get("enabled") is False:
+        rule_enabled = False
+    elif not allow_auto_enable and rule is not None and not rule.get("enabled", True):
+        rule_enabled = False
+    elif not allow_auto_enable and rule is None:
+        rule_enabled = policy.get("enabled", False)
+    else:
+        rule_enabled = policy.get("enabled", True) if rule is None else rule.get("enabled", True)
+
     payload = {
         "name": policy_name,
         "action": policy.get("action", "block"),
-        "enabled": rule.get("enabled", True) if rule else True,
+        "enabled": rule_enabled,
         "filters": ["dns"],
         "traffic": traffic_expr
     }
@@ -430,12 +472,16 @@ def sync_policy_in_place(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict
         payload["identity"] = identity_expr
 
     if rule:
-        if rule.get("traffic") != traffic_expr or rule.get("identity", "") != identity_expr:
+        if (
+            rule.get("traffic") != traffic_expr
+            or rule.get("identity", "") != identity_expr
+            or rule.get("enabled") != rule_enabled
+        ):
             cf.update_rule(rule["id"], payload)
-            logger.info(f"Updated firewall rule: {policy_name}")
+            logger.info(f"Updated firewall rule: {policy_name} (enabled={rule_enabled})")
     else:
         cf.create_rule(payload)
-        logger.info(f"Created firewall rule: {policy_name}")
+        logger.info(f"Created firewall rule: {policy_name} (enabled={rule_enabled})")
 
     return active_ids, [l["id"] for l in surplus_lists], [policy_name]
 
@@ -444,12 +490,19 @@ def sync_standalone_policies(cf: CloudflareAPI, cfg: dict, existing_rules: list[
     if not standalone_cfg:
         return
 
+    allow_auto_enable = cfg.get("settings", {}).get("auto_enable_rules", True)
+
     for rule_name, desired_enabled in standalone_cfg.items():
         matched = next((r for r in existing_rules if r["name"] == rule_name), None)
         if not matched:
             continue
 
         currently_enabled = matched.get("enabled", True)
+
+        if not allow_auto_enable and not currently_enabled and desired_enabled:
+            logger.info(f"Skipping auto-enable for disabled standalone policy: {rule_name}")
+            continue
+
         if currently_enabled != desired_enabled:
             payload = {
                 "name": matched["name"],
