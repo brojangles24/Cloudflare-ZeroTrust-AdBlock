@@ -63,7 +63,12 @@ def load_config() -> dict:
             if cleaned and cleaned not in excluded:
                 excluded.append(cleaned)
 
-    cfg["target_identity"] = f"not(identity.email in {{{' '.join(f'\"{e}\"' for e in excluded)}}})" if excluded else None
+    if excluded:
+        formatted_emails = " ".join(f'"{e}"' for e in excluded)
+        cfg["target_identity"] = f"not(identity.email in {{{formatted_emails}}})"
+    else:
+        cfg["target_identity"] = None
+
     return cfg
 
 def create_session(workers: int) -> requests.Session:
