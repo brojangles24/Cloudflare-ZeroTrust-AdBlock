@@ -2,7 +2,7 @@ name: Cloudflare Gateway Sync
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Runs every 6 hours
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -25,15 +25,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests urllib3 tomli
 
-      - name: Get current date
-        id: date
-        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
-
       - name: Cache Relevance Dataset
         uses: actions/cache@v4
         with:
-          path: .relevance_cache.gz
-          key: relevance-cache-${{ runner.os }}-${{ steps.date.outputs.date }}
+          path: .relevance_cache
+          key: relevance-cache-${{ runner.os }}-${{ github.run_id }}
           restore-keys: |
             relevance-cache-${{ runner.os }}-
 
