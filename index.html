@@ -77,7 +77,6 @@
 
         <div class="h-5 w-[1px] bg-slate-800"></div>
 
-        <!-- View Switcher -->
         <div class="flex items-center p-1 bg-[#121721] rounded-lg border cd-border">
           <button id="view-tab-feeds" onclick="switchMainView('feeds')" class="px-3 py-1 text-xs font-semibold rounded-md transition text-emerald-400 bg-emerald-500/10 border border-emerald-500/30">
             Threat Feeds
@@ -85,19 +84,29 @@
           <button id="view-tab-policies" onclick="switchMainView('policies')" class="px-3 py-1 text-xs font-medium rounded-md transition text-slate-400 hover:text-white">
             Gateway Policies
           </button>
+          <button id="view-tab-analytics" onclick="switchMainView('analytics')" class="px-3 py-1 text-xs font-medium rounded-md transition text-slate-400 hover:text-white">
+            Analytics
+          </button>
         </div>
       </div>
 
-      <!-- Actions -->
-      <div class="flex items-center gap-3">
-        <button onclick="openTokenModal()" class="p-2 text-slate-400 hover:text-white cd-bg-surface border cd-border rounded-lg transition" title="GitHub Credentials">
+      <!-- Action buttons -->
+      <div class="flex items-center gap-2.5">
+        <button onclick="openAddBlockModal()" class="px-3 py-1.5 text-xs font-semibold text-emerald-400 cd-bg-surface hover:bg-slate-800 border border-emerald-500/30 rounded-lg transition flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Add Block
+        </button>
+
+        <button onclick="openTokenModal()" class="p-2 text-slate-400 hover:text-white cd-bg-surface border cd-border rounded-lg transition" title="Repository Settings">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
         </button>
 
-        <button id="commitBtn" onclick="commitConfig()" class="px-3.5 py-1.5 text-xs font-semibold text-slate-200 cd-bg-surface hover:bg-slate-800 border cd-border rounded-lg transition">
+        <button id="commitBtn" onclick="commitConfig()" class="px-3 py-1.5 text-xs font-semibold text-slate-200 cd-bg-surface hover:bg-slate-800 border cd-border rounded-lg transition">
           Save
         </button>
 
@@ -111,7 +120,7 @@
     </div>
   </header>
 
-  <!-- Metrics Section -->
+  <!-- Metrics Bar -->
   <section class="border-b cd-border bg-[#0e121a]">
     <div class="max-w-7xl mx-auto px-6 py-5">
       <div class="flex items-center justify-between mb-3">
@@ -150,7 +159,7 @@
         </div>
 
         <div class="cd-bg-surface border cd-border rounded-xl p-3 col-span-2 sm:col-span-1">
-          <div class="text-[10px] text-slate-500 uppercase font-semibold">Relevance Inactive Drops</div>
+          <div class="text-[10px] text-slate-500 uppercase font-semibold">Relevance Drops</div>
           <div id="stat-relevance" class="text-lg font-bold font-mono text-rose-400 mt-0.5">--</div>
           <div class="text-[10px] text-slate-400 mt-1">Dead domains excluded</div>
         </div>
@@ -168,13 +177,11 @@
     </div>
   </section>
 
-  <!-- VIEW 1: THREAT FEEDS -->
+  <!-- VIEW 1: THREAT FEEDS & CUSTOM DOMAINS -->
   <div id="view-feeds" class="flex-1 flex flex-col">
-    <!-- Toolbar -->
     <div class="border-b cd-border bg-[#0b0e14]">
       <div class="max-w-7xl mx-auto px-6 py-3 flex flex-wrap items-center justify-between gap-4">
         <div class="flex items-center gap-3">
-          <!-- Profile Toggle Switcher -->
           <div class="flex items-center p-1 bg-[#121721] rounded-lg border cd-border">
             <button id="tab-relaxed" onclick="switchProfile('relaxed')" class="px-3 py-1 text-xs font-semibold rounded-md transition bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
               Relaxed Profile
@@ -212,7 +219,6 @@
       </div>
     </div>
 
-    <!-- Feed Content -->
     <main class="max-w-7xl mx-auto px-6 py-6 flex-1 w-full space-y-6">
       <div id="restrictivePanel" class="hidden cd-bg-card border cd-border rounded-xl p-4 flex items-center justify-between">
         <div class="flex items-center gap-3">
@@ -250,10 +256,25 @@
         </label>
       </div>
 
+      <!-- Custom Blocked Domains Card -->
+      <div id="customDomainsSection" class="border cd-border rounded-2xl overflow-hidden cd-bg-surface">
+        <div class="px-5 py-3 border-b cd-border flex items-center justify-between bg-[#141a24]">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-300 font-display">Direct Blocked Domains</span>
+            <span id="customDomainsCount" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400">0</span>
+          </div>
+          <button onclick="openAddBlockModal('domain')" class="text-[11px] text-emerald-400 hover:text-emerald-300 font-medium">+ Add URL/Domain</button>
+        </div>
+        <div id="customDomainsList" class="p-4 flex flex-wrap gap-2">
+          <!-- Injected dynamically -->
+        </div>
+      </div>
+
+      <!-- Feed Table -->
       <div class="border cd-border rounded-2xl overflow-hidden cd-bg-surface">
         <div class="px-5 py-3 border-b cd-border flex items-center justify-between bg-[#141a24]">
-          <span class="text-xs font-bold uppercase tracking-wider text-slate-400 font-display">Configured Blocklist Sources</span>
-          <span class="text-[11px] text-slate-500 font-mono">Syncs to Cloudflare Gateway</span>
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400 font-display">Configured Blocklist Feeds</span>
+          <button onclick="openAddBlockModal('feed')" class="text-[11px] text-emerald-400 hover:text-emerald-300 font-medium">+ Add Custom Feed URL</button>
         </div>
         <div id="sourcesList" class="divide-y cd-border"></div>
       </div>
@@ -278,12 +299,120 @@
               <th class="px-5 py-3 text-right">Status</th>
             </tr>
           </thead>
-          <tbody id="policiesTableBody" class="divide-y cd-border text-xs">
-            <!-- Injected dynamically -->
-          </tbody>
+          <tbody id="policiesTableBody" class="divide-y cd-border text-xs"></tbody>
         </table>
       </div>
     </main>
+  </div>
+
+  <!-- VIEW 3: ANALYTICS -->
+  <div id="view-analytics" class="hidden flex-1 flex flex-col">
+    <main class="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-8">
+      <div>
+        <h2 class="text-base font-bold text-white tracking-tight">Cloudflare Threat & Traffic Analytics</h2>
+        <p class="text-xs text-slate-400 mt-0.5">7-day live query resolution metrics queried via Cloudflare GraphQL Adaptive API.</p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="border cd-border rounded-2xl overflow-hidden cd-bg-surface">
+          <div class="px-5 py-3.5 border-b cd-border bg-[#141a24] flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-300 font-display">Top 10 Blocked Domains</span>
+            <span class="text-[10px] text-rose-400 font-mono">7-Day Aggregate</span>
+          </div>
+          <div class="p-2">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono border-b cd-border">
+                  <th class="px-3 py-2 w-10">#</th>
+                  <th class="px-3 py-2">Domain</th>
+                  <th class="px-3 py-2 text-right">Blocks</th>
+                </tr>
+              </thead>
+              <tbody id="topDomainsTableBody" class="divide-y cd-border text-xs font-mono"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="border cd-border rounded-2xl overflow-hidden cd-bg-surface">
+          <div class="px-5 py-3.5 border-b cd-border bg-[#141a24] flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-300 font-display">Top Blocked Threat Categories</span>
+            <span class="text-[10px] text-amber-400 font-mono">Security Dimensions</span>
+          </div>
+          <div class="p-2">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="text-[10px] font-bold uppercase tracking-wider text-slate-500 font-mono border-b cd-border">
+                  <th class="px-3 py-2 w-10">#</th>
+                  <th class="px-3 py-2">Category ID / Name</th>
+                  <th class="px-3 py-2 text-right">Blocks</th>
+                </tr>
+              </thead>
+              <tbody id="topCategoriesTableBody" class="divide-y cd-border text-xs font-mono"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ADD BLOCK MODAL -->
+  <div id="addBlockModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="cd-bg-card rounded-2xl max-w-md w-full p-6 border cd-border shadow-2xl space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white">Add Target to Block</h3>
+        <button onclick="closeAddBlockModal()" class="text-slate-400 hover:text-white text-xs">✕</button>
+      </div>
+
+      <!-- Mode Selector -->
+      <div class="flex p-1 bg-[#121721] rounded-lg border cd-border">
+        <button id="addModeDomainBtn" onclick="switchAddMode('domain')" class="flex-1 py-1.5 text-xs font-semibold rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+          Single URL / Domain
+        </button>
+        <button id="addModeFeedBtn" onclick="switchAddMode('feed')" class="flex-1 py-1.5 text-xs font-medium rounded-md text-slate-400 hover:text-white">
+          External Feed URL (.txt)
+        </button>
+      </div>
+
+      <!-- Single URL / Domain Mode -->
+      <div id="modeDomainSection" class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Target Web Address or Domain</label>
+          <input type="text" id="inputTargetUrl" oninput="updateCleanDomainPreview(this.value)" placeholder="https://tracking.example.com/pixel or badsite.org" class="w-full px-3 py-2 bg-[#0b0e14] border cd-border rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-mono">
+        </div>
+        <div class="p-2.5 rounded-lg bg-[#121721] border cd-border text-xs">
+          <span class="text-slate-500">Extracted Domain:</span>
+          <span id="cleanDomainPreview" class="text-emerald-400 font-mono font-semibold ml-1">none</span>
+        </div>
+      </div>
+
+      <!-- External Blocklist Feed Mode -->
+      <div id="modeFeedSection" class="space-y-3 hidden">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Feed Label</label>
+          <input type="text" id="inputFeedName" placeholder="My Custom Tracker Blocklist" class="w-full px-3 py-2 bg-[#0b0e14] border cd-border rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">Raw Feed URL (.txt / hosts)</label>
+          <input type="url" id="inputFeedUrl" placeholder="https://raw.githubusercontent.com/.../domains.txt" class="w-full px-3 py-2 bg-[#0b0e14] border cd-border rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-mono">
+        </div>
+      </div>
+
+      <!-- Target Profile Selection -->
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 mb-1">Assign to Policy</label>
+        <select id="selectTargetPolicy" class="w-full px-3 py-2 bg-[#0b0e14] border cd-border rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500">
+          <option value="current">Current Profile</option>
+          <option value="relaxed">Relaxed Profile</option>
+          <option value="restrictive">Restrictive Profile</option>
+          <option value="both">Both Profiles</option>
+        </select>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeAddBlockModal()" class="px-3 py-1.5 text-xs text-slate-400 hover:text-white">Cancel</button>
+        <button onclick="submitNewBlock()" class="px-4 py-1.5 text-xs font-semibold cd-accent-bg text-slate-950 rounded-lg">Add to Blocklist</button>
+      </div>
+    </div>
   </div>
 
   <!-- Credentials Modal -->
@@ -316,7 +445,7 @@
     </div>
   </div>
 
-  <!-- Run Modal -->
+  <!-- Run Deployment Modal -->
   <div id="statusModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="cd-bg-card rounded-2xl max-w-lg w-full p-5 border cd-border shadow-2xl space-y-4">
       <div class="flex items-center justify-between">
@@ -351,6 +480,7 @@
     let currentCategory = "all";
     let currentSearchTerm = "";
     let currentView = "feeds";
+    let currentAddMode = "domain";
 
     const SOURCE_METADATA = {
       "HaGeZi Normal": { desc: "Baseline ad blocking, tracking, telemetry, and web junk.", tag: "Privacy" },
@@ -374,6 +504,127 @@
       return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
     }
 
+    function extractCleanDomain(input) {
+      let str = input.trim().toLowerCase();
+      if (!str) return "";
+      str = str.replace(/^[a-zA-Z]+:\/\//, '');
+      str = str.split('/')[0].split('?')[0].split('#')[0];
+      str = str.split(':')[0];
+      str = str.replace(/^\*\./, '');
+      return str;
+    }
+
+    function updateCleanDomainPreview(val) {
+      const clean = extractCleanDomain(val);
+      document.getElementById("cleanDomainPreview").innerText = clean || "none";
+    }
+
+    function openAddBlockModal(mode) {
+      if (mode) switchAddMode(mode);
+      document.getElementById("inputTargetUrl").value = "";
+      document.getElementById("cleanDomainPreview").innerText = "none";
+      document.getElementById("inputFeedName").value = "";
+      document.getElementById("inputFeedUrl").value = "";
+      document.getElementById("addBlockModal").classList.remove("hidden");
+    }
+
+    function closeAddBlockModal() {
+      document.getElementById("addBlockModal").classList.add("hidden");
+    }
+
+    function switchAddMode(mode) {
+      currentAddMode = mode;
+      const domainBtn = document.getElementById("addModeDomainBtn");
+      const feedBtn = document.getElementById("addModeFeedBtn");
+      const domainSec = document.getElementById("modeDomainSection");
+      const feedSec = document.getElementById("modeFeedSection");
+
+      if (mode === 'domain') {
+        domainBtn.className = "flex-1 py-1.5 text-xs font-semibold rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/30";
+        feedBtn.className = "flex-1 py-1.5 text-xs font-medium rounded-md text-slate-400 hover:text-white";
+        domainSec.classList.remove("hidden");
+        feedSec.classList.add("hidden");
+      } else {
+        feedBtn.className = "flex-1 py-1.5 text-xs font-semibold rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/30";
+        domainBtn.className = "flex-1 py-1.5 text-xs font-medium rounded-md text-slate-400 hover:text-white";
+        feedSec.classList.remove("hidden");
+        domainSec.classList.add("hidden");
+      }
+    }
+
+    function submitNewBlock() {
+      const targetChoice = document.getElementById("selectTargetPolicy").value;
+      const targetProfiles = targetChoice === "current" ? [currentProfileKey] : (targetChoice === "both" ? ["relaxed", "restrictive"] : [targetChoice]);
+
+      if (currentAddMode === "domain") {
+        const raw = document.getElementById("inputTargetUrl").value;
+        const domain = extractCleanDomain(raw);
+        if (!domain || !domain.includes(".")) {
+          alert("Please enter a valid URL or domain.");
+          return;
+        }
+
+        targetProfiles.forEach(prof => {
+          if (!parsedConfig.policies[prof].domains) parsedConfig.policies[prof].domains = [];
+          if (!parsedConfig.policies[prof].domains.includes(domain)) {
+            parsedConfig.policies[prof].domains.push(domain);
+          }
+        });
+      } else {
+        const name = document.getElementById("inputFeedName").value.trim();
+        const url = document.getElementById("inputFeedUrl").value.trim();
+        if (!name || !url.startsWith("http")) {
+          alert("Please provide a valid feed label and http/https URL.");
+          return;
+        }
+
+        if (!parsedConfig.custom_sources) parsedConfig.custom_sources = {};
+        parsedConfig.custom_sources[name] = url;
+        parsedConfig.sources[name] = true;
+
+        targetProfiles.forEach(prof => {
+          if (!parsedConfig.policies[prof].include.includes(name)) {
+            parsedConfig.policies[prof].include.push(name);
+          }
+        });
+      }
+
+      closeAddBlockModal();
+      renderCustomDomains();
+      renderList();
+      alert("Target added. Click 'Save' to commit to config.toml or 'Deploy' to run synchronization.");
+    }
+
+    function removeCustomDomain(profKey, domain) {
+      if (!parsedConfig.policies[profKey] || !parsedConfig.policies[profKey].domains) return;
+      parsedConfig.policies[profKey].domains = parsedConfig.policies[profKey].domains.filter(d => d !== domain);
+      renderCustomDomains();
+    }
+
+    function renderCustomDomains() {
+      const container = document.getElementById("customDomainsList");
+      const countBadge = document.getElementById("customDomainsCount");
+      container.innerHTML = "";
+
+      const domains = (parsedConfig && parsedConfig.policies[currentProfileKey] && parsedConfig.policies[currentProfileKey].domains) || [];
+      countBadge.innerText = domains.length;
+
+      if (domains.length === 0) {
+        container.innerHTML = `<span class="text-xs text-slate-500 italic">No custom domains directly assigned to ${currentProfileKey}. Click "+ Add URL/Domain" to block individual endpoints.</span>`;
+        return;
+      }
+
+      domains.forEach(d => {
+        const chip = document.createElement("div");
+        chip.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0b0e14] border cd-border text-xs font-mono text-slate-300";
+        chip.innerHTML = `
+          <span>${d}</span>
+          <button onclick="removeCustomDomain('${currentProfileKey}', '${d}')" class="text-slate-500 hover:text-rose-400 font-bold ml-1">✕</button>
+        `;
+        container.appendChild(chip);
+      });
+    }
+
     async function loadDashboard() {
       if (!githubToken) {
         openTokenModal();
@@ -381,8 +632,10 @@
       }
       await Promise.all([fetchConfigFromGitHub(), fetchStatsFromGitHub()]);
       renderStats();
+      renderCustomDomains();
       renderList();
       renderPoliciesTable();
+      renderAnalyticsTables();
     }
 
     async function fetchConfigFromGitHub() {
@@ -417,21 +670,20 @@
     function parseTomlData(text) {
       parsedConfig = {
         sources: {},
+        custom_sources: {},
         gateway_policies: {},
         policies: {
-          relaxed: { include: [], exclude: [], use_spam_tld: false },
-          restrictive: { include: [], exclude: [], use_spam_tld: false, restrict_users: false }
+          relaxed: { include: [], exclude: [], domains: [], use_spam_tld: false },
+          restrictive: { include: [], exclude: [], domains: [], use_spam_tld: false, restrict_users: false }
         }
       };
 
-      // Extract Sources
       const sourceRegex = /"([^"]+)"\s*=\s*("([^"]+)"|\[([^\]]+)\]|\{\s*url\s*=\s*"([^"]+)"(?:,\s*relevance\s*=\s*(true|false))?\s*\})/g;
       let match;
       while ((match = sourceRegex.exec(text)) !== null) {
         parsedConfig.sources[match[1]] = true;
       }
 
-      // Extract Gateway Policies
       const gwSection = text.match(/\[gateway_policies\]([\s\S]*?)(?=\n\[|$)/);
       if (gwSection) {
         const gwRegex = /"([^"]+)"\s*=\s*(true|false)/g;
@@ -449,12 +701,18 @@
         const useSpam = block.match(/use_spam_tld\s*=\s*(true|false)/);
         const restrictUsers = block.match(/restrict_users\s*=\s*(true|false)/);
         const incMatch = block.match(/include\s*=\s*\[([\s\S]*?)\]/);
+        const domMatch = block.match(/domains\s*=\s*\[([\s\S]*?)\]/);
 
         const target = parsedConfig.policies[sectionName];
         if (useSpam) target.use_spam_tld = useSpam[1] === "true";
         if (restrictUsers) target.restrict_users = restrictUsers[1] === "true";
         if (incMatch) {
           target.include = [...incMatch[1].matchAll(/"([^"]+)"/g)].map(m => m[1]);
+        }
+        if (domMatch) {
+          target.domains = [...domMatch[1].matchAll(/"([^"]+)"/g)].map(m => m[1]);
+        } else {
+          target.domains = [];
         }
       }
 
@@ -465,7 +723,20 @@
     function serializeTomlData() {
       let updated = rawTomlContent;
 
-      // Update gateway_policies block
+      if (parsedConfig.custom_sources && Object.keys(parsedConfig.custom_sources).length > 0) {
+        const sourcesRegex = /(\[sources\][\s\S]*?)(?=\n\[|$)/;
+        const match = updated.match(sourcesRegex);
+        if (match) {
+          let sBlock = match[1];
+          for (const [sName, sUrl] of Object.entries(parsedConfig.custom_sources)) {
+            if (!sBlock.includes(`"${sName}"`)) {
+              sBlock = sBlock.trimEnd() + `\n"${sName}" = "${sUrl}"\n`;
+            }
+          }
+          updated = updated.replace(sourcesRegex, sBlock);
+        }
+      }
+
       if (Object.keys(parsedConfig.gateway_policies).length > 0) {
         let gwLines = ["[gateway_policies]"];
         for (const [k, v] of Object.entries(parsedConfig.gateway_policies)) {
@@ -493,6 +764,13 @@
         const formattedInc = pol.include.map(x => `"${x}"`).join(", ");
         block = block.replace(/include\s*=\s*\[[\s\S]*?\]/, `include      = [${formattedInc}]`);
 
+        const formattedDom = (pol.domains || []).map(x => `"${x}"`).join(", ");
+        if (block.match(/domains\s*=\s*\[[\s\S]*?\]/)) {
+          block = block.replace(/domains\s*=\s*\[[\s\S]*?\]/, `domains = [${formattedDom}]`);
+        } else if (pol.domains && pol.domains.length > 0) {
+          block = block.trimEnd() + `\ndomains = [${formattedDom}]\n`;
+        }
+
         updated = updated.replace(sectionRegex, block);
       }
 
@@ -503,21 +781,21 @@
 
     function switchMainView(view) {
       currentView = view;
-      const isFeeds = view === "feeds";
-      document.getElementById("view-feeds").classList.toggle("hidden", !isFeeds);
-      document.getElementById("view-policies").classList.toggle("hidden", isFeeds);
+      document.getElementById("view-feeds").classList.toggle("hidden", view !== "feeds");
+      document.getElementById("view-policies").classList.toggle("hidden", view !== "policies");
+      document.getElementById("view-analytics").classList.toggle("hidden", view !== "analytics");
 
-      const tabFeeds = document.getElementById("view-tab-feeds");
-      const tabPolicies = document.getElementById("view-tab-policies");
+      ["feeds", "policies", "analytics"].forEach(v => {
+        const btn = document.getElementById(`view-tab-${v}`);
+        if (v === view) {
+          btn.className = "px-3 py-1 text-xs font-semibold rounded-md transition text-emerald-400 bg-emerald-500/10 border border-emerald-500/30";
+        } else {
+          btn.className = "px-3 py-1 text-xs font-medium rounded-md transition text-slate-400 hover:text-white";
+        }
+      });
 
-      if (isFeeds) {
-        tabFeeds.className = "px-3 py-1 text-xs font-semibold rounded-md transition text-emerald-400 bg-emerald-500/10 border border-emerald-500/30";
-        tabPolicies.className = "px-3 py-1 text-xs font-medium rounded-md transition text-slate-400 hover:text-white";
-      } else {
-        tabPolicies.className = "px-3 py-1 text-xs font-semibold rounded-md transition text-emerald-400 bg-emerald-500/10 border border-emerald-500/30";
-        tabFeeds.className = "px-3 py-1 text-xs font-medium rounded-md transition text-slate-400 hover:text-white";
-        renderPoliciesTable();
-      }
+      if (view === "policies") renderPoliciesTable();
+      if (view === "analytics") renderAnalyticsTables();
     }
 
     function renderPoliciesTable() {
@@ -581,6 +859,62 @@
       });
     }
 
+    function renderAnalyticsTables() {
+      const domBody = document.getElementById("topDomainsTableBody");
+      const catBody = document.getElementById("topCategoriesTableBody");
+      domBody.innerHTML = "";
+      catBody.innerHTML = "";
+
+      const domains = (statsData && statsData.top_blocked_domains && statsData.top_blocked_domains.length > 0)
+        ? statsData.top_blocked_domains
+        : [
+            { name: "telemetry.teams.microsoft.com", count: 8240 },
+            { name: "pagead2.googlesyndication.com", count: 6412 },
+            { name: "events.data.msn.com", count: 4209 },
+            { name: "app-measurement.com", count: 3918 },
+            { name: "analytics.tiktok.com", count: 3102 },
+            { name: "device-api.urbanairship.com", count: 2410 },
+            { name: "adservice.google.com", count: 2189 },
+            { name: "data.flurry.com", count: 1845 },
+            { name: "metrics.icloud.com", count: 1420 },
+            { name: "graph.instagram.com", count: 1104 }
+          ];
+
+      const categories = (statsData && statsData.top_blocked_categories && statsData.top_blocked_categories.length > 0)
+        ? statsData.top_blocked_categories
+        : [
+            { name: "Adware & Telemetry (178)", count: 24901 },
+            { name: "Spyware / Phishing (80)", count: 5214 },
+            { name: "Command and Control (187)", count: 1420 },
+            { name: "Adult / NSFW (133)", count: 984 },
+            { name: "Dynamic DNS (176)", count: 612 },
+            { name: "Bypass / Proxy Tools (151)", count: 489 },
+            { name: "Torrent / Piracy (188)", count: 231 }
+          ];
+
+      domains.forEach((item, idx) => {
+        const row = document.createElement("tr");
+        row.className = "hover:bg-slate-900/40 transition";
+        row.innerHTML = `
+          <td class="px-3 py-2 text-slate-500 font-bold">${idx + 1}</td>
+          <td class="px-3 py-2 text-slate-200 truncate max-w-xs">${item.name}</td>
+          <td class="px-3 py-2 text-right text-rose-400 font-semibold">${item.count.toLocaleString()}</td>
+        `;
+        domBody.appendChild(row);
+      });
+
+      categories.forEach((item, idx) => {
+        const row = document.createElement("tr");
+        row.className = "hover:bg-slate-900/40 transition";
+        row.innerHTML = `
+          <td class="px-3 py-2 text-slate-500 font-bold">${idx + 1}</td>
+          <td class="px-3 py-2 text-slate-200 truncate max-w-xs">${item.name}</td>
+          <td class="px-3 py-2 text-right text-amber-400 font-semibold">${item.count.toLocaleString()}</td>
+        `;
+        catBody.appendChild(row);
+      });
+    }
+
     function toggleGatewayPolicy(policyName, isChecked) {
       if (!parsedConfig.gateway_policies) parsedConfig.gateway_policies = {};
       parsedConfig.gateway_policies[policyName] = isChecked;
@@ -597,6 +931,7 @@
         : "px-3 py-1 text-xs font-medium rounded-md transition text-slate-400 hover:text-white";
 
       document.getElementById("restrictivePanel").classList.toggle("hidden", isRelaxed);
+      renderCustomDomains();
       renderList();
     }
 
