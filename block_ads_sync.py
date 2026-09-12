@@ -185,7 +185,7 @@ class CloudflareAPI:
                 }
               }
               topBlockedDomains: gatewayResolverQueriesAdaptiveGroups(
-                limit: 15
+                limit: 50
                 filter: {datetime_geq: $start, resolverDecision: "block"}
                 orderBy: [count_DESC]
               ) {
@@ -247,7 +247,6 @@ class CloudflareAPI:
             "top_devices": []
         }
 
-        # Query 1: Core Traffic, Rules, Domains, Users & Devices
         try:
             resp = self.session.post(
                 self.graphql_url,
@@ -257,7 +256,7 @@ class CloudflareAPI:
             )
             payload = resp.json()
             if "errors" in payload and payload["errors"]:
-                logger.warning(f"Core GraphQL returned issues: {payload['errors']}")
+                logger.warning(f"GraphQL notice: {payload['errors']}")
 
             data_obj = payload.get("data") or {}
             viewer = data_obj.get("viewer") or {}
@@ -305,9 +304,8 @@ class CloudflareAPI:
                     analytics["top_devices"].append({"name": d, "count": row.get("count", 0)})
 
         except Exception as e:
-            logger.warning(f"Could not retrieve primary GraphQL analytics: {e}")
+            logger.warning(f"GraphQL primary query exception: {e}")
 
-        # Query 2: Category Breakdown
         try:
             resp_cat = self.session.post(
                 self.graphql_url,
@@ -332,7 +330,7 @@ class CloudflareAPI:
                         "count": row.get("count", 0)
                     })
         except Exception as e:
-            logger.warning(f"Could not retrieve category analytics: {e}")
+            logger.warning(f"Category analytics exception: {e}")
 
         return analytics
 
@@ -373,6 +371,23 @@ def has_suffix_match(host: str, lookup_set: set[str]) -> bool:
             return True
         idx = host.find(".", idx + 1)
     return False
+
+def find_matching_sources(host: str, domain_to_sources: dict[str, set[str]], spam_tlds: set[str] = None) -> list[str]:
+    matched = set()
+    if host in domain_to_sources:
+        matched.update(domain_to_sources[host])
+    
+    idx = host.find(".")
+    while idx != -1:
+        parent = host[idx + 1:]
+        if parent in domain_to_sources:
+            matched.update(domain_to_sources[parent])
+        idx = host.find(".", idx + 1)
+
+    if spam_tlds and host.rsplit(".", 1)[-1] in spam_tlds:
+        matched.add("Spam TLD Shield")
+
+    return sorted(matched)
 
 def is_valid_domain(domain: str) -> str | None:
     d = domain.strip().lower().removeprefix("*.").strip(".")
@@ -480,7 +495,7 @@ def fetch_spam_tlds(session: requests.Session, url: str, timeout: tuple) -> tupl
         expr = rf'any(dns.domains[*] matches "(?i)\.({"|".join(sorted(tlds))})$")' if tlds else ""
         return expr, tlds
     except Exception as e:
-        logger.error(f"TLD list compilation failed: {e}")
+        logger.error(f"TLD compilation failed: {e}")
         return "", set()
 
 def optimize_domains(domains: set[str]) -> tuple[list[str], int]:
@@ -724,6 +739,8 @@ def main() -> None:
 
     fetched = {}
     sources_stats = {}
+    domain_to_sources: dict[str, set[str]] = {}
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(fetch_feed_source, session, s["name"], s["urls"], checker if s.get("enable_relevance") else None, timeout): s["name"]
@@ -735,6 +752,12 @@ def main() -> None:
                 name, kept, pruned, raw = f.result()
                 fetched[name] = {"domains": kept}
                 sources_stats[name] = {"raw": raw, "kept": len(kept), "pruned_relevance": pruned}
+                
+                # Invert feed index for fast reverse lookup
+                for d in kept:
+                    if d not in domain_to_sources:
+                        domain_to_sources[d] = set()
+                    domain_to_sources[d].add(name)
             except Exception as e:
                 if name == "HaGeZi Normal":
                     logger.critical(f"Critical baseline failure ({name}): {e}")
@@ -769,7 +792,7 @@ def main() -> None:
 
     duration = time.perf_counter() - start
 
-    # GraphQL Analytics ingestion
+    # Fetch GraphQL analytics
     analytics = cf.get_graphql_analytics()
     fresh_rules = cf.get_rules()
 
@@ -784,6 +807,42 @@ def main() -> None:
             "usage_7d": analytics["rules_usage"].get(rid, 0),
             "updated_at": r.get("updated_at", "")
         })
+
+    # Reverse-map blocked domains to upstream blocklist sources
+    attributed_domains = []
+    source_hits: dict[str, int] = {s["name"]: 0 for s in sources}
+    source_hits["Spam TLD Shield"] = 0
+    source_hits["Custom Policy Rules"] = 0
+
+    custom_domains_pool = set()
+    for p in policies:
+        custom_domains_pool.update(p.get("domains", []))
+
+    for item in analytics["top_domains"]:
+        d_name = item["name"]
+        cnt = item["count"]
+        matched_feeds = find_matching_sources(d_name, domain_to_sources, spam_tlds)
+        
+        if d_name in custom_domains_pool or any(d_name.endswith(f".{cd}") for cd in custom_domains_pool):
+            matched_feeds.append("Custom Policy Rules")
+
+        if not matched_feeds:
+            matched_feeds = ["Direct Policy/Category Match"]
+
+        for feed in matched_feeds:
+            source_hits[feed] = source_hits.get(feed, 0) + cnt
+
+        attributed_domains.append({
+            "name": d_name,
+            "count": cnt,
+            "sources": matched_feeds
+        })
+
+    top_blocklist_sources = [
+        {"name": feed, "count": hits}
+        for feed, hits in sorted(source_hits.items(), key=lambda x: x[1], reverse=True)
+        if hits > 0
+    ]
 
     stats_data = {
         "last_sync": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -800,7 +859,8 @@ def main() -> None:
         },
         "cloudflare_rules": compiled_rules_telemetry,
         "daily_trends": analytics["daily_trends"],
-        "top_blocked_domains": analytics["top_domains"],
+        "top_blocklist_sources": top_blocklist_sources,
+        "top_blocked_domains": attributed_domains,
         "top_blocked_categories": analytics["top_categories"],
         "top_blocked_users": analytics["top_users"],
         "top_blocked_devices": analytics["top_devices"],
@@ -811,7 +871,7 @@ def main() -> None:
     with open("stats.json", "w", encoding="utf-8") as f:
         json.dump(stats_data, f, indent=2)
 
-    logger.info(f"Sync complete in {duration:.2f}s. Saved run telemetry and extended analytics to stats.json.")
+    logger.info(f"Sync complete in {duration:.2f}s. Saved blocklist attribution matrix to stats.json.")
 
 if __name__ == "__main__":
     main()
