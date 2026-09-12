@@ -1,6 +1,6 @@
 {
-  "last_sync": "2026-09-12T20:23:29.502516+00:00",
-  "duration_seconds": 49.81,
+  "last_sync": "2026-09-12T20:35:05.304393+00:00",
+  "duration_seconds": 31.97,
   "total_quota": 300000,
   "total_domains_synced": 175782,
   "total_lists_used": 177,
@@ -90,7 +90,7 @@
       "action": "block",
       "enabled": true,
       "usage_7d": 0,
-      "updated_at": "2026-09-12T20:23:13Z"
+      "updated_at": "2026-09-12T20:35:04Z"
     },
     {
       "id": "95509161-25a2-4d63-a203-9d2e79e47552",
@@ -101,6 +101,11 @@
       "updated_at": "2026-09-12T20:23:28Z"
     }
   ],
+  "daily_trends": [],
+  "top_blocked_domains": [],
+  "top_blocked_categories": [],
+  "top_blocked_users": [],
+  "top_blocked_devices": [],
   "policies": {
     "L_Relaxed": {
       "name": "Block: Relaxed Profile",
@@ -128,35 +133,30 @@
     }
   },
   "sources": {
-    "HaGeZi Social": {
-      "raw": 900,
-      "kept": 548,
-      "pruned_relevance": 352
-    },
     "HaGeZi No SafeSearch": {
       "raw": 203,
       "kept": 111,
       "pruned_relevance": 92
+    },
+    "HaGeZi Social": {
+      "raw": 900,
+      "kept": 548,
+      "pruned_relevance": 352
     },
     "HaGeZi Fake": {
       "raw": 16708,
       "kept": 546,
       "pruned_relevance": 16162
     },
-    "HaGeZi DynDNS": {
-      "raw": 1533,
-      "kept": 651,
-      "pruned_relevance": 882
-    },
     "HaGeZi Bypass Prevention": {
       "raw": 16284,
       "kept": 5444,
       "pruned_relevance": 10840
     },
-    "HaGeZi Anti Piracy": {
-      "raw": 49310,
-      "kept": 4818,
-      "pruned_relevance": 44492
+    "HaGeZi DynDNS": {
+      "raw": 1533,
+      "kept": 651,
+      "pruned_relevance": 882
     },
     "NoAI": {
       "raw": 2220,
@@ -167,6 +167,11 @@
       "raw": 8702,
       "kept": 8702,
       "pruned_relevance": 0
+    },
+    "HaGeZi Anti Piracy": {
+      "raw": 49310,
+      "kept": 4818,
+      "pruned_relevance": 44492
     },
     "HaGeZi Spam Allow": {
       "raw": 1021,
