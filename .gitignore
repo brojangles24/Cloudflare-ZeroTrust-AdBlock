@@ -1,0 +1,3 @@
+.relevance_cache.gz
+__pycache__/
+*.py[cod]
