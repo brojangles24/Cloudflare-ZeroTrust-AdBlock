@@ -2,26 +2,35 @@ name: Cloudflare Gateway Sync
 
 on:
   schedule:
-    - cron: '0 1 * * *' 
+    - cron: '0 1,13 * * *'
   workflow_dispatch:
+
+concurrency:
+  group: cloudflare-gateway-sync
+  cancel-in-progress: false
 
 jobs:
   run-sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     permissions:
       contents: write
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install Dependencies
-        run: pip install requests
+        run: python -m pip install --upgrade pip requests
 
       - name: Run Sync
         env:
@@ -31,16 +40,23 @@ jobs:
           SECONDARY_EMAIL: ${{ secrets.SECONDARY_EMAIL }}
           TERTIARY_EMAIL: ${{ secrets.TERTIARY_EMAIL }}
           ACTIVE_TIER: ${{ vars.ACTIVE_TIER }}
-        run: python3 block_ads_sync.py
+          USE_SPAM_TLD_RELAXED: ${{ vars.USE_SPAM_TLD_RELAXED }}
+          USE_SPAM_TLD_RESTRICTIVE: ${{ vars.USE_SPAM_TLD_RESTRICTIVE }}
+        run: python block_ads_sync.py
 
       - name: Commit and Push Changes
+        if: success()
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add aggregate_blocklist.txt
+
+          git add aggregate_blocklist.txt state/
+
           if git diff --cached --quiet; then
-            echo "No changes detected in aggregate_blocklist.txt. Skipping commit."
-          else
-            git commit -m "chore: automated blocklist matrix sync [skip ci]"
-            git push
+            echo "No generated changes detected. Skipping commit."
+            exit 0
           fi
+
+          git commit -m "chore: automated Cloudflare Gateway sync [skip ci]"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
