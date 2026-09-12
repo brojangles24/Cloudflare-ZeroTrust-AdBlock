@@ -38,6 +38,7 @@ DEFAULT_TOP_LISTS = [
     {"url": "https://builtwith.com/dl/builtwith-top1m.zip", "col": 0, "skip_header": False, "compression": "zip"},
     {"url": "https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip", "col": 1, "skip_header": False, "compression": "zip"},
 ]
+
 CF_CATEGORY_MAP = {
     178: "Adware & Telemetry",
     80: "Spyware & Phishing",
@@ -184,12 +185,12 @@ class CloudflareAPI:
           viewer {
             accounts(filter: {accountTag: $accountTag}) {
               dailyTrends: gatewayResolverQueriesAdaptiveGroups(
-                limit: 100
+                limit: 500
                 filter: {datetime_geq: $start}
               ) {
                 count
                 dimensions {
-                  datetimeDay
+                  datetime
                   resolverDecision
                 }
               }
@@ -274,7 +275,8 @@ class CloudflareAPI:
             daily_map = {}
             for row in acc_data.get("dailyTrends") or []:
                 dims = row.get("dimensions") or {}
-                day = dims.get("datetimeDay")
+                raw_dt = dims.get("datetime") or ""
+                day = raw_dt[:10]
                 dec = (dims.get("resolverDecision") or "").lower()
                 cnt = row.get("count", 0)
                 if day:
