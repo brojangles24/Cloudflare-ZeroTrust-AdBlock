@@ -55,7 +55,6 @@
       transform: translateX(20px);
       background-color: #052e16;
     }
-
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #0b0e14; }
     ::-webkit-scrollbar-thumb { background: #222b3d; border-radius: 3px; }
@@ -63,12 +62,12 @@
 </head>
 <body class="min-h-screen flex flex-col antialiased selection:bg-emerald-500/20 selection:text-emerald-300">
 
-  <!-- Navigation -->
+  <!-- Header -->
   <header class="border-b cd-border bg-[#0b0e14]/90 backdrop-blur sticky top-0 z-40">
     <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
       <div class="flex items-center gap-6">
         <div class="flex items-center gap-3">
-          <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-display font-bold">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
@@ -78,43 +77,27 @@
 
         <div class="h-5 w-[1px] bg-slate-800"></div>
 
-        <div class="relative">
-          <button id="profileDropdownBtn" onclick="toggleProfileMenu()" class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg cd-bg-surface border cd-border hover:border-slate-700 transition text-xs font-medium text-slate-200">
-            <span class="h-2 w-2 rounded-full bg-emerald-400"></span>
-            <span id="activeProfileLabel">Relaxed Profile</span>
-            <svg class="w-3.5 h-3.5 text-slate-400 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-            </svg>
+        <!-- View Switcher -->
+        <div class="flex items-center p-1 bg-[#121721] rounded-lg border cd-border">
+          <button id="view-tab-feeds" onclick="switchMainView('feeds')" class="px-3 py-1 text-xs font-semibold rounded-md transition text-emerald-400 bg-emerald-500/10 border border-emerald-500/30">
+            Threat Feeds
           </button>
-          
-          <div id="profileMenu" class="hidden absolute top-full left-0 mt-1.5 w-52 cd-bg-surface border cd-border rounded-xl shadow-2xl p-1 z-50">
-            <button onclick="switchProfile('relaxed')" class="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs hover:bg-slate-800 text-left transition">
-              <div>
-                <div class="font-semibold text-white">Relaxed</div>
-                <div class="text-[10px] text-slate-400">Network baseline blocklist</div>
-              </div>
-              <span id="check-relaxed" class="text-emerald-400 font-bold">✓</span>
-            </button>
-            <button onclick="switchProfile('restrictive')" class="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs hover:bg-slate-800 text-left transition">
-              <div>
-                <div class="font-semibold text-white">Restrictive</div>
-                <div class="text-[10px] text-slate-400">Strict blocks & app filters</div>
-              </div>
-              <span id="check-restrictive" class="text-emerald-400 font-bold hidden">✓</span>
-            </button>
-          </div>
+          <button id="view-tab-policies" onclick="switchMainView('policies')" class="px-3 py-1 text-xs font-medium rounded-md transition text-slate-400 hover:text-white">
+            Gateway Policies
+          </button>
         </div>
       </div>
 
+      <!-- Actions -->
       <div class="flex items-center gap-3">
-        <button onclick="openTokenModal()" class="p-2 text-slate-400 hover:text-white cd-bg-surface border cd-border hover:border-slate-700 rounded-lg transition" title="GitHub Credentials">
+        <button onclick="openTokenModal()" class="p-2 text-slate-400 hover:text-white cd-bg-surface border cd-border rounded-lg transition" title="GitHub Credentials">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
         </button>
 
-        <button id="commitBtn" onclick="commitConfig()" class="px-3.5 py-1.5 text-xs font-semibold text-slate-200 cd-bg-surface hover:bg-slate-800 border cd-border hover:border-slate-700 rounded-lg transition">
+        <button id="commitBtn" onclick="commitConfig()" class="px-3.5 py-1.5 text-xs font-semibold text-slate-200 cd-bg-surface hover:bg-slate-800 border cd-border rounded-lg transition">
           Save
         </button>
 
@@ -128,7 +111,7 @@
     </div>
   </header>
 
-  <!-- Telemetry Metrics Bar -->
+  <!-- Metrics Section -->
   <section class="border-b cd-border bg-[#0e121a]">
     <div class="max-w-7xl mx-auto px-6 py-5">
       <div class="flex items-center justify-between mb-3">
@@ -141,7 +124,6 @@
         </div>
       </div>
 
-      <!-- Stat Cards -->
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <div class="cd-bg-surface border cd-border rounded-xl p-3">
           <div class="text-[10px] text-slate-500 uppercase font-semibold">Active In Gateway</div>
@@ -174,7 +156,6 @@
         </div>
       </div>
 
-      <!-- Quota Usage Bar -->
       <div class="mt-4 pt-3 border-t cd-border flex flex-col gap-1.5">
         <div class="flex items-center justify-between text-xs font-mono">
           <span class="text-slate-400">Gateway Quota Utilization</span>
@@ -187,99 +168,132 @@
     </div>
   </section>
 
-  <!-- Filter Controls Subheader -->
-  <div class="border-b cd-border bg-[#0b0e14]">
-    <div class="max-w-7xl mx-auto px-6 py-3 flex flex-wrap items-center justify-between gap-4">
-      <div class="flex items-center gap-1">
-        <button onclick="setCategoryFilter('all')" id="tab-cat-all" class="px-3 py-1.5 text-xs font-medium rounded-lg text-emerald-400 bg-emerald-500/10 border border-emerald-500/30">
-          All Filters
-        </button>
-        <button onclick="setCategoryFilter('Security')" id="tab-cat-Security" class="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
-          Security
-        </button>
-        <button onclick="setCategoryFilter('Privacy')" id="tab-cat-Privacy" class="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
-          Privacy
-        </button>
-        <button onclick="setCategoryFilter('Content')" id="tab-cat-Content" class="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
-          Content
-        </button>
-        <button onclick="setCategoryFilter('Productivity')" id="tab-cat-Productivity" class="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
-          Productivity
-        </button>
-      </div>
+  <!-- VIEW 1: THREAT FEEDS -->
+  <div id="view-feeds" class="flex-1 flex flex-col">
+    <!-- Toolbar -->
+    <div class="border-b cd-border bg-[#0b0e14]">
+      <div class="max-w-7xl mx-auto px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <!-- Profile Toggle Switcher -->
+          <div class="flex items-center p-1 bg-[#121721] rounded-lg border cd-border">
+            <button id="tab-relaxed" onclick="switchProfile('relaxed')" class="px-3 py-1 text-xs font-semibold rounded-md transition bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              Relaxed Profile
+            </button>
+            <button id="tab-restrictive" onclick="switchProfile('restrictive')" class="px-3 py-1 text-xs font-medium rounded-md transition text-slate-400 hover:text-white">
+              Restrictive Profile
+            </button>
+          </div>
 
-      <div class="flex items-center gap-4">
-        <div class="relative">
-          <input type="text" id="searchInput" oninput="handleSearch(this.value)" placeholder="Filter lists..." class="w-56 pl-8 pr-3 py-1.5 bg-[#121721] border cd-border rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500 transition placeholder-slate-500">
-          <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+          <div class="flex items-center gap-1">
+            <button onclick="setCategoryFilter('all')" id="tab-cat-all" class="px-3 py-1 text-xs font-medium rounded-lg text-emerald-400 bg-emerald-500/10 border border-emerald-500/30">
+              All
+            </button>
+            <button onclick="setCategoryFilter('Security')" id="tab-cat-Security" class="px-3 py-1 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
+              Security
+            </button>
+            <button onclick="setCategoryFilter('Privacy')" id="tab-cat-Privacy" class="px-3 py-1 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
+              Privacy
+            </button>
+            <button onclick="setCategoryFilter('Content')" id="tab-cat-Content" class="px-3 py-1 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
+              Content
+            </button>
+            <button onclick="setCategoryFilter('Productivity')" id="tab-cat-Productivity" class="px-3 py-1 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition">
+              Productivity
+            </button>
+          </div>
         </div>
 
-        <div class="text-xs text-slate-500 font-mono">
-          Active: <span id="activeCountDisplay" class="text-emerald-400 font-semibold">0</span>
+        <div class="flex items-center gap-4">
+          <input type="text" id="searchInput" oninput="handleSearch(this.value)" placeholder="Search feeds..." class="w-56 pl-3 pr-3 py-1.5 bg-[#121721] border cd-border rounded-lg text-xs text-slate-200 focus:outline-none focus:border-emerald-500 transition placeholder-slate-500">
+          <div class="text-xs text-slate-500 font-mono">
+            Active: <span id="activeCountDisplay" class="text-emerald-400 font-semibold">0</span>
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- Feed Content -->
+    <main class="max-w-7xl mx-auto px-6 py-6 flex-1 w-full space-y-6">
+      <div id="restrictivePanel" class="hidden cd-bg-card border cd-border rounded-xl p-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-white">Authorized Account Bypass</div>
+            <div class="text-[11px] text-slate-400">Secondary and tertiary emails bypass restrictive blocks</div>
+          </div>
+        </div>
+        <label class="cd-switch">
+          <input type="checkbox" id="restrictUsersToggle" onchange="toggleRestrictUsers(this.checked)">
+          <span class="cd-slider"></span>
+        </label>
+      </div>
+
+      <div class="cd-bg-card border cd-border rounded-xl p-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-white">Spam TLD Wildcard Shield</div>
+            <div class="text-[11px] text-slate-400">Applies regex wildcard block and prunes individual domains from lists</div>
+          </div>
+        </div>
+        <label class="cd-switch">
+          <input type="checkbox" id="spamTldToggle" onchange="toggleSpamTld(this.checked)">
+          <span class="cd-slider"></span>
+        </label>
+      </div>
+
+      <div class="border cd-border rounded-2xl overflow-hidden cd-bg-surface">
+        <div class="px-5 py-3 border-b cd-border flex items-center justify-between bg-[#141a24]">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400 font-display">Configured Blocklist Sources</span>
+          <span class="text-[11px] text-slate-500 font-mono">Syncs to Cloudflare Gateway</span>
+        </div>
+        <div id="sourcesList" class="divide-y cd-border"></div>
+      </div>
+    </main>
   </div>
 
-  <!-- Main View -->
-  <main class="max-w-7xl mx-auto px-6 py-6 flex-1 w-full space-y-6">
-    <div id="restrictivePanel" class="hidden cd-bg-card border cd-border rounded-xl p-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-          </svg>
-        </div>
-        <div>
-          <div class="text-xs font-semibold text-white">Authorized Account Bypass</div>
-          <div class="text-[11px] text-slate-400">Secondary & tertiary identities ignore restrictive block rules</div>
-        </div>
-      </div>
-      <label class="cd-switch">
-        <input type="checkbox" id="restrictUsersToggle" onchange="toggleRestrictUsers(this.checked)">
-        <span class="cd-slider"></span>
-      </label>
-    </div>
-
-    <div class="cd-bg-card border cd-border rounded-xl p-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-        </div>
-        <div>
-          <div class="text-xs font-semibold text-white">Spam TLD Wildcard Shield</div>
-          <div class="text-[11px] text-slate-400">Applies regex wildcard match and auto-prunes individual domains from lists</div>
-        </div>
-      </div>
-      <label class="cd-switch">
-        <input type="checkbox" id="spamTldToggle" onchange="toggleSpamTld(this.checked)">
-        <span class="cd-slider"></span>
-      </label>
-    </div>
-
-    <!-- Feed Table -->
-    <div class="border cd-border rounded-2xl overflow-hidden cd-bg-surface">
-      <div class="px-5 py-3 border-b cd-border flex items-center justify-between bg-[#141a24]">
-        <span class="text-xs font-bold uppercase tracking-wider text-slate-400 font-display">Native & Third-Party Filters</span>
-        <span class="text-[11px] text-slate-500 font-mono">Telemetry Active</span>
+  <!-- VIEW 2: GATEWAY FIREWALL POLICIES -->
+  <div id="view-policies" class="hidden flex-1 flex flex-col">
+    <main class="max-w-7xl mx-auto px-6 py-8 flex-1 w-full space-y-6">
+      <div>
+        <h2 class="text-base font-bold text-white tracking-tight">Cloudflare Gateway Firewall Policies</h2>
+        <p class="text-xs text-slate-400 mt-0.5">Toggle and monitor live DNS traffic across all active infrastructure policies.</p>
       </div>
 
-      <div id="sourcesList" class="divide-y cd-border"></div>
-    </div>
-  </main>
+      <div class="border cd-border rounded-2xl overflow-hidden cd-bg-surface">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b cd-border bg-[#141a24] text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+              <th class="px-5 py-3">Policy Name</th>
+              <th class="px-5 py-3">Action</th>
+              <th class="px-5 py-3">Usage (7 Days)</th>
+              <th class="px-5 py-3 text-right">Status</th>
+            </tr>
+          </thead>
+          <tbody id="policiesTableBody" class="divide-y cd-border text-xs">
+            <!-- Injected dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
 
-  <!-- GitHub Credentials Modal -->
+  <!-- Credentials Modal -->
   <div id="tokenModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="cd-bg-card rounded-2xl max-w-md w-full p-6 border cd-border shadow-2xl">
       <div class="flex items-center gap-3 mb-4">
         <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold">GH</div>
         <div>
           <h3 class="text-sm font-bold text-white">Repository Settings</h3>
-          <p class="text-[11px] text-slate-400">Personal Access Token for GitHub API operations</p>
+          <p class="text-[11px] text-slate-400">Personal Access Token for GitHub API access</p>
         </div>
       </div>
 
@@ -302,7 +316,7 @@
     </div>
   </div>
 
-  <!-- Run Deployment Modal -->
+  <!-- Run Modal -->
   <div id="statusModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="cd-bg-card rounded-2xl max-w-lg w-full p-5 border cd-border shadow-2xl space-y-4">
       <div class="flex items-center justify-between">
@@ -336,6 +350,7 @@
     let currentProfileKey = "relaxed";
     let currentCategory = "all";
     let currentSearchTerm = "";
+    let currentView = "feeds";
 
     const SOURCE_METADATA = {
       "HaGeZi Normal": { desc: "Baseline ad blocking, tracking, telemetry, and web junk.", tag: "Privacy" },
@@ -364,90 +379,66 @@
         openTokenModal();
         return;
       }
-
       await Promise.all([fetchConfigFromGitHub(), fetchStatsFromGitHub()]);
       renderStats();
       renderList();
+      renderPoliciesTable();
     }
 
     async function fetchConfigFromGitHub() {
       try {
         const resp = await fetch(`https://api.github.com/repos/${repoName}/contents/config.toml`, {
-          headers: {
-            "Authorization": `Bearer ${githubToken}`,
-            "Accept": "application/vnd.github+json"
-          }
+          headers: { "Authorization": `Bearer ${githubToken}`, "Accept": "application/vnd.github+json" }
         });
-        if (!resp.ok) {
-          openTokenModal();
-          return;
-        }
+        if (!resp.ok) { openTokenModal(); return; }
         const data = await resp.json();
         fileSha = data.sha;
         rawTomlContent = b64DecodeUnicode(data.content);
         parseTomlData(rawTomlContent);
       } catch (err) {
-        console.error("Config fetch error:", err);
+        console.error(err);
       }
     }
 
     async function fetchStatsFromGitHub() {
       try {
         const resp = await fetch(`https://api.github.com/repos/${repoName}/contents/stats.json`, {
-          headers: {
-            "Authorization": `Bearer ${githubToken}`,
-            "Accept": "application/vnd.github+json"
-          }
+          headers: { "Authorization": `Bearer ${githubToken}`, "Accept": "application/vnd.github+json" }
         });
         if (resp.ok) {
           const data = await resp.json();
           statsData = JSON.parse(b64DecodeUnicode(data.content));
         }
       } catch (err) {
-        console.warn("No stats.json found in repository yet. Run a sync to generate telemetry.");
+        console.warn("No stats.json yet.");
       }
-    }
-
-    function renderStats() {
-      if (!statsData) return;
-
-      const summary = statsData.summary || {};
-      document.getElementById("stat-total-synced").innerText = (statsData.total_domains_synced || 0).toLocaleString();
-      document.getElementById("stat-lists-used").innerText = statsData.total_lists_used || 0;
-      document.getElementById("stat-spam-tld").innerText = (summary.total_spam_tld_pruned || 0).toLocaleString();
-      document.getElementById("stat-subdomains").innerText = (summary.total_subdomain_duplicates || 0).toLocaleString();
-      document.getElementById("stat-base-overlap").innerText = (summary.total_base_overlap_pruned || 0).toLocaleString();
-      document.getElementById("stat-relevance").innerText = (summary.total_pruned_relevance || 0).toLocaleString();
-
-      if (statsData.last_sync) {
-        const d = new Date(statsData.last_sync);
-        document.getElementById("stat-last-sync").innerText = d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      }
-      document.getElementById("stat-duration").innerText = (statsData.duration_seconds || 0) + "s";
-
-      const quotaMax = statsData.total_quota || 300000;
-      const quotaUsed = statsData.total_domains_synced || 0;
-      const pct = Math.min(100, Math.round((quotaUsed / quotaMax) * 100));
-
-      document.getElementById("quotaUsedText").innerText = quotaUsed.toLocaleString();
-      document.getElementById("quotaMaxText").innerText = quotaMax.toLocaleString();
-      document.getElementById("quotaPct").innerText = pct + "%";
-      document.getElementById("quotaBar").style.width = pct + "%";
     }
 
     function parseTomlData(text) {
       parsedConfig = {
         sources: {},
+        gateway_policies: {},
         policies: {
           relaxed: { include: [], exclude: [], use_spam_tld: false },
           restrictive: { include: [], exclude: [], use_spam_tld: false, restrict_users: false }
         }
       };
 
+      // Extract Sources
       const sourceRegex = /"([^"]+)"\s*=\s*("([^"]+)"|\[([^\]]+)\]|\{\s*url\s*=\s*"([^"]+)"(?:,\s*relevance\s*=\s*(true|false))?\s*\})/g;
       let match;
       while ((match = sourceRegex.exec(text)) !== null) {
         parsedConfig.sources[match[1]] = true;
+      }
+
+      // Extract Gateway Policies
+      const gwSection = text.match(/\[gateway_policies\]([\s\S]*?)(?=\n\[|$)/);
+      if (gwSection) {
+        const gwRegex = /"([^"]+)"\s*=\s*(true|false)/g;
+        let gwm;
+        while ((gwm = gwRegex.exec(gwSection[1])) !== null) {
+          parsedConfig.gateway_policies[gwm[1]] = gwm[2] === "true";
+        }
       }
 
       function extractPolicy(sectionName) {
@@ -474,6 +465,19 @@
     function serializeTomlData() {
       let updated = rawTomlContent;
 
+      // Update gateway_policies block
+      if (Object.keys(parsedConfig.gateway_policies).length > 0) {
+        let gwLines = ["[gateway_policies]"];
+        for (const [k, v] of Object.entries(parsedConfig.gateway_policies)) {
+          gwLines.push(`"${k}" = ${v}`);
+        }
+        const gwStr = gwLines.join("\n");
+        const gwSectionRegex = /(\[gateway_policies\][\s\S]*?)(?=\n\[|$)/;
+        if (updated.match(gwSectionRegex)) {
+          updated = updated.replace(gwSectionRegex, gwStr);
+        }
+      }
+
       function updatePolicy(name) {
         const pol = parsedConfig.policies[name];
         const sectionRegex = new RegExp(`(\\[policies\\.${name}\\][\\s\\S]*?)(?=\\n\\[|$)`);
@@ -497,21 +501,129 @@
       return updated;
     }
 
-    function toggleProfileMenu() {
-      document.getElementById("profileMenu").classList.toggle("hidden");
+    function switchMainView(view) {
+      currentView = view;
+      const isFeeds = view === "feeds";
+      document.getElementById("view-feeds").classList.toggle("hidden", !isFeeds);
+      document.getElementById("view-policies").classList.toggle("hidden", isFeeds);
+
+      const tabFeeds = document.getElementById("view-tab-feeds");
+      const tabPolicies = document.getElementById("view-tab-policies");
+
+      if (isFeeds) {
+        tabFeeds.className = "px-3 py-1 text-xs font-semibold rounded-md transition text-emerald-400 bg-emerald-500/10 border border-emerald-500/30";
+        tabPolicies.className = "px-3 py-1 text-xs font-medium rounded-md transition text-slate-400 hover:text-white";
+      } else {
+        tabPolicies.className = "px-3 py-1 text-xs font-semibold rounded-md transition text-emerald-400 bg-emerald-500/10 border border-emerald-500/30";
+        tabFeeds.className = "px-3 py-1 text-xs font-medium rounded-md transition text-slate-400 hover:text-white";
+        renderPoliciesTable();
+      }
+    }
+
+    function renderPoliciesTable() {
+      const tbody = document.getElementById("policiesTableBody");
+      tbody.innerHTML = "";
+
+      const defaultPolicies = [
+        { name: "Allow: Spam Exceptions", action: "allow", defaultUsage: 0 },
+        { name: "SafeSearch", action: "safe_search", defaultUsage: 5500 },
+        { name: "Global Blocklist", action: "block", defaultUsage: 18964 },
+        { name: "Global Bypass", action: "allow", defaultUsage: 4182 },
+        { name: "IoT Bypass", action: "allow", defaultUsage: 41955 },
+        { name: "Block IoT Network", action: "block", defaultUsage: 17019 },
+        { name: "YouTube Restricted", action: "override", defaultUsage: 1061 },
+        { name: "Block: Relaxed Profile", action: "block", defaultUsage: 33640 },
+        { name: "Block: Restrictive Profile", action: "block", defaultUsage: 15199 },
+      ];
+
+      const liveRules = (statsData && statsData.cloudflare_rules) ? statsData.cloudflare_rules : [];
+
+      defaultPolicies.forEach(dp => {
+        const live = liveRules.find(r => r.name === dp.name);
+        const action = (live ? live.action : dp.action).toLowerCase();
+        const usage = live ? live.usage_7d : dp.defaultUsage;
+        
+        let isEnabled = true;
+        if (parsedConfig && parsedConfig.gateway_policies && parsedConfig.gateway_policies[dp.name] !== undefined) {
+          isEnabled = parsedConfig.gateway_policies[dp.name];
+        } else if (live) {
+          isEnabled = live.enabled;
+        }
+
+        let actionBadgeColor = "bg-rose-500/10 text-rose-400 border-rose-500/30";
+        if (action === "allow") actionBadgeColor = "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+        if (action === "safe_search") actionBadgeColor = "bg-cyan-500/10 text-cyan-400 border-cyan-500/30";
+        if (action === "override") actionBadgeColor = "bg-amber-500/10 text-amber-400 border-amber-500/30";
+
+        const row = document.createElement("tr");
+        row.className = "cd-bg-card-hover transition";
+        row.innerHTML = `
+          <td class="px-5 py-3.5">
+            <div class="font-semibold text-white tracking-tight">${dp.name}</div>
+            <div class="text-[10px] text-slate-500 font-mono mt-0.5">DNS Policy</div>
+          </td>
+          <td class="px-5 py-3.5">
+            <span class="px-2 py-0.5 text-[10px] uppercase font-mono font-semibold rounded-md border ${actionBadgeColor}">
+              ${action.replace("_", " ")}
+            </span>
+          </td>
+          <td class="px-5 py-3.5 font-mono text-slate-300">
+            ${usage.toLocaleString()}
+          </td>
+          <td class="px-5 py-3.5 text-right">
+            <label class="cd-switch inline-block align-middle">
+              <input type="checkbox" ${isEnabled ? "checked" : ""} onchange="toggleGatewayPolicy('${dp.name}', this.checked)">
+              <span class="cd-slider"></span>
+            </label>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function toggleGatewayPolicy(policyName, isChecked) {
+      if (!parsedConfig.gateway_policies) parsedConfig.gateway_policies = {};
+      parsedConfig.gateway_policies[policyName] = isChecked;
     }
 
     function switchProfile(profileKey) {
       currentProfileKey = profileKey;
-      document.getElementById("profileMenu").classList.add("hidden");
-      
       const isRelaxed = profileKey === "relaxed";
-      document.getElementById("activeProfileLabel").innerText = isRelaxed ? "Relaxed Profile" : "Restrictive Profile";
-      document.getElementById("check-relaxed").classList.toggle("hidden", !isRelaxed);
-      document.getElementById("check-restrictive").classList.toggle("hidden", isRelaxed);
-      document.getElementById("restrictivePanel").classList.toggle("hidden", isRelaxed);
+      document.getElementById("tab-relaxed").className = isRelaxed
+        ? "px-3 py-1 text-xs font-semibold rounded-md transition bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
+        : "px-3 py-1 text-xs font-medium rounded-md transition text-slate-400 hover:text-white";
+      document.getElementById("tab-restrictive").className = !isRelaxed
+        ? "px-3 py-1 text-xs font-semibold rounded-md transition bg-emerald-500/10 text-emerald-400 border border-emerald-500/30"
+        : "px-3 py-1 text-xs font-medium rounded-md transition text-slate-400 hover:text-white";
 
+      document.getElementById("restrictivePanel").classList.toggle("hidden", isRelaxed);
       renderList();
+    }
+
+    function renderStats() {
+      if (!statsData) return;
+      const summary = statsData.summary || {};
+      document.getElementById("stat-total-synced").innerText = (statsData.total_domains_synced || 0).toLocaleString();
+      document.getElementById("stat-lists-used").innerText = statsData.total_lists_used || 0;
+      document.getElementById("stat-spam-tld").innerText = (summary.total_spam_tld_pruned || 0).toLocaleString();
+      document.getElementById("stat-subdomains").innerText = (summary.total_subdomain_duplicates || 0).toLocaleString();
+      document.getElementById("stat-base-overlap").innerText = (summary.total_base_overlap_pruned || 0).toLocaleString();
+      document.getElementById("stat-relevance").innerText = (summary.total_pruned_relevance || 0).toLocaleString();
+
+      if (statsData.last_sync) {
+        const d = new Date(statsData.last_sync);
+        document.getElementById("stat-last-sync").innerText = d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+      document.getElementById("stat-duration").innerText = (statsData.duration_seconds || 0) + "s";
+
+      const quotaMax = statsData.total_quota || 300000;
+      const quotaUsed = statsData.total_domains_synced || 0;
+      const pct = Math.min(100, Math.round((quotaUsed / quotaMax) * 100));
+
+      document.getElementById("quotaUsedText").innerText = quotaUsed.toLocaleString();
+      document.getElementById("quotaMaxText").innerText = quotaMax.toLocaleString();
+      document.getElementById("quotaPct").innerText = pct + "%";
+      document.getElementById("quotaBar").style.width = pct + "%";
     }
 
     function setCategoryFilter(cat) {
@@ -519,9 +631,9 @@
       ["all", "Security", "Privacy", "Content", "Productivity"].forEach(c => {
         const btn = document.getElementById(`tab-cat-${c}`);
         if (c === cat) {
-          btn.className = "px-3 py-1.5 text-xs font-medium rounded-lg text-emerald-400 bg-emerald-500/10 border border-emerald-500/30";
+          btn.className = "px-3 py-1 text-xs font-medium rounded-lg text-emerald-400 bg-emerald-500/10 border border-emerald-500/30";
         } else {
-          btn.className = "px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition";
+          btn.className = "px-3 py-1 text-xs font-medium rounded-lg text-slate-400 hover:text-white transition";
         }
       });
       renderList();
@@ -541,7 +653,6 @@
       if (currentProfileKey === "restrictive") {
         document.getElementById("restrictUsersToggle").checked = pol.restrict_users;
       }
-
       document.getElementById("activeCountDisplay").innerText = incList.length;
 
       const container = document.getElementById("sourcesList");
@@ -553,11 +664,6 @@
         const matchesSearch = !currentSearchTerm || name.toLowerCase().includes(currentSearchTerm) || meta.desc.toLowerCase().includes(currentSearchTerm);
         return matchesCat && matchesSearch;
       });
-
-      if (keys.length === 0) {
-        container.innerHTML = `<div class="p-8 text-center text-xs text-slate-500">No matching filters found.</div>`;
-        return;
-      }
 
       keys.forEach(name => {
         const isEnabled = incList.includes(name);
@@ -580,11 +686,6 @@
         row.className = "px-5 py-3.5 flex items-center justify-between cd-bg-card-hover transition";
         row.innerHTML = `
           <div class="flex items-center gap-4">
-            <div class="w-7 h-7 rounded-lg bg-[#121721] border cd-border flex items-center justify-center text-slate-400">
-              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
-            </div>
             <div>
               <div class="flex items-center gap-2">
                 <span class="text-xs font-semibold text-white tracking-tight">${name}</span>
@@ -639,7 +740,7 @@
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            message: "Update blocklists via Control D web interface",
+            message: "Update Gateway configuration via Control D web interface",
             content: b64EncodeUnicode(serialized),
             sha: fileSha,
             branch: "main"
@@ -721,7 +822,6 @@
             const color = checkData.conclusion === "success" ? "text-emerald-400" : "text-rose-400";
             logBox.innerHTML += `<div class="${color} font-bold mt-2">> Finished: ${checkData.conclusion.toUpperCase()}</div>`;
             document.getElementById("pipelineIndicator").classList.remove("animate-ping");
-            // Refresh telemetry stats after successful sync
             setTimeout(loadDashboard, 2000);
           }
         }, 4000);
@@ -753,12 +853,6 @@
     function closeStatusModal() {
       document.getElementById("statusModal").classList.add("hidden");
     }
-
-    window.onclick = function(e) {
-      if (!e.target.closest('#profileDropdownBtn') && !e.target.closest('#profileMenu')) {
-        document.getElementById("profileMenu").classList.add("hidden");
-      }
-    };
 
     window.onload = loadDashboard;
   </script>
