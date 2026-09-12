@@ -30,45 +30,15 @@
     .cd-border { border-color: var(--cd-border); }
     .cd-border-subtle { border-color: var(--cd-border-subtle); }
     
-    .cd-switch {
-      position: relative;
-      display: inline-block;
-      width: 40px;
-      height: 22px;
-    }
-    .cd-switch input { opacity: 0; width: 0; height: 0; }
-    .cd-slider {
-      position: absolute;
-      cursor: pointer;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background-color: #1e293b;
-      transition: .2s;
-      border-radius: 9999px;
-    }
-    .cd-slider:before {
-      position: absolute;
-      content: "";
-      height: 16px;
-      width: 16px;
-      left: 3px;
-      bottom: 3px;
-      background-color: #64748b;
-      transition: .2s;
-      border-radius: 50%;
-    }
-    input:checked + .cd-slider {
-      background-color: var(--cd-green);
-    }
-    input:checked + .cd-slider:before {
-      transform: translateX(18px);
-      background-color: #06281e;
-    }
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: var(--cd-bg); }
     ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
   </style>
 </head>
 <body class="min-h-screen flex flex-col antialiased selection:bg-emerald-500/20 selection:text-emerald-300">
+
+  <!-- Toast Notification Stack -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
   <!-- Top App Navigation -->
   <header class="border-b cd-border bg-[#080b13]/90 backdrop-blur sticky top-0 z-40">
@@ -103,23 +73,23 @@
           </svg>
           Add Block
         </button>
-        <button onclick="openTokenModal()" class="p-2 text-slate-400 hover:text-white cd-bg-card border cd-border rounded-lg transition" title="Repository Token">
+        <button onclick="openTokenModal()" class="p-2 text-slate-400 hover:text-white cd-bg-card border cd-border rounded-lg transition" title="Repository Settings">
           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
         </button>
-        <button id="commitBtn" onclick="commitConfig()" class="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white cd-bg-card border cd-border rounded-lg transition">
-          Save
-        </button>
         <button id="syncBtn" onclick="triggerWorkflow()" class="px-3 py-1.5 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-lg shadow-lg shadow-emerald-500/20 transition flex items-center gap-1.5">
-          Deploy
+          <svg class="w-3.5 h-3.5 text-slate-950" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          <span id="syncBtnText">Deploy</span>
         </button>
       </div>
     </div>
   </header>
 
-  <!-- VIEW: ANALYTICS (EXACT CONTROL D REPLICA) -->
+  <!-- VIEW: ANALYTICS -->
   <div id="view-analytics" class="flex-1 flex flex-col">
     <main class="max-w-[1600px] w-full mx-auto px-6 py-6 space-y-5 flex-1">
       
@@ -135,22 +105,17 @@
           <div>
             <div class="flex items-center gap-2">
               <h1 class="text-base font-bold text-white tracking-tight">Statistics</h1>
-              <button class="flex items-center gap-1 text-xs font-semibold text-slate-300 hover:text-white">
-                <span>All Profiles</span>
-                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-              </button>
+              <span class="text-xs font-semibold text-slate-300">All Gateway Endpoints</span>
             </div>
             <div class="flex items-center gap-1.5 text-[11px] text-amber-500 font-medium">
-              <span>Your browsing activity visualized.</span>
-              <span class="w-3.5 h-3.5 rounded-full border border-amber-500/60 inline-flex items-center justify-center text-[9px]">i</span>
+              <span>Your DNS traffic telemetry visualized.</span>
             </div>
           </div>
         </div>
 
-        <button class="px-3 py-1.5 text-xs font-medium text-slate-300 cd-bg-card border cd-border rounded-lg flex items-center gap-2 hover:bg-slate-800 transition">
-          <span>Last day</span>
-          <svg class="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-        </button>
+        <div class="px-3 py-1.5 text-xs font-medium text-slate-300 cd-bg-card border cd-border rounded-lg flex items-center gap-2">
+          <span>7-Day Aggregation</span>
+        </div>
       </div>
 
       <!-- Info Banner -->
@@ -176,8 +141,8 @@
           <div>
             <div class="text-xs text-slate-400 font-medium">Blocked</div>
             <div class="text-lg font-bold text-rose-500">
-              <span id="card-blocked-count">1.7K</span>
-              <span id="card-blocked-pct" class="text-xs font-semibold ml-1 opacity-90">(16.7%)</span>
+              <span id="card-blocked-count">0</span>
+              <span id="card-blocked-pct" class="text-xs font-semibold ml-1 opacity-90">(0.0%)</span>
             </div>
           </div>
         </div>
@@ -192,8 +157,8 @@
           <div>
             <div class="text-xs text-slate-400 font-medium">Bypassed</div>
             <div class="text-lg font-bold text-emerald-400">
-              <span id="card-bypassed-count">8.4K</span>
-              <span id="card-bypassed-pct" class="text-xs font-semibold ml-1 opacity-90">(81.9%)</span>
+              <span id="card-bypassed-count">0</span>
+              <span id="card-bypassed-pct" class="text-xs font-semibold ml-1 opacity-90">(0.0%)</span>
             </div>
           </div>
         </div>
@@ -208,8 +173,8 @@
           <div>
             <div class="text-xs text-slate-400 font-medium">Redirected</div>
             <div class="text-lg font-bold text-amber-400">
-              <span id="card-redirected-count">72</span>
-              <span id="card-redirected-pct" class="text-xs font-semibold ml-1 opacity-90">(0.7%)</span>
+              <span id="card-redirected-count">0</span>
+              <span id="card-redirected-pct" class="text-xs font-semibold ml-1 opacity-90">(0.0%)</span>
             </div>
           </div>
         </div>
@@ -223,7 +188,7 @@
           </div>
           <div>
             <div class="text-xs text-slate-400 font-medium">Total</div>
-            <div id="card-total-count" class="text-lg font-bold text-white">10.3K</div>
+            <div id="card-total-count" class="text-lg font-bold text-white">0</div>
           </div>
         </div>
       </div>
@@ -237,7 +202,6 @@
               <div class="flex items-center gap-1.5 text-slate-300 font-medium">
                 <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 <span>Encrypted DNS</span>
-                <span class="text-slate-500 text-[10px]">▼ ⓘ</span>
               </div>
               <span class="text-emerald-400 font-bold font-mono">100%</span>
             </div>
@@ -248,8 +212,7 @@
             <div class="flex items-center justify-between text-xs">
               <div class="flex items-center gap-1.5 text-slate-300 font-medium">
                 <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
-                <span>Benign Blocks</span>
-                <span class="text-slate-500 text-[10px]">ⓘ</span>
+                <span>Blocklist Attribution</span>
               </div>
               <span class="text-emerald-400 font-bold font-mono">100%</span>
             </div>
@@ -259,11 +222,10 @@
           <div class="cd-bg-card border cd-border rounded-xl p-3 relative overflow-hidden">
             <div class="flex items-center justify-between text-xs">
               <div class="flex items-center gap-1.5 text-slate-300 font-medium">
-                <span>🇺🇸</span>
-                <span>Home Country Traffic</span>
-                <span class="text-slate-500 text-[10px]">ⓘ</span>
+                <span>🛡</span>
+                <span>Active Protection</span>
               </div>
-              <span class="text-emerald-400 font-bold font-mono">100%</span>
+              <span class="text-emerald-400 font-bold font-mono">Operational</span>
             </div>
             <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400"></div>
           </div>
@@ -273,282 +235,106 @@
       <!-- Main Graph + Endpoints Split -->
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
         
-        <!-- Graph Box (Left 8 cols) -->
+        <!-- Graph Box -->
         <div class="lg:col-span-8 cd-bg-card border cd-border rounded-2xl p-5 flex flex-col justify-between relative overflow-hidden min-h-[380px]">
-          <!-- Top graph legend / indicator -->
           <div class="flex items-center justify-between mb-2">
             <div class="flex items-center gap-4 text-xs font-medium">
               <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span><span class="text-slate-300">Bypassed</span></div>
               <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span><span class="text-slate-300">Blocked</span></div>
-              <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span><span class="text-slate-300">Redirected</span></div>
             </div>
+            <span class="text-[11px] text-slate-500 font-mono">Daily Traffic Trends</span>
           </div>
 
-          <!-- Pure SVG Area Curve Visualizer -->
           <div class="relative w-full flex-1 flex flex-col justify-end">
-            <!-- Y-Axis Grid Lines & Numbers -->
-            <div class="absolute inset-0 flex flex-col justify-between pointer-events-none text-[10px] font-mono text-slate-500">
-              <div class="border-b cd-border-subtle pb-0.5">800</div>
-              <div class="border-b cd-border-subtle pb-0.5">600</div>
-              <div class="border-b cd-border-subtle pb-0.5">400</div>
-              <div class="border-b cd-border-subtle pb-0.5">200</div>
-              <div class="border-b cd-border-subtle pb-0.5">0</div>
-            </div>
-
-            <!-- SVG Wave Paths -->
-            <div class="h-64 w-full pl-8 pr-2 relative">
-              <svg viewBox="0 0 1000 300" preserveAspectRatio="none" class="w-full h-full overflow-visible">
-                <defs>
-                  <linearGradient id="grad-green" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#05d6a0" stop-opacity="0.25"/>
-                    <stop offset="100%" stop-color="#05d6a0" stop-opacity="0.0"/>
-                  </linearGradient>
-                  <linearGradient id="grad-red" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#ff3b5c" stop-opacity="0.25"/>
-                    <stop offset="100%" stop-color="#ff3b5c" stop-opacity="0.0"/>
-                  </linearGradient>
-                </defs>
-
-                <!-- Grid Vertical Guides -->
-                <line x1="200" y1="0" x2="200" y2="300" stroke="#141a29" stroke-width="1" />
-                <line x1="450" y1="0" x2="450" y2="300" stroke="#141a29" stroke-width="1" />
-                <line x1="700" y1="0" x2="700" y2="300" stroke="#141a29" stroke-width="1" />
-
-                <!-- Green/Turquoise Bypassed Line -->
-                <path d="M 0 240 Q 50 210 100 250 T 200 40 T 250 240 T 300 130 T 400 240 T 500 210 T 600 210 T 700 140 T 800 120 T 900 160 L 1000 290" 
-                      fill="none" stroke="#05d6a0" stroke-width="2.5" stroke-linecap="round" />
-
-                <!-- Red Blocked Line -->
-                <path d="M 0 280 Q 80 275 140 280 T 200 170 T 300 240 T 450 280 T 600 270 T 700 230 T 800 220 T 900 280 L 1000 295" 
-                      fill="none" stroke="#ff3b5c" stroke-width="2.5" stroke-linecap="round" />
-
-                <!-- Yellow Redirected Line -->
-                <path d="M 0 295 Q 200 295 400 290 T 700 295 L 1000 298" 
-                      fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" />
+            <div class="h-64 w-full relative" id="chartWrapper">
+              <svg id="trendSvg" viewBox="0 0 1000 300" preserveAspectRatio="none" class="w-full h-full overflow-visible">
+                <path id="svgBypassedPath" d="" fill="none" stroke="#05d6a0" stroke-width="2.5" stroke-linecap="round" />
+                <path id="svgBlockedPath" d="" fill="none" stroke="#ff3b5c" stroke-width="2.5" stroke-linecap="round" />
               </svg>
             </div>
 
-            <!-- X-Axis Timestamps -->
-            <div class="flex justify-between pl-8 pr-2 pt-2 text-[10px] font-mono text-slate-500">
-              <span>13:30</span>
-              <span>20:00</span>
-              <span>02:30</span>
-              <span>09:00</span>
+            <div id="chartDates" class="flex justify-between pl-2 pr-2 pt-2 text-[10px] font-mono text-slate-500">
+              <span>Day 1</span>
+              <span>Day 4</span>
+              <span>Day 7</span>
             </div>
           </div>
         </div>
 
-        <!-- Endpoints Panel (Right 4 cols) -->
+        <!-- Endpoints Panel -->
         <div class="lg:col-span-4 cd-bg-card border cd-border rounded-2xl p-5 flex flex-col justify-between">
           <div>
             <div class="flex items-center justify-between pb-3 border-b cd-border">
-              <div class="flex items-center gap-1.5 text-xs font-semibold">
-                <button class="px-2 py-1 bg-slate-800 text-white rounded-md border border-slate-700 flex items-center gap-1">
-                  <span>📈 Trending</span>
-                </button>
-                <button class="px-2 py-1 text-slate-400 hover:text-white flex items-center gap-0.5">
-                  <span>↑ Top</span>
-                </button>
-                <button class="px-2 py-1 text-slate-400 hover:text-white flex items-center gap-0.5">
-                  <span>↓ Bottom</span>
-                </button>
-              </div>
-              <button class="text-slate-400 hover:text-white text-xs">🔍</button>
+              <span class="text-xs font-bold uppercase tracking-wider text-white">Active Endpoints</span>
+              <span class="text-[10px] text-slate-500 font-mono">Top Blocked</span>
             </div>
 
-            <div class="flex items-center justify-between pt-3 pb-2 text-xs font-semibold text-white">
-              <span>Endpoints</span>
-              <div class="flex items-center gap-1 text-[11px] text-slate-400 font-mono">
-                <button class="hover:text-white">‹</button>
-                <span>1</span>
-                <button class="hover:text-white">›</button>
-              </div>
-            </div>
-
-            <!-- Endpoints List -->
-            <div id="endpointsListContainer" class="space-y-2 mt-1">
-              <!-- Item 1 -->
-              <div class="flex items-center justify-between p-2 rounded-xl cd-bg-card-hover transition text-xs">
-                <div class="flex items-center gap-2.5">
-                  <div class="w-6 h-6 rounded bg-rose-500/20 text-rose-400 flex items-center justify-center text-[10px] font-bold">
-                    A <span class="text-[8px] ml-0.5">1d</span>
-                  </div>
-                  <span class="font-medium text-white">Main</span>
-                </div>
-                <div class="flex items-center gap-3 font-mono text-[11px]">
-                  <span class="text-slate-400 flex items-center gap-1">💻 56</span>
-                  <span class="text-slate-600">-</span>
-                  <span class="text-rose-500 font-semibold">↘ 100%</span>
-                </div>
-              </div>
-
-              <!-- Item 2 -->
-              <div class="flex items-center justify-between p-2 rounded-xl cd-bg-card-hover transition text-xs">
-                <div class="flex items-center gap-2.5">
-                  <div class="w-6 h-6 rounded bg-rose-500/20 text-rose-400 flex items-center justify-center text-[10px] font-bold">
-                    A <span class="text-[8px] ml-0.5">1d</span>
-                  </div>
-                  <span class="font-medium text-white">IoT</span>
-                </div>
-                <div class="flex items-center gap-3 font-mono text-[11px]">
-                  <span class="text-slate-400 flex items-center gap-1">💻 59</span>
-                  <span class="text-slate-600">-</span>
-                  <span class="text-rose-500 font-semibold">↘ 100%</span>
-                </div>
-              </div>
-
-              <!-- Item 3 -->
-              <div class="flex items-center justify-between p-2 rounded-xl cd-bg-card-hover transition text-xs">
-                <div class="flex items-center gap-2.5">
-                  <div class="w-6 h-6 rounded bg-slate-800 text-slate-300 flex items-center justify-center text-[9px] font-bold">
-                    iOS <span class="text-[8px] ml-0.5">2d</span>
-                  </div>
-                  <span class="font-medium text-white">Isaac-iPhone</span>
-                </div>
-                <div class="flex items-center gap-3 font-mono text-[11px]">
-                  <span class="text-slate-400 flex items-center gap-1">📱 3</span>
-                  <span class="text-slate-600">-</span>
-                  <span class="text-rose-500 font-semibold">↘ 100%</span>
-                </div>
-              </div>
-
-              <!-- Item 4 -->
-              <div class="flex items-center justify-between p-2 rounded-xl cd-bg-card-hover transition text-xs">
-                <div class="flex items-center gap-2.5">
-                  <div class="w-6 h-6 rounded bg-amber-500/20 text-amber-400 flex items-center justify-center text-[9px] font-bold">
-                    iOS <span class="text-[8px] ml-0.5">1h</span>
-                  </div>
-                  <span class="font-medium text-white">Kalli-iPhone</span>
-                </div>
-                <div class="flex items-center gap-3 font-mono text-[11px]">
-                  <span class="text-slate-400 flex items-center gap-1">📱 2</span>
-                  <span class="text-slate-400">🛡</span>
-                  <span class="text-rose-500 font-semibold">↘ 17.6%</span>
-                </div>
-              </div>
-
-              <!-- Skeleton Lines -->
-              <div class="pt-2 space-y-2.5 opacity-30">
-                <div class="h-2 bg-slate-700 rounded-full w-3/4"></div>
-                <div class="h-2 bg-slate-700 rounded-full w-1/2"></div>
-                <div class="h-2 bg-slate-700 rounded-full w-2/3"></div>
-              </div>
+            <div id="endpointsListContainer" class="space-y-2 mt-3">
+              <div class="text-slate-500 text-xs text-center py-8">No endpoint activity logged.</div>
             </div>
           </div>
         </div>
 
       </div>
 
-      <!-- Detail Breakdown Controls Strip -->
-      <div class="flex items-center gap-3 pt-2">
-        <button class="px-3.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-semibold text-white flex items-center gap-1.5 shadow-sm">
-          <span class="w-3.5 h-3.5 rounded-full border border-rose-500 flex items-center justify-center text-rose-500 text-[9px]">✕</span>
-          <span>Blocked</span>
-        </button>
-        <button class="px-3.5 py-1.5 rounded-lg hover:bg-slate-900 text-xs font-medium text-slate-400 hover:text-white flex items-center gap-1.5 transition">
-          <span class="text-emerald-400">✓</span>
-          <span>Bypassed</span>
-        </button>
-        <button class="px-3.5 py-1.5 rounded-lg hover:bg-slate-900 text-xs font-medium text-slate-400 hover:text-white flex items-center gap-1.5 transition">
-          <span class="text-amber-400">🌐</span>
-          <span>Redirected</span>
-        </button>
-      </div>
-
-      <!-- 4-Quadrant Card Grid (Filters, Services, Domains, Rules) -->
+      <!-- 4-Quadrant Card Grid -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         
         <!-- Box 1: Filters -->
         <div class="cd-bg-card border cd-border rounded-2xl p-5 min-h-[300px] flex flex-col justify-between">
           <div>
-            <div class="flex items-center justify-between pb-3">
-              <h3 class="text-xs font-bold text-white">Filters</h3>
-              <div class="flex items-center gap-2 text-slate-400 text-xs font-mono">
-                <span>⇅</span>
-                <span>‹ 1 ›</span>
-              </div>
+            <div class="flex items-center justify-between pb-3 border-b cd-border">
+              <h3 class="text-xs font-bold text-white">Top Blocklist Sources Hit</h3>
+              <span class="text-[10px] text-slate-500 font-mono">7 Days</span>
             </div>
 
-            <div id="filtersListContainer" class="space-y-2">
-              <div class="flex items-center justify-between p-2.5 rounded-xl bg-[#141a29] border cd-border text-xs">
-                <div class="flex items-center gap-2 text-slate-200">
-                  <span class="text-slate-400">🛡</span>
-                  <span class="font-medium">Hagezi's DNS - Normal</span>
-                </div>
-                <span class="font-mono text-slate-300 font-semibold">1690</span>
-              </div>
-
-              <!-- Skeleton Lines -->
-              <div class="pt-3 space-y-3 opacity-25">
-                <div class="h-2.5 bg-slate-700 rounded-full w-3/4"></div>
-                <div class="h-2.5 bg-slate-700 rounded-full w-5/6"></div>
-                <div class="h-2.5 bg-slate-700 rounded-full w-2/3"></div>
-                <div class="h-2.5 bg-slate-700 rounded-full w-1/2"></div>
-              </div>
+            <div id="filtersListContainer" class="space-y-2 mt-3">
+              <div class="text-slate-500 text-xs text-center py-8">No blocklist hits recorded.</div>
             </div>
           </div>
         </div>
 
-        <!-- Box 2: Services -->
+        <!-- Box 2: Categories -->
         <div class="cd-bg-card border cd-border rounded-2xl p-5 min-h-[300px] flex flex-col justify-between">
-          <div class="flex items-center justify-between pb-3">
-            <h3 class="text-xs font-bold text-white">Services</h3>
-          </div>
-          <div class="flex-1 flex flex-col items-center justify-center text-slate-500 py-12">
-            <svg class="w-10 h-10 mb-2 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            <span class="text-xs font-medium">No Data</span>
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b cd-border">
+              <h3 class="text-xs font-bold text-white">Top Blocked Categories</h3>
+              <span class="text-[10px] text-slate-500 font-mono">7 Days</span>
+            </div>
+
+            <div id="categoriesListContainer" class="space-y-2 mt-3">
+              <div class="text-slate-500 text-xs text-center py-8">No category blocks recorded.</div>
+            </div>
           </div>
         </div>
 
         <!-- Box 3: Domains -->
         <div class="cd-bg-card border cd-border rounded-2xl p-5 min-h-[300px] flex flex-col justify-between">
           <div>
-            <div class="flex items-center justify-between pb-3">
-              <h3 class="text-xs font-bold text-white">Domains</h3>
-              <div class="flex items-center gap-2 text-slate-400 text-xs font-mono">
-                <span>🔍</span>
-                <span>⇅</span>
-                <span>‹ 1 ›</span>
+            <div class="flex items-center justify-between pb-3 border-b cd-border">
+              <h3 class="text-xs font-bold text-white">Top Blocked Domains</h3>
+              <div class="flex items-center gap-2">
+                <input type="text" id="domainSearch" oninput="filterDomainsList()" placeholder="Filter..." class="bg-[#141a29] border cd-border rounded px-2 py-0.5 text-[10px] text-slate-200 outline-none w-24 focus:w-36 transition-all font-sans">
               </div>
             </div>
 
-            <div id="domainsListContainer" class="space-y-1.5 font-mono text-xs">
-              <div class="flex items-center justify-between p-2 rounded-lg cd-bg-card-hover transition">
-                <span class="text-slate-300 truncate max-w-xs">app-analytics-services.com</span>
-                <span class="text-slate-400 font-semibold">870</span>
-              </div>
-              <div class="flex items-center justify-between p-2 rounded-lg cd-bg-card-hover transition">
-                <span class="text-slate-300 truncate max-w-xs">app-measurement.com</span>
-                <span class="text-slate-400 font-semibold">157</span>
-              </div>
-              <div class="flex items-center justify-between p-2 rounded-lg cd-bg-card-hover transition">
-                <span class="text-slate-300 truncate max-w-xs">googleads.g.doubleclick.net</span>
-                <span class="text-slate-400 font-semibold">64</span>
-              </div>
-              <div class="flex items-center justify-between p-2 rounded-lg cd-bg-card-hover transition">
-                <span class="text-slate-300 truncate max-w-xs">metrics.icloud.com</span>
-                <span class="text-slate-400 font-semibold">62</span>
-              </div>
-              <div class="flex items-center justify-between p-2 rounded-lg cd-bg-card-hover transition">
-                <span class="text-slate-300 truncate max-w-xs">mads.amazon-adsystem.com</span>
-                <span class="text-slate-400 font-semibold">61</span>
-              </div>
+            <div id="domainsListContainer" class="space-y-1.5 font-mono text-xs mt-3">
+              <div class="text-slate-500 text-xs text-center py-8">No blocked domain activity.</div>
             </div>
           </div>
         </div>
 
-        <!-- Box 4: Rules -->
+        <!-- Box 4: Firewall Rules -->
         <div class="cd-bg-card border cd-border rounded-2xl p-5 min-h-[300px] flex flex-col justify-between">
-          <div class="flex items-center justify-between pb-3">
-            <h3 class="text-xs font-bold text-white">Rules</h3>
-          </div>
-          <div class="flex-1 flex flex-col items-center justify-center text-slate-500 py-12">
-            <svg class="w-10 h-10 mb-2 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            <span class="text-xs font-medium">No Data</span>
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b cd-border">
+              <h3 class="text-xs font-bold text-white">Firewall Rules Telemetry</h3>
+              <span class="text-[10px] text-slate-500 font-mono">Queries Matched</span>
+            </div>
+
+            <div id="rulesListContainer" class="space-y-2 mt-3">
+              <div class="text-slate-500 text-xs text-center py-8">No rule hits logged.</div>
+            </div>
           </div>
         </div>
 
@@ -562,7 +348,7 @@
     <main class="max-w-[1600px] w-full mx-auto px-6 py-6 space-y-5 flex-1">
       <div class="border cd-border rounded-2xl overflow-hidden cd-bg-card">
         <div class="px-5 py-3.5 border-b cd-border flex items-center justify-between bg-[#141a29]">
-          <span class="text-xs font-bold uppercase tracking-wider text-slate-300">Configured Blocklist Sources</span>
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-300">Configured Blocklist Feeds</span>
           <span class="text-[11px] text-slate-500 font-mono">Syncs to Cloudflare Gateway</span>
         </div>
         <div id="sourcesList" class="divide-y cd-border"></div>
@@ -604,11 +390,16 @@
 
   <div id="addBlockModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="cd-bg-card rounded-2xl max-w-md w-full p-6 border cd-border shadow-2xl space-y-4">
-      <h3 class="text-sm font-bold text-white">Add Target to Block</h3>
-      <input type="text" id="inputTargetUrl" placeholder="https://tracking.example.com or badsite.org" class="w-full px-3 py-2 bg-[#090c15] border cd-border rounded-lg text-xs text-slate-200 font-mono">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-bold text-white">Add Target to Block</h3>
+        <span class="text-[10px] text-emerald-400 font-mono">Commits to config.toml</span>
+      </div>
+      <input type="text" id="inputTargetUrl" placeholder="tracking.example.com" class="w-full px-3 py-2 bg-[#090c15] border cd-border rounded-lg text-xs text-slate-200 font-mono outline-none focus:border-emerald-500">
       <div class="flex justify-end gap-2 pt-2">
         <button onclick="closeAddBlockModal()" class="px-3 py-1.5 text-xs text-slate-400">Cancel</button>
-        <button onclick="submitNewBlock()" class="px-4 py-1.5 text-xs font-semibold bg-emerald-400 text-slate-950 rounded-lg">Add Block</button>
+        <button id="btnConfirmBlock" onclick="submitNewBlock()" class="px-4 py-1.5 text-xs font-semibold bg-emerald-400 text-slate-950 rounded-lg flex items-center gap-1.5">
+          <span>Commit Block</span>
+        </button>
       </div>
     </div>
   </div>
@@ -616,10 +407,28 @@
   <script>
     let repoName = localStorage.getItem("gh_repo") || "brojangles24/Cloudflare-ZeroTrust-AdBlock";
     let githubToken = localStorage.getItem("gh_token") || "";
-    let fileSha = "";
-    let rawTomlContent = "";
-    let parsedConfig = null;
     let statsData = null;
+
+    function showToast(message, type = "info") {
+      const c = document.getElementById("toastContainer");
+      const toast = document.createElement("div");
+      const colors = {
+        success: "bg-[#0f1d18] border-emerald-500/50 text-emerald-300",
+        error: "bg-[#201015] border-rose-500/50 text-rose-300",
+        info: "bg-[#0f1422] border-blue-500/50 text-blue-300",
+        warning: "bg-[#20190f] border-amber-500/50 text-amber-300"
+      };
+      toast.className = `px-4 py-2.5 rounded-xl border text-xs shadow-2xl flex items-center gap-2 pointer-events-auto transition-all transform duration-300 translate-y-2 opacity-0 ${colors[type] || colors.info}`;
+      toast.innerHTML = `<span>${message}</span>`;
+      c.appendChild(toast);
+      requestAnimationFrame(() => {
+        toast.classList.remove("translate-y-2", "opacity-0");
+      });
+      setTimeout(() => {
+        toast.classList.add("translate-y-2", "opacity-0");
+        setTimeout(() => toast.remove(), 300);
+      }, 4500);
+    }
 
     function switchMainView(view) {
       document.getElementById("view-analytics").classList.toggle("hidden", view !== "analytics");
@@ -640,42 +449,89 @@
       if (!githubToken) { openTokenModal(); return; }
       try {
         const resp = await fetch(`https://api.github.com/repos/${repoName}/contents/stats.json`, {
-          headers: { "Authorization": `Bearer ${githubToken}`, "Accept": "application/vnd.github+json" }
+          headers: { 
+            "Authorization": `Bearer ${githubToken}`, 
+            "Accept": "application/vnd.github+json" 
+          }
         });
         if (resp.ok) {
           const data = await resp.json();
-          statsData = JSON.parse(decodeURIComponent(escape(atob(data.content))));
+          const binary = atob(data.content.replace(/\s/g, ''));
+          const bytes = Uint8Array.from(binary, m => m.charCodeAt(0));
+          statsData = JSON.parse(new TextDecoder().decode(bytes));
           renderControlDAnalytics();
+        } else {
+          showToast(`Unable to read stats.json (Status: ${resp.status})`, "warning");
         }
       } catch (err) {
-        console.warn("Could not load stats.json:", err);
+        showToast(`Telemetry fetch error: ${err.message}`, "error");
       }
     }
 
     function renderControlDAnalytics() {
       if (!statsData) return;
 
-      // 1. KPI Counts
       const trends = statsData.daily_trends || [];
-      const totalQueries = trends.reduce((acc, t) => acc + (t.total || 0), 0) || 10300;
-      const totalBlocked = trends.reduce((acc, t) => acc + (t.blocked || 0), 0) || 1720;
-      const totalBypassed = trends.reduce((acc, t) => acc + (t.allowed || 0), 0) || 8410;
-      const totalRedirected = Math.round(totalQueries * 0.007) || 72;
+      const totalQueries = trends.reduce((acc, t) => acc + (t.total || 0), 0);
+      const totalBlocked = trends.reduce((acc, t) => acc + (t.blocked || 0), 0);
+      const totalBypassed = trends.reduce((acc, t) => acc + (t.allowed || 0), 0);
+      const totalRedirected = Math.round(totalQueries * 0.007);
 
-      document.getElementById("card-total-count").innerText = (totalQueries > 999) ? (totalQueries / 1000).toFixed(1) + "K" : totalQueries;
-      document.getElementById("card-blocked-count").innerText = (totalBlocked > 999) ? (totalBlocked / 1000).toFixed(1) + "K" : totalBlocked;
-      document.getElementById("card-blocked-pct").innerText = `(${((totalBlocked / totalQueries) * 100).toFixed(1)}%)`;
+      const formatCount = (n) => n > 999 ? (n / 1000).toFixed(1) + "K" : (n || 0).toLocaleString();
+      const formatPct = (part, total) => total > 0 ? `(${((part / total) * 100).toFixed(1)}%)` : "(0.0%)";
 
-      document.getElementById("card-bypassed-count").innerText = (totalBypassed > 999) ? (totalBypassed / 1000).toFixed(1) + "K" : totalBypassed;
-      document.getElementById("card-bypassed-pct").innerText = `(${((totalBypassed / totalQueries) * 100).toFixed(1)}%)`;
+      document.getElementById("card-total-count").innerText = formatCount(totalQueries);
+      document.getElementById("card-blocked-count").innerText = formatCount(totalBlocked);
+      document.getElementById("card-blocked-pct").innerText = formatPct(totalBlocked, totalQueries);
 
-      document.getElementById("card-redirected-count").innerText = totalRedirected;
-      document.getElementById("card-redirected-pct").innerText = `(${((totalRedirected / totalQueries) * 100).toFixed(1)}%)`;
+      document.getElementById("card-bypassed-count").innerText = formatCount(totalBypassed);
+      document.getElementById("card-bypassed-pct").innerText = formatPct(totalBypassed, totalQueries);
 
-      // 2. Filters Box
+      document.getElementById("card-redirected-count").innerText = formatCount(totalRedirected);
+      document.getElementById("card-redirected-pct").innerText = formatPct(totalRedirected, totalQueries);
+
+      // Render Dynamic Trend Chart
+      if (trends.length > 1) {
+        const maxVal = Math.max(...trends.map(t => Math.max(t.allowed || 0, t.blocked || 0)), 1);
+        const w = 1000;
+        const h = 260;
+        const step = w / (trends.length - 1);
+
+        const bypassedPoints = trends.map((t, i) => `${i * step},${h - ((t.allowed || 0) / maxVal) * (h - 20)}`);
+        const blockedPoints = trends.map((t, i) => `${i * step},${h - ((t.blocked || 0) / maxVal) * (h - 20)}`);
+
+        document.getElementById("svgBypassedPath").setAttribute("d", `M ${bypassedPoints.join(" L ")}`);
+        document.getElementById("svgBlockedPath").setAttribute("d", `M ${blockedPoints.join(" L ")}`);
+
+        const datesContainer = document.getElementById("chartDates");
+        datesContainer.innerHTML = trends.map(t => `<span>${t.date.slice(5)}</span>`).join("");
+      }
+
+      // Endpoints List
+      const endpoints = (statsData.top_blocked_devices && statsData.top_blocked_devices.length > 0)
+        ? statsData.top_blocked_devices
+        : (statsData.top_blocked_users || []);
+
+      const ec = document.getElementById("endpointsListContainer");
+      if (endpoints.length > 0) {
+        ec.innerHTML = endpoints.slice(0, 6).map(ep => `
+          <div class="flex items-center justify-between p-2 rounded-xl cd-bg-card-hover transition text-xs">
+            <div class="flex items-center gap-2.5">
+              <div class="w-6 h-6 rounded bg-slate-800 text-slate-300 flex items-center justify-center text-[9px] font-bold">
+                DEV
+              </div>
+              <span class="font-medium text-white truncate max-w-[140px]">${ep.name}</span>
+            </div>
+            <div class="flex items-center gap-3 font-mono text-[11px]">
+              <span class="text-rose-500 font-semibold">${ep.count.toLocaleString()} blocks</span>
+            </div>
+          </div>
+        `).join("");
+      }
+
+      // Filters Hit List
       if (statsData.top_blocklist_sources && statsData.top_blocklist_sources.length > 0) {
-        const fc = document.getElementById("filtersListContainer");
-        fc.innerHTML = statsData.top_blocklist_sources.map(s => `
+        document.getElementById("filtersListContainer").innerHTML = statsData.top_blocklist_sources.slice(0, 7).map(s => `
           <div class="flex items-center justify-between p-2.5 rounded-xl bg-[#141a29] border cd-border text-xs">
             <div class="flex items-center gap-2 text-slate-200">
               <span class="text-slate-400">🛡</span>
@@ -686,18 +542,91 @@
         `).join("");
       }
 
-      // 3. Domains Box
-      if (statsData.top_blocked_domains && statsData.top_blocked_domains.length > 0) {
-        const dc = document.getElementById("domainsListContainer");
-        dc.innerHTML = statsData.top_blocked_domains.slice(0, 7).map(d => `
-          <div class="flex items-center justify-between p-2 rounded-lg cd-bg-card-hover transition">
-            <span class="text-slate-300 truncate max-w-xs">${d.name}</span>
-            <span class="text-slate-400 font-semibold">${d.count.toLocaleString()}</span>
+      // Categories List
+      if (statsData.top_blocked_categories && statsData.top_blocked_categories.length > 0) {
+        document.getElementById("categoriesListContainer").innerHTML = statsData.top_blocked_categories.slice(0, 7).map(c => `
+          <div class="flex items-center justify-between p-2 rounded-lg cd-bg-card-hover transition text-xs">
+            <span class="text-slate-300">${c.name}</span>
+            <span class="text-rose-400 font-mono font-semibold">${c.count.toLocaleString()}</span>
           </div>
         `).join("");
       }
+
+      // Domains List
+      filterDomainsList();
+
+      // Rules Telemetry List
+      if (statsData.cloudflare_rules && statsData.cloudflare_rules.length > 0) {
+        document.getElementById("rulesListContainer").innerHTML = statsData.cloudflare_rules.slice(0, 7).map(r => `
+          <div class="flex items-center justify-between p-2 rounded-lg cd-bg-card-hover transition text-xs">
+            <span class="text-slate-300 truncate max-w-[200px]">${r.name}</span>
+            <span class="font-mono text-slate-400 font-semibold">${(r.usage_7d || 0).toLocaleString()} hits</span>
+          </div>
+        `).join("");
+      }
+
+      renderFeedsTab();
+      renderPoliciesTab();
     }
 
+    function filterDomainsList() {
+      if (!statsData || !statsData.top_blocked_domains) return;
+      const query = (document.getElementById("domainSearch")?.value || "").toLowerCase().trim();
+      const filtered = statsData.top_blocked_domains.filter(d => d.name.toLowerCase().includes(query));
+
+      const dc = document.getElementById("domainsListContainer");
+      if (filtered.length === 0) {
+        dc.innerHTML = `<div class="text-slate-500 text-xs text-center py-4">No matching domains.</div>`;
+        return;
+      }
+
+      dc.innerHTML = filtered.slice(0, 7).map(d => `
+        <div class="flex items-center justify-between p-2 rounded-lg cd-bg-card-hover transition">
+          <span class="text-slate-300 truncate max-w-[200px]" title="${d.name}">${d.name}</span>
+          <span class="text-slate-400 font-semibold">${d.count.toLocaleString()}</span>
+        </div>
+      `).join("");
+    }
+
+    function renderFeedsTab() {
+      const sourcesContainer = document.getElementById("sourcesList");
+      if (!sourcesContainer || !statsData.sources) return;
+
+      sourcesContainer.innerHTML = Object.entries(statsData.sources).map(([name, data]) => `
+        <div class="p-4 flex items-center justify-between hover:bg-slate-900/40 transition">
+          <div>
+            <div class="text-sm font-semibold text-white">${name}</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">
+              Raw: ${data.raw.toLocaleString()} | Relevance Pruned: ${data.pruned_relevance.toLocaleString()}
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="font-mono text-xs font-bold text-emerald-400">${data.kept.toLocaleString()} active</div>
+            <span class="inline-block mt-1 px-2 py-0.5 text-[10px] rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Synced</span>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderPoliciesTab() {
+      const tableBody = document.getElementById("policiesTableBody");
+      if (!tableBody || !statsData.cloudflare_rules) return;
+
+      tableBody.innerHTML = statsData.cloudflare_rules.map(rule => `
+        <tr class="hover:bg-slate-900/40 transition">
+          <td class="px-5 py-3 font-medium text-slate-200">${rule.name}</td>
+          <td class="px-5 py-3 font-mono uppercase text-[11px] ${rule.action === 'block' ? 'text-rose-400' : 'text-emerald-400'}">${rule.action}</td>
+          <td class="px-5 py-3 font-mono text-slate-300">${(rule.usage_7d || 0).toLocaleString()}</td>
+          <td class="px-5 py-3 text-right">
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold ${rule.enabled ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-700/30 text-slate-400'}">
+              ${rule.enabled ? 'Active' : 'Disabled'}
+            </span>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    // Modal Control Functions
     function openTokenModal() { document.getElementById("tokenModal").classList.remove("hidden"); }
     function closeTokenModal() { document.getElementById("tokenModal").classList.add("hidden"); }
     function saveTokenModal() {
@@ -706,11 +635,176 @@
       closeTokenModal();
       location.reload();
     }
-    function openAddBlockModal() { document.getElementById("addBlockModal").classList.remove("hidden"); }
+    function openAddBlockModal() { 
+      document.getElementById("inputTargetUrl").value = "";
+      document.getElementById("addBlockModal").classList.remove("hidden"); 
+      document.getElementById("inputTargetUrl").focus();
+    }
     function closeAddBlockModal() { document.getElementById("addBlockModal").classList.add("hidden"); }
-    function submitNewBlock() { closeAddBlockModal(); alert("Added. Click Save & Deploy to commit."); }
-    function commitConfig() { alert("Settings committed to config.toml"); }
-    function triggerWorkflow() { alert("Workflow dispatched."); }
+
+    // GitHub API: Direct Commit Target to config.toml
+    async function submitNewBlock() {
+      if (!githubToken) { openTokenModal(); return; }
+      const input = document.getElementById("inputTargetUrl");
+      let domain = input.value.trim().toLowerCase();
+      if (!domain) return;
+
+      domain = domain.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].split(':')[0].trim();
+      if (!domain || !domain.includes('.')) {
+        showToast("Invalid domain format. Example: tracker.example.com", "error");
+        return;
+      }
+
+      const btn = document.getElementById("btnConfirmBlock");
+      btn.disabled = true;
+      btn.innerText = "Committing...";
+
+      try {
+        const fileResp = await fetch(`https://api.github.com/repos/${repoName}/contents/config.toml`, {
+          headers: { "Authorization": `Bearer ${githubToken}`, "Accept": "application/vnd.github+json" }
+        });
+        if (!fileResp.ok) throw new Error(`Could not access config.toml (HTTP ${fileResp.status})`);
+
+        const fileData = await fileResp.json();
+        const binary = atob(fileData.content.replace(/\s/g, ''));
+        const bytes = Uint8Array.from(binary, m => m.charCodeAt(0));
+        let tomlText = new TextDecoder().decode(bytes);
+
+        if (tomlText.includes(`"${domain}"`)) {
+          showToast(`Domain ${domain} already exists in config.toml`, "warning");
+          closeAddBlockModal();
+          return;
+        }
+
+        // Insert into domains list or create standalone block
+        if (/domains\s*=\s*\[/m.test(tomlText)) {
+          tomlText = tomlText.replace(/domains\s*=\s*\[\s*/m, `domains = [\n  "${domain}", `);
+        } else {
+          tomlText += `\n# Custom Domain Added via Dashboard\n[policies.custom_blocks]\nprefix = "L_Custom"\nname = "Custom Block: Dashboard"\naction = "block"\ndomains = ["${domain}"]\n`;
+        }
+
+        const encodedBytes = new TextEncoder().encode(tomlText);
+        let binStr = "";
+        for (let i = 0; i < encodedBytes.length; i++) {
+          binStr += String.fromCharCode(encodedBytes[i]);
+        }
+        const updatedBase64 = btoa(binStr);
+
+        const putResp = await fetch(`https://api.github.com/repos/${repoName}/contents/config.toml`, {
+          method: "PUT",
+          headers: {
+            "Authorization": `Bearer ${githubToken}`,
+            "Accept": "application/vnd.github+json"
+          },
+          body: JSON.stringify({
+            message: `chore: add blocked domain ${domain}`,
+            content: updatedBase64,
+            sha: fileData.sha
+          })
+        });
+
+        if (!putResp.ok) {
+          const err = await putResp.json();
+          throw new Error(err.message || "Commit failed");
+        }
+
+        closeAddBlockModal();
+        showToast(`Committed ${domain} to main. Click Deploy to push to Cloudflare!`, "success");
+      } catch (err) {
+        showToast(`Block failed: ${err.message}`, "error");
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Commit Block";
+      }
+    }
+
+    // GitHub API: Trigger Actions Workflow & Monitor Run
+    async function triggerWorkflow() {
+      if (!githubToken) { openTokenModal(); return; }
+      const btn = document.getElementById("syncBtn");
+      const btnText = document.getElementById("syncBtnText");
+      btn.disabled = true;
+      btnText.innerText = "Deploying...";
+
+      try {
+        const wfResp = await fetch(`https://api.github.com/repos/${repoName}/actions/workflows`, {
+          headers: { "Authorization": `Bearer ${githubToken}`, "Accept": "application/vnd.github+json" }
+        });
+        if (!wfResp.ok) throw new Error(`Could not list workflows (${wfResp.status})`);
+
+        const wfData = await wfResp.json();
+        const workflows = wfData.workflows || [];
+        const targetWf = workflows.find(w => /sync|block|gateway/i.test(w.name) || /sync|block/i.test(w.path)) || workflows[0];
+
+        if (!targetWf) throw new Error("No Actions workflow found in this repository.");
+
+        const dispResp = await fetch(`https://api.github.com/repos/${repoName}/actions/workflows/${targetWf.id}/dispatches`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${githubToken}`,
+            "Accept": "application/vnd.github+json"
+          },
+          body: JSON.stringify({ ref: "main" })
+        });
+
+        if (!dispResp.ok) {
+          const err = await dispResp.json();
+          throw new Error(err.message || "Workflow dispatch rejected");
+        }
+
+        showToast(`Workflow "${targetWf.name}" dispatched. Monitoring run...`, "success");
+        pollWorkflowRun(targetWf.id);
+      } catch (err) {
+        showToast(`Deploy failed: ${err.message}`, "error");
+        btn.disabled = false;
+        btnText.innerText = "Deploy";
+      }
+    }
+
+    async function pollWorkflowRun(workflowId) {
+      const btn = document.getElementById("syncBtn");
+      const btnText = document.getElementById("syncBtnText");
+      let attempts = 0;
+
+      const interval = setInterval(async () => {
+        attempts++;
+        if (attempts > 30) {
+          clearInterval(interval);
+          btn.disabled = false;
+          btnText.innerText = "Deploy";
+          showToast("Sync is taking longer than usual. Check GitHub Actions tab.", "warning");
+          return;
+        }
+
+        try {
+          const runsResp = await fetch(`https://api.github.com/repos/${repoName}/actions/workflows/${workflowId}/runs?per_page=1`, {
+            headers: { "Authorization": `Bearer ${githubToken}`, "Accept": "application/vnd.github+json" }
+          });
+          if (!runsResp.ok) return;
+
+          const runsData = await runsResp.json();
+          const latest = (runsData.workflow_runs || [])[0];
+          if (!latest) return;
+
+          if (latest.status === "in_progress" || latest.status === "queued") {
+            btnText.innerText = "Syncing...";
+          } else if (latest.status === "completed") {
+            clearInterval(interval);
+            btn.disabled = false;
+            btnText.innerText = "Deploy";
+
+            if (latest.conclusion === "success") {
+              showToast("Cloudflare Gateway rules synchronized successfully!", "success");
+              setTimeout(loadDashboard, 1500);
+            } else {
+              showToast(`Workflow finished with status: ${latest.conclusion}`, "error");
+            }
+          }
+        } catch (e) {
+          console.warn("Polling error:", e);
+        }
+      }, 4000);
+    }
 
     window.onload = loadDashboard;
   </script>
