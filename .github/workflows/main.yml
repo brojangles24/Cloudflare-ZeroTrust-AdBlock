@@ -38,7 +38,7 @@ jobs:
           PRIMARY_EMAIL: ${{ secrets.PRIMARY_EMAIL }}
           SECONDARY_EMAIL: ${{ secrets.SECONDARY_EMAIL }}
           TERTIARY_EMAIL: ${{ secrets.TERTIARY_EMAIL }}
-          ACTIVE_TIER: ${{ vars.ACTIVE_TIER }}
+          ACTIVE_TIER: ${{ vars.ACTIVE_TIER || 'all' }}
           USE_SPAM_TLD_RELAXED: ${{ vars.USE_SPAM_TLD_RELAXED }}
           USE_SPAM_TLD_RESTRICTIVE: ${{ vars.USE_SPAM_TLD_RESTRICTIVE }}
         run: python block_ads_sync.py
