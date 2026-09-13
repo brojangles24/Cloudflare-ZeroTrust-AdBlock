@@ -260,7 +260,9 @@ class RelevanceChecker:
         skip_header = item["skip_header"]
         compression = item["compression"]
 
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        }
         part_path = self._get_part_path(url)
 
         if cached_meta and part_path.exists():
@@ -282,13 +284,22 @@ class RelevanceChecker:
                     "updated_at": time.time()
                 }
 
+                # Use iter_content to transparently handle HTTP gzip/deflate encoding across all platforms
                 with tempfile.NamedTemporaryFile(delete=True) as tmp:
-                    shutil.copyfileobj(r.raw, tmp)
+                    for chunk in r.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            tmp.write(chunk)
                     tmp.seek(0)
 
                     if compression == "zip":
                         with zipfile.ZipFile(tmp.name) as z:
-                            with z.open(z.namelist()[0]) as zf, io.TextIOWrapper(zf, encoding="utf-8", errors="ignore") as text_io:
+                            # Inspect the archive to select the actual CSV/TXT file and ignore directories
+                            names = z.namelist()
+                            target_file = next(
+                                (n for n in names if n.lower().endswith((".csv", ".txt")) and not n.endswith("/")),
+                                names[0]
+                            )
+                            with z.open(target_file) as zf, io.TextIOWrapper(zf, encoding="utf-8", errors="ignore") as text_io:
                                 domains = _parse_csv_stream(text_io, col, skip_header)
                     elif compression == "gzip":
                         with gzip.open(tmp.name, mode="rt", encoding="utf-8", errors="ignore") as gz:
