@@ -150,8 +150,8 @@ class CloudflareAPI:
         settings.setdefault("block_page_enabled", False)
         payload["rule_settings"] = settings
         return self.req("POST", "rules", json=payload)
-        
-def update_rule(self, rid: str, data: dict):
+
+    def update_rule(self, rid: str, data: dict):
         payload = dict(data)
         settings = dict(payload.get("rule_settings") or {})
         settings.setdefault("block_page_enabled", False)
@@ -419,8 +419,12 @@ def fetch_feed_source(session: requests.Session, name: str, urls: list[str], che
 def fetch_ip_source(session: requests.Session, name: str, urls: list[str], timeout: tuple) -> tuple[str, set, int]:
     networks = set()
     raw_count = 0
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
+
     for u in urls:
-        with session.get(u, timeout=timeout, stream=True) as resp:
+        with session.get(u, headers=headers, timeout=timeout, stream=True) as resp:
             resp.raise_for_status()
             for line in resp.iter_lines(decode_unicode=True):
                 if not line:
@@ -429,12 +433,33 @@ def fetch_ip_source(session: requests.Session, name: str, urls: list[str], timeo
                 if not line or line[0] in "#;/":
                     continue
                 raw_count += 1
-                token = line.split(";")[0].split()[0].strip()
-                try:
-                    net = ipaddress.ip_network(token, strict=False)
-                    networks.add(net)
-                except ValueError:
-                    continue
+
+                for comment_char in ("#", ";", "//"):
+                    line = line.split(comment_char)[0]
+
+                cleaned = line.replace('"', ' ').replace("'", ' ').replace(',', ' ')
+                for raw_token in cleaned.split():
+                    token = raw_token.strip().strip("[]")
+                    if "." not in token and ":" not in token:
+                        continue
+                    if "." in token and ":" in token:
+                        token = token.split(":")[0]
+                    elif "]:" in raw_token:
+                        token = raw_token.split("]:")[0].lstrip("[")
+
+                    try:
+                        net = ipaddress.ip_network(token, strict=False)
+                        if (
+                            net.is_private
+                            or net.is_loopback
+                            or net.is_multicast
+                            or net.is_link_local
+                            or net.is_unspecified
+                        ):
+                            continue
+                        networks.add(net)
+                    except ValueError:
+                        continue
 
     logger.info(f"Fetched IP feed {name}: {len(networks):,} unique subnets/IPs (Raw lines: {raw_count:,})")
     return name, networks, raw_count
