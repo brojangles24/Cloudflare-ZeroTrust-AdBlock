@@ -2,6 +2,7 @@ import concurrent.futures
 import gzip
 import hashlib
 import io
+import ipaddress
 import json
 import logging
 import os
@@ -11,6 +12,7 @@ import tempfile
 import time
 import zipfile
 from pathlib import Path
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
@@ -135,8 +137,10 @@ class CloudflareAPI:
     def get_rules(self) -> list[dict]: return self.paginate("rules")
     def delete_list(self, lid: str): return self.req("DELETE", f"lists/{lid}")
     def delete_rule(self, rid: str): return self.req("DELETE", f"rules/{rid}")
-    def create_list(self, name: str, items: list[dict], desc: str = ""):
-        return self.req("POST", "lists", json={"name": name, "type": "DOMAIN", "items": items, "description": desc})
+
+    def create_list(self, name: str, items: list[dict], list_type: str = "DOMAIN", desc: str = ""):
+        return self.req("POST", "lists", json={"name": name, "type": list_type, "items": items, "description": desc})
+
     def update_list(self, lid: str, name: str, items: list[dict], desc: str = ""):
         return self.req("PUT", f"lists/{lid}", json={"name": name, "items": items, "description": desc})
 
@@ -152,18 +156,23 @@ class CloudflareAPI:
         settings = dict(payload.get("rule_settings") or {})
         settings.setdefault("block_page_enabled", False)
         payload["rule_settings"] = settings
-        return self.req("PUT", f"rules/{rid}", json=payload)
+        return self.req("PUT", "rules", json=payload)
 
-def parse_sources(sources_table: dict) -> list[dict]:
+def parse_sources(sources_table: dict, is_ip: bool = False) -> list[dict]:
     parsed = []
     for name, data in sources_table.items():
         if isinstance(data, str):
-            parsed.append({"name": name, "urls": [data], "enable_relevance": True})
+            parsed.append({"name": name, "urls": [data], "enable_relevance": not is_ip, "is_ip": is_ip})
         elif isinstance(data, list):
-            parsed.append({"name": name, "urls": data, "enable_relevance": True})
+            parsed.append({"name": name, "urls": data, "enable_relevance": not is_ip, "is_ip": is_ip})
         elif isinstance(data, dict):
             urls = data.get("urls") or [data.get("url")]
-            parsed.append({"name": name, "urls": urls, "enable_relevance": data.get("relevance", True)})
+            parsed.append({
+                "name": name,
+                "urls": urls,
+                "enable_relevance": data.get("relevance", not is_ip) if not is_ip else False,
+                "is_ip": is_ip
+            })
     return parsed
 
 def compile_category_expression(p: dict) -> str:
@@ -198,7 +207,7 @@ def is_valid_domain(domain: str) -> str | None:
         return None
     if d.startswith("-") or d.endswith("-"):
         return None
-    
+
     if not d.isascii():
         try:
             d = d.encode("idna").decode("ascii")
@@ -283,7 +292,6 @@ class RelevanceChecker:
                     "updated_at": time.time()
                 }
 
-                # Use iter_content to transparently handle HTTP gzip/deflate encoding across all platforms
                 with tempfile.NamedTemporaryFile(delete=True) as tmp:
                     for chunk in r.iter_content(chunk_size=1024 * 1024):
                         if chunk:
@@ -292,7 +300,6 @@ class RelevanceChecker:
 
                     if compression == "zip":
                         with zipfile.ZipFile(tmp.name) as z:
-                            # Inspect the archive to select the actual CSV/TXT file and ignore directories
                             names = z.namelist()
                             target_file = next(
                                 (n for n in names if n.lower().endswith((".csv", ".txt")) and not n.endswith("/")),
@@ -409,6 +416,29 @@ def fetch_feed_source(session: requests.Session, name: str, urls: list[str], che
     logger.info(f"Fetched {name}: {len(kept):,} kept (Raw: {raw_count:,}, Pruned: {pruned:,})")
     return name, kept, pruned, raw_count
 
+def fetch_ip_source(session: requests.Session, name: str, urls: list[str], timeout: tuple) -> tuple[str, set, int]:
+    networks = set()
+    raw_count = 0
+    for u in urls:
+        with session.get(u, timeout=timeout, stream=True) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                line = line.strip()
+                if not line or line[0] in "#;/":
+                    continue
+                raw_count += 1
+                token = line.split(";")[0].split()[0].strip()
+                try:
+                    net = ipaddress.ip_network(token, strict=False)
+                    networks.add(net)
+                except ValueError:
+                    continue
+
+    logger.info(f"Fetched IP feed {name}: {len(networks):,} unique subnets/IPs (Raw lines: {raw_count:,})")
+    return name, networks, raw_count
+
 def fetch_spam_tlds(session: requests.Session, url: str, timeout: tuple) -> tuple[str, set[str]]:
     try:
         resp = session.get(url, timeout=timeout)
@@ -431,7 +461,7 @@ def optimize_domains(domains: set[str]) -> tuple[list[str], int]:
     optimized, last_kept = [], None
     last_kept_suffix = ""
     subdomain_duplicates = 0
-    
+
     for dom in sorted_domains:
         if last_kept and dom.endswith(last_kept_suffix):
             subdomain_duplicates += 1
@@ -439,58 +469,84 @@ def optimize_domains(domains: set[str]) -> tuple[list[str], int]:
         optimized.append(dom)
         last_kept = dom
         last_kept_suffix = f".{dom}"
-        
+
     return optimized, subdomain_duplicates
 
 def build_policy_sets(policies: list[dict], fetched: dict, spam_tlds: set[str] = None) -> list[tuple[dict, list[str]]]:
     sets = []
     base_set = fetched.get("HaGeZi Normal", {}).get("domains", set())
-    all_blocked = set().union(*(v["domains"] for k, v in fetched.items() if k != "HaGeZi Spam Allow"))
+    all_blocked_domains = set().union(*(
+        v["domains"] for k, v in fetched.items()
+        if v.get("type") == "DOMAIN" and k != "HaGeZi Spam Allow"
+    ))
 
     relaxed_tld_active = any(
-        p.get("prefix") == "L_Relaxed" and p.get("use_spam_tld") 
+        p.get("prefix") == "L_Relaxed" and p.get("use_spam_tld")
         for p in policies
     )
 
     for p in policies:
         prefix = p.get("prefix", "unknown")
-        p_set = set()
-        for inc in p.get("include", []):
-            if inc in fetched:
-                p_set.update(fetched[inc]["domains"])
-        for exc in p.get("exclude", []):
-            if exc in fetched:
-                p_set.difference_update(fetched[exc]["domains"])
+        policy_type = p.get("type", "DOMAIN").upper()
 
-        if p.get("action") == "allow":
-            p_set.difference_update(all_blocked)
+        if policy_type == "IP":
+            ip_set = set()
+            for inc in p.get("include", []):
+                if inc in fetched and fetched[inc].get("type") == "IP":
+                    ip_set.update(fetched[inc]["networks"])
+            for exc in p.get("exclude", []):
+                if exc in fetched and fetched[exc].get("type") == "IP":
+                    ip_set.difference_update(fetched[exc]["networks"])
+
+            collapsed = [str(net) for net in ipaddress.collapse_addresses(ip_set)]
+            sets.append((p, collapsed))
         else:
-            if prefix != "L_Normal" and "HaGeZi Normal" not in p.get("include", []) and "HaGeZi Normal" not in p.get("exclude", []) and base_set:
-                p_set = {d for d in p_set if not has_suffix_match(d, base_set)}
+            p_set = set()
+            for inc in p.get("include", []):
+                if inc in fetched and fetched[inc].get("type") == "DOMAIN":
+                    p_set.update(fetched[inc]["domains"])
+            for exc in p.get("exclude", []):
+                if exc in fetched and fetched[exc].get("type") == "DOMAIN":
+                    p_set.difference_update(fetched[exc]["domains"])
 
-            should_prune_tlds = False
-            if p.get("use_spam_tld"):
-                should_prune_tlds = True
-            elif relaxed_tld_active and prefix == "L_Restrictive":
-                should_prune_tlds = True
+            if p.get("action") == "allow":
+                p_set.difference_update(all_blocked_domains)
+            else:
+                if prefix != "L_Normal" and "HaGeZi Normal" not in p.get("include", []) and "HaGeZi Normal" not in p.get("exclude", []) and base_set:
+                    p_set = {d for d in p_set if not has_suffix_match(d, base_set)}
 
-            if should_prune_tlds and spam_tlds:
-                p_set = {d for d in p_set if d.rsplit(".", 1)[-1] not in spam_tlds}
+                should_prune_tlds = False
+                if p.get("use_spam_tld"):
+                    should_prune_tlds = True
+                elif relaxed_tld_active and prefix == "L_Restrictive":
+                    should_prune_tlds = True
 
-        optimized, _ = optimize_domains(p_set)
-        sets.append((p, optimized))
+                if should_prune_tlds and spam_tlds:
+                    p_set = {d for d in p_set if d.rsplit(".", 1)[-1] not in spam_tlds}
+
+            optimized, _ = optimize_domains(p_set)
+            sets.append((p, optimized))
 
     return sets
 
-def sync_policy_in_place(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict], existing_rules: list[dict], domains: list[str], policy: dict, tld_expr: str = "") -> tuple[list[str], list[str], list[str]]:
+def sync_policy_in_place(
+    cf: CloudflareAPI,
+    cfg: dict,
+    existing_lists: list[dict],
+    existing_rules: list[dict],
+    entries: list[str],
+    policy: dict,
+    tld_expr: str = ""
+) -> tuple[list[str], list[str], list[str]]:
     prefix = policy["prefix"]
     policy_name = policy["name"]
+    policy_type = policy.get("type", "DOMAIN").upper()
     max_size = cfg["settings"]["max_list_size"]
     workers = cfg["settings"]["max_workers"]
     allow_auto_enable = cfg.get("settings", {}).get("auto_enable_rules", True)
 
     matched_lists = sorted([l for l in existing_lists if l["name"].startswith(f"{prefix} ")], key=lambda x: x["name"])
-    chunks = [domains[i : i + max_size] for i in range(0, len(domains), max_size)] if domains else []
+    chunks = [entries[i : i + max_size] for i in range(0, len(entries), max_size)] if entries else []
 
     active_ids = []
     surplus_lists = []
@@ -498,18 +554,18 @@ def sync_policy_in_place(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict
     def sync_chunk(idx: int, chunk: list[str]) -> str:
         name = f"{prefix} {idx + 1:03d}"
         chash = hashlib.sha256(",".join(chunk).encode()).hexdigest()
-        items = [{"value": d} for d in chunk]
+        items = [{"value": entry} for entry in chunk]
 
         if idx < len(matched_lists):
             target = matched_lists[idx]
             if target.get("description") == chash and (target.get("count") is None or target.get("count") == len(chunk)):
                 return target["id"]
             cf.update_list(target["id"], name, items, desc=chash)
-            logger.info(f"Updated {name} ({len(chunk)} domains)")
+            logger.info(f"Updated {name} ({len(chunk)} {policy_type.lower()} items)")
             return target["id"]
         else:
-            res = cf.create_list(name, items, desc=chash)
-            logger.info(f"Created {name} ({len(chunk)} domains)")
+            res = cf.create_list(name, items, list_type=policy_type, desc=chash)
+            logger.info(f"Created {name} ({len(chunk)} {policy_type.lower()} items)")
             return res["result"]["id"]
 
     if chunks:
@@ -519,10 +575,13 @@ def sync_policy_in_place(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict
     if len(matched_lists) > len(chunks):
         surplus_lists = matched_lists[len(chunks):]
 
-    list_items = [f"any(dns.domains[*] in ${lid})" for lid in active_ids]
-    if tld_expr and policy.get("use_spam_tld"):
-        list_items.append(f"({tld_expr})")
-    
+    if policy_type == "IP":
+        list_items = [f"any(dns.resolved_ips[*] in ${lid})" for lid in active_ids]
+    else:
+        list_items = [f"any(dns.domains[*] in ${lid})" for lid in active_ids]
+        if tld_expr and policy.get("use_spam_tld"):
+            list_items.append(f"({tld_expr})")
+
     cat_expr = compile_category_expression(policy)
     if cat_expr:
         list_items.append(cat_expr)
@@ -622,7 +681,7 @@ def sync_standalone_policies(cf: CloudflareAPI, cfg: dict, existing_rules: list[
                 payload["identity"] = matched["identity"]
             if matched.get("rule_settings"):
                 payload["rule_settings"] = matched["rule_settings"]
-            
+
             try:
                 cf.update_rule(matched["id"], payload)
                 matched["enabled"] = desired_enabled
@@ -676,19 +735,22 @@ def main() -> None:
                 "prefix": "L_AllowSpam",
                 "name": "Allow: Spam Exceptions",
                 "action": "allow",
+                "type": "DOMAIN",
                 "include": [spam_allow["name"]],
                 "exclude": [],
                 "use_spam_tld": False
             })
 
-    sources = parse_sources(cfg.get("sources", {}))
+    domain_sources = parse_sources(cfg.get("sources", {}), is_ip=False)
+    ip_sources = parse_sources(cfg.get("ip_sources", {}), is_ip=True)
+
     if any(p.get("use_spam_tld") for p in policies) and "spam_allow_source" in cfg:
         sa = cfg["spam_allow_source"]
-        sources.append({"name": sa["name"], "urls": [sa["url"]], "enable_relevance": True})
+        domain_sources.append({"name": sa["name"], "urls": [sa["url"]], "enable_relevance": True, "is_ip": False})
 
     session = create_session(workers)
     checker = None
-    if any(s.get("enable_relevance") for s in sources):
+    if any(s.get("enable_relevance") for s in domain_sources):
         checker = RelevanceChecker(session, workers)
         checker.build_dataset()
 
@@ -698,25 +760,38 @@ def main() -> None:
     fetched = {}
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {
+        domain_futures = {
             pool.submit(fetch_feed_source, session, s["name"], s["urls"], checker if s.get("enable_relevance") else None, timeout): s["name"]
-            for s in sources
+            for s in domain_sources
         }
-        for f in concurrent.futures.as_completed(futures):
-            name = futures[f]
+        ip_futures = {
+            pool.submit(fetch_ip_source, session, s["name"], s["urls"], timeout): s["name"]
+            for s in ip_sources
+        }
+
+        for f in concurrent.futures.as_completed(domain_futures):
+            name = domain_futures[f]
             try:
                 name, kept, _, _ = f.result()
-                fetched[name] = {"domains": kept}
+                fetched[name] = {"type": "DOMAIN", "domains": kept}
             except Exception as e:
                 if name == "HaGeZi Normal":
                     logger.critical(f"Critical baseline failure ({name}): {e}")
                     return
                 logger.warning(f"Non-critical feed failure ({name}): {e}")
 
+        for f in concurrent.futures.as_completed(ip_futures):
+            name = ip_futures[f]
+            try:
+                name, networks, _ = f.result()
+                fetched[name] = {"type": "IP", "networks": networks}
+            except Exception as e:
+                logger.warning(f"IP feed failure ({name}): {e}")
+
     compiled = build_policy_sets(policies, fetched, spam_tlds)
-    total_domains = sum(len(d) for _, d in compiled)
-    if total_domains > cfg["settings"]["total_quota"]:
-        logger.error(f"Total domains ({total_domains:,}) exceeds quota ({cfg['settings']['total_quota']:,}).")
+    total_entries = sum(len(items) for _, items in compiled)
+    if total_entries > cfg["settings"]["total_quota"]:
+        logger.error(f"Total entries ({total_entries:,}) exceeds quota ({cfg['settings']['total_quota']:,}).")
         return
 
     existing_lists = cf.get_lists()
@@ -726,10 +801,10 @@ def main() -> None:
 
     all_active_ids, all_surplus_ids, all_active_rules = [], [], []
 
-    for policy, optimized_domains in compiled:
+    for policy, optimized_entries in compiled:
         expr = tld_expr if policy.get("use_spam_tld") else ""
         active_ids, surplus_ids, rule_names = sync_policy_in_place(
-            cf, cfg, existing_lists, existing_rules, optimized_domains, policy, tld_expr=expr
+            cf, cfg, existing_lists, existing_rules, optimized_entries, policy, tld_expr=expr
         )
         all_active_ids.extend(active_ids)
         all_surplus_ids.extend(surplus_ids)
@@ -740,7 +815,7 @@ def main() -> None:
     )
 
     duration = time.perf_counter() - start
-    logger.info(f"Sync completed successfully in {duration:.2f}s ({total_domains:,} domains across {len(all_active_ids)} lists).")
+    logger.info(f"Sync completed successfully in {duration:.2f}s ({total_entries:,} items across {len(all_active_ids)} lists).")
 
 if __name__ == "__main__":
     main()
