@@ -437,7 +437,7 @@ def fetch_ip_source(session: requests.Session, name: str, urls: list[str], timeo
                 for comment_char in ("#", ";", "//"):
                     line = line.split(comment_char)[0]
 
-                cleaned = line.replace('"', ' ').replace("'", ' ').replace(',', ' ')
+                cleaned = line.replace('"', ' ').replace("'", ' ').replace(',', ' ').replace('\t', ' ')
                 for raw_token in cleaned.split():
                     token = raw_token.strip().strip("[]")
                     if "." not in token and ":" not in token:
@@ -523,8 +523,13 @@ def build_policy_sets(policies: list[dict], fetched: dict, spam_tlds: set[str] =
                 if exc in fetched and fetched[exc].get("type") == "IP":
                     ip_set.difference_update(fetched[exc]["networks"])
 
-            collapsed = [str(net) for net in ipaddress.collapse_addresses(ip_set)]
-            sets.append((p, collapsed))
+            v4_nets = [net for net in ip_set if net.version == 4]
+            v6_nets = [net for net in ip_set if net.version == 6]
+
+            collapsed_v4 = [str(net) for net in ipaddress.collapse_addresses(v4_nets)]
+            collapsed_v6 = [str(net) for net in ipaddress.collapse_addresses(v6_nets)]
+
+            sets.append((p, collapsed_v4 + collapsed_v6))
         else:
             p_set = set()
             for inc in p.get("include", []):
