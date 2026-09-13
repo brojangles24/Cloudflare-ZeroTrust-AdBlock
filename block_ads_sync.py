@@ -150,13 +150,13 @@ class CloudflareAPI:
         settings.setdefault("block_page_enabled", False)
         payload["rule_settings"] = settings
         return self.req("POST", "rules", json=payload)
-
-    def update_rule(self, rid: str, data: dict):
+        
+def update_rule(self, rid: str, data: dict):
         payload = dict(data)
         settings = dict(payload.get("rule_settings") or {})
         settings.setdefault("block_page_enabled", False)
         payload["rule_settings"] = settings
-        return self.req("PUT", "rules", json=payload)
+        return self.req("PUT", f"rules/{rid}", json=payload)
 
 def parse_sources(sources_table: dict, is_ip: bool = False) -> list[dict]:
     parsed = []
