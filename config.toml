@@ -12,7 +12,7 @@ scrub_targets   = [
 auto_enable_rules = true
 
 [tld]
-url = ""
+url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
 # Standalone Cloudflare Gateway Firewall Policies
 [gateway_policies]
