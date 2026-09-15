@@ -63,7 +63,7 @@ prefix              = "L_Relaxed"
 name                = "Block: Relaxed Profile"
 action              = "block"
 type                = "DOMAIN"
-use_spam_tld        = true
+use_spam_tld        = false
 include             = [
     "HaGeZi Normal", "Hagezi NSFW", "HaGeZi Fake", "HaGeZi No SafeSearch", 
     "HaGeZi TIF Full", "Cyber Threat Intel", "HaGeZi DynDNS", 
