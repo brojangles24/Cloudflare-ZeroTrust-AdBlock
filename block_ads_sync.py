@@ -1,13 +1,10 @@
 import concurrent.futures
 import gzip
-import hashlib
 import io
 import ipaddress
-import json
 import logging
 import os
 import re
-import shutil
 import tempfile
 import time
 import zipfile
@@ -203,21 +200,24 @@ def has_suffix_match(host: str, lookup_set: set[str]) -> bool:
 
 def is_valid_domain(domain: str) -> str | None:
     d = domain.strip().lower().removeprefix("*.").strip(".")
-    if not d or "." not in d or any(c in d for c in "*/[]") or ".." in d:
-        return None
-    if d.startswith("-") or d.endswith("-"):
+    if not d or "." not in d or any(c in d for c in "*/[]") or ".." in d or len(d) > 253:
         return None
 
-    if not d.isascii():
-        try:
-            d = d.encode("idna").decode("ascii")
-        except (UnicodeError, ValueError):
+    # Validate against IDNA rules to prevent Cloudflare 400 Bad Request
+    try:
+        encoded = d.encode("idna").decode("ascii")
+    except (UnicodeError, ValueError):
+        return None
+
+    labels = encoded.split(".")
+    for label in labels:
+        if not label or len(label) > 63 or label.startswith("-") or label.endswith("-"):
             return None
 
-    if (d[-1].isdigit() or ":" in d) and IP_PATTERN.match(d):
+    if (encoded[-1].isdigit() or ":" in encoded) and IP_PATTERN.match(encoded):
         return None
 
-    return d
+    return encoded
 
 def _parse_csv_stream(iterable, col: int, skip_header: bool) -> set[str]:
     domains = set()
@@ -227,42 +227,18 @@ def _parse_csv_stream(iterable, col: int, skip_header: bool) -> set[str]:
         parts = line.split(",")
         if len(parts) > col:
             d = parts[col].strip().lower().strip('"')
-            if d and "." in d:
-                domains.add(d)
+            clean = is_valid_domain(d)
+            if clean:
+                domains.add(clean)
     return domains
 
 class RelevanceChecker:
-    CACHE_DIR = Path(".relevance_cache")
-    METADATA_FILE = CACHE_DIR / "metadata.json"
-    MASTER_FILE = CACHE_DIR / "master.txt.gz"
-
     def __init__(self, session: requests.Session, workers: int):
         self.master_allowlist: set[str] = set()
         self.session = session
         self.workers = workers
 
-    @staticmethod
-    def _get_part_path(url: str) -> Path:
-        uhash = hashlib.sha256(url.encode()).hexdigest()[:12]
-        return RelevanceChecker.CACHE_DIR / f"part_{uhash}.txt.gz"
-
-    def load_metadata(self) -> dict:
-        if self.METADATA_FILE.exists():
-            try:
-                with open(self.METADATA_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.warning(f"Failed reading cache metadata: {e}")
-        return {}
-
-    def save_metadata(self, meta: dict) -> None:
-        try:
-            with open(self.METADATA_FILE, "w", encoding="utf-8") as f:
-                json.dump(meta, f, indent=2)
-        except Exception as e:
-            logger.warning(f"Failed saving cache metadata: {e}")
-
-    def _fetch_source(self, item: dict, cached_meta: dict | None) -> tuple[str, set[str] | None, dict]:
+    def _fetch_source(self, item: dict) -> tuple[str, set[str]]:
         url = item["url"]
         col = item["col"]
         skip_header = item["skip_header"]
@@ -271,26 +247,10 @@ class RelevanceChecker:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         }
-        part_path = self._get_part_path(url)
-
-        if cached_meta and part_path.exists():
-            if cached_meta.get("etag"):
-                headers["If-None-Match"] = cached_meta["etag"]
-            if cached_meta.get("last_modified"):
-                headers["If-Modified-Since"] = cached_meta["last_modified"]
 
         try:
             with self.session.get(url, headers=headers, stream=True, timeout=90) as r:
-                if r.status_code == 304:
-                    logger.info(f"ETag matched (304 Not Modified): {url}")
-                    return url, None, cached_meta
-
                 r.raise_for_status()
-                new_meta = {
-                    "etag": r.headers.get("ETag"),
-                    "last_modified": r.headers.get("Last-Modified"),
-                    "updated_at": time.time()
-                }
 
                 with tempfile.NamedTemporaryFile(delete=True) as tmp:
                     for chunk in r.iter_content(chunk_size=1024 * 1024):
@@ -314,78 +274,22 @@ class RelevanceChecker:
                         with open(tmp.name, "r", encoding="utf-8", errors="ignore") as f:
                             domains = _parse_csv_stream(f, col, skip_header)
 
-                try:
-                    with gzip.open(part_path, "wt", encoding="utf-8") as f:
-                        f.write("\n".join(domains))
-                except Exception as e:
-                    logger.warning(f"Failed saving part cache for {url}: {e}")
-
-                logger.info(f"Fetched & updated {len(domains):,} domains from {url}")
-                return url, domains, new_meta
+                logger.info(f"Fetched & parsed {len(domains):,} domains from {url}")
+                return url, domains
         except Exception as e:
             logger.warning(f"Failed to fetch top list ({url}): {e}")
-            if part_path.exists():
-                logger.info(f"Falling back to existing part cache for {url}")
-                return url, None, cached_meta or {}
-            return url, set(), {}
+            return url, set()
 
     def build_dataset(self) -> None:
-        self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        cached_meta = self.load_metadata()
-
-        logger.info("Verifying relevance datasets via conditional HTTP requests (ETag)...")
-        results = {}
-        updated_meta = dict(cached_meta)
-        any_modified = False
+        logger.info("Fetching fresh relevance datasets directly from sources...")
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as executor:
-            futures = [
-                executor.submit(self._fetch_source, item, cached_meta.get(item["url"]))
-                for item in DEFAULT_TOP_LISTS
-            ]
+            futures = [executor.submit(self._fetch_source, item) for item in DEFAULT_TOP_LISTS]
             for f in concurrent.futures.as_completed(futures):
-                url, domains, meta = f.result()
-                if domains is not None:
-                    any_modified = True
-                    results[url] = domains
-                    if meta:
-                        updated_meta[url] = meta
-                else:
-                    results[url] = None
-
-        if not any_modified and self.MASTER_FILE.exists():
-            logger.info("All sources unchanged (ETags validated). Reading master allowlist from cache...")
-            try:
-                with gzip.open(self.MASTER_FILE, "rt", encoding="utf-8") as f:
-                    self.master_allowlist = {line.strip() for line in f if line.strip()}
-                logger.info(f"Relevance dataset loaded: {len(self.master_allowlist):,} root domains.")
-                return
-            except Exception as e:
-                logger.warning(f"Failed reading master cache: {e}. Reconstructing from parts...")
-
-        logger.info("Rebuilding master relevance dataset from updated parts...")
-        for item in DEFAULT_TOP_LISTS:
-            url = item["url"]
-            doms = results.get(url)
-            if doms is not None:
-                self.master_allowlist.update(doms)
-            else:
-                part_path = self._get_part_path(url)
-                if part_path.exists():
-                    try:
-                        with gzip.open(part_path, "rt", encoding="utf-8") as f:
-                            self.master_allowlist.update(line.strip() for line in f if line.strip())
-                    except Exception as e:
-                        logger.warning(f"Failed reading part {part_path}: {e}")
+                _, domains = f.result()
+                self.master_allowlist.update(domains)
 
         logger.info(f"Relevance dataset compiled: {len(self.master_allowlist):,} root domains.")
-
-        try:
-            with gzip.open(self.MASTER_FILE, "wt", encoding="utf-8") as f:
-                f.write("\n".join(self.master_allowlist))
-            self.save_metadata(updated_meta)
-        except Exception as e:
-            logger.warning(f"Failed writing cache files: {e}")
 
     def is_relevant(self, domain: str) -> bool:
         clean = domain.lower().strip(".")
