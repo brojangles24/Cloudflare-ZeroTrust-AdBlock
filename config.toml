@@ -64,7 +64,6 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "Botvrij Destination IPs"     = "https://www.botvrij.eu/data/ioclist.ip-dst"
 
 # Telemetry, Circumvention & Anonymizers
-"Windows Telemetry IPs"       = "https://raw.githubusercontent.com/crazy-max/WindowsSpyBlocker/master/data/firewall/spy.txt"
 "Public DoH/DoT Bypass IPs"   = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/ips/doh.txt"
 "Tor Exit Nodes"              = "https://check.torproject.org/torbulkexitlist"
 
@@ -124,7 +123,6 @@ include             = [
     "ET Emerging Block IPs",
     "Binary Defense Banlist",
     "Botvrij Destination IPs",
-    "Windows Telemetry IPs",
     "Public DoH/DoT Bypass IPs",
     "Tor Exit Nodes"
 ]
