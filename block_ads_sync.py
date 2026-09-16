@@ -1,5 +1,6 @@
 import concurrent.futures
 import gzip
+import hashlib
 import io
 import ipaddress
 import logging
