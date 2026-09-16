@@ -327,11 +327,17 @@ def fetch_feed_source(session: requests.Session, name: str, urls: list[str], che
     for u in urls:
         with session.get(u, timeout=timeout, stream=True) as resp:
             resp.raise_for_status()
+            if not resp.encoding:
+                resp.encoding = "utf-8"
+
             for line in resp.iter_lines(decode_unicode=True):
                 if not line:
                     continue
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8", errors="ignore")
+
                 line = line.strip()
-                if not line or line[0] in "#!/":
+                if not line or line.startswith(("#", "!", "/")):
                     continue
 
                 for comment_char in ("#", "!", ";"):
@@ -361,11 +367,17 @@ def fetch_ip_source(session: requests.Session, name: str, urls: list[str], timeo
     for u in urls:
         with session.get(u, headers=headers, timeout=timeout, stream=True) as resp:
             resp.raise_for_status()
+            if not resp.encoding:
+                resp.encoding = "utf-8"
+
             for line in resp.iter_lines(decode_unicode=True):
                 if not line:
                     continue
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8", errors="ignore")
+
                 line = line.strip()
-                if not line or line[0] in "#;/":
+                if not line or line.startswith(("#", ";", "/")):
                     continue
                 raw_count += 1
 
@@ -406,7 +418,7 @@ def fetch_spam_tlds(session: requests.Session, url: str, timeout: tuple) -> tupl
         tlds = set()
         for line in resp.text.splitlines():
             line = line.strip().lower()
-            if line and line[0] not in "#!/":
+            if line and not line.startswith(("#", "!", "/")):
                 clean = line.split()[-1].strip(".")
                 if clean and "." not in clean and "*" not in clean:
                     tlds.add(clean)
