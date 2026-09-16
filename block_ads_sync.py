@@ -228,6 +228,9 @@ def _parse_csv_stream(iterable, col: int, skip_header: bool) -> set[str]:
         parts = line.split(",")
         if len(parts) > col:
             d = parts[col].strip().lower().strip('"')
+            if "://" in d:
+                d = d.split("://", 1)[1]
+            d = d.split("/", 1)[0].split(":")[0]
             clean = is_valid_domain(d)
             if clean:
                 domains.add(clean)
