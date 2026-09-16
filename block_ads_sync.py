@@ -29,6 +29,8 @@ IP_PATTERN = re.compile(
     r"^(?:[A-Fa-f0-9]{1,4}:)*:[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*$"
 )
 
+LABEL_REGEX = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
 DEFAULT_TOP_LISTS = [
     {"url": "https://tranco-list.eu/top-1m.csv.zip", "col": 1, "skip_header": False, "compression": "zip"},
     {"url": "https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz", "col": 0, "skip_header": True, "compression": "gzip"},
@@ -201,24 +203,45 @@ def has_suffix_match(host: str, lookup_set: set[str]) -> bool:
 
 def is_valid_domain(domain: str) -> str | None:
     d = domain.strip().lower().removeprefix("*.").strip(".")
-    if not d or "." not in d or any(c in d for c in "*/[]") or ".." in d or len(d) > 253:
+    if not d or "." not in d or len(d) > 253 or ".." in d:
         return None
 
-    # Validate against IDNA rules to prevent Cloudflare 400 Bad Request
-    try:
-        encoded = d.encode("idna").decode("ascii")
-    except (UnicodeError, ValueError):
+    if "://" in d:
+        d = d.split("://", 1)[1]
+    d = d.split("/", 1)[0].split(":")[0].strip(".")
+
+    if not d or "." not in d:
         return None
 
-    labels = encoded.split(".")
-    for label in labels:
-        if not label or len(label) > 63 or label.startswith("-") or label.endswith("-"):
+    if not d.isascii():
+        try:
+            d = d.encode("idna").decode("ascii")
+        except (UnicodeError, ValueError):
             return None
 
-    if (encoded[-1].isdigit() or ":" in encoded) and IP_PATTERN.match(encoded):
+    labels = d.split(".")
+    if len(labels) < 2:
         return None
 
-    return encoded
+    tld = labels[-1]
+    if tld.isdigit() or not re.match(r"^[a-z]{2,63}$", tld):
+        return None
+
+    for label in labels:
+        if not LABEL_REGEX.match(label):
+            return None
+        if label.startswith("xn--"):
+            try:
+                label.encode("ascii").decode("punycode")
+            except Exception:
+                return None
+        elif len(label) >= 4 and label[2:4] == "--":
+            return None
+
+    if (d[-1].isdigit() or ":" in d) and IP_PATTERN.match(d):
+        return None
+
+    return d
 
 def _parse_csv_stream(iterable, col: int, skip_header: bool) -> set[str]:
     domains = set()
@@ -228,9 +251,6 @@ def _parse_csv_stream(iterable, col: int, skip_header: bool) -> set[str]:
         parts = line.split(",")
         if len(parts) > col:
             d = parts[col].strip().lower().strip('"')
-            if "://" in d:
-                d = d.split("://", 1)[1]
-            d = d.split("/", 1)[0].split(":")[0]
             clean = is_valid_domain(d)
             if clean:
                 domains.add(clean)
@@ -313,8 +333,15 @@ def fetch_feed_source(session: requests.Session, name: str, urls: list[str], che
                 line = line.strip()
                 if not line or line[0] in "#!/":
                     continue
+
+                for comment_char in ("#", "!", ";"):
+                    line = line.split(comment_char)[0].strip()
+                if not line:
+                    continue
+
                 raw_count += 1
-                clean = is_valid_domain(line.split()[-1])
+                token = line.split()[-1]
+                clean = is_valid_domain(token)
                 if clean:
                     if checker and not checker.is_relevant(clean):
                         pruned += 1
