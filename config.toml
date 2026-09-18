@@ -21,7 +21,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "Global Bypass"      = true
 "IoT Bypass"         = true
 "Block IoT Network"  = true
-"YouTube Restricted" = true
+"Restrict YouTube"   = true
 
 [sources]
 "HaGeZi Normal"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
