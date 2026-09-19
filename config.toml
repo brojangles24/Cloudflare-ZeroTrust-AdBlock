@@ -26,7 +26,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 [sources]
 "HaGeZi Normal"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
 #"HaGeZi Pro"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
-#"HaGeZi Pro++"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
+"HaGeZi Pro++"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
 #"HaGeZi Ultimate"          = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
 "HaGeZi Fake"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
 "HaGeZi TIF Full"          = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
@@ -36,13 +36,12 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "HaGeZi Anti Piracy"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt"
 "HaGeZi DynDNS"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
 "NoAI"                     = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
+"Cyber Threat Intel"       = "https://raw.githubusercontent.com/DNSBunker/CTI/refs/heads/main/domains.txt"
 
 "Hagezi NSFW" = [
     "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
     "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt"
 ]
-
-"Cyber Threat Intel" = { url = "https://raw.githubusercontent.com/DNSBunker/CTI/refs/heads/main/domains.txt", relevance = false }
 
 [ip_sources]
 # Hijacked Subnets & Bulletproof Transit
@@ -58,7 +57,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 #"Botvrij Destination"   = "https://www.botvrij.eu/data/ioclist.ip-dst"
 
 # Curated C2 & Threat Aggregates
-#"HaGeZi TIF IPs"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/ips/tif.txt"
+"HaGeZi TIF IPs"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/ips/tif.txt"
 #"Binary Defense"        = "https://www.binarydefense.com/banlist.txt"
 #"CINS Army"             = "https://cinsscore.com/list/ci-badguys.txt"
 "IPsum Level 4"         = "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/4.txt"
@@ -89,7 +88,7 @@ action              = "block"
 type                = "DOMAIN"
 restrict_users      = true
 use_spam_tld        = false
-include             = ["HaGeZi Bypass Prevention", "HaGeZi Social", "NoAI"]
+include             = ["HaGeZi Bypass Prevention", "HaGeZi Social", "NoAI", "HaGeZi Pro++"]
 exclude             = ["HaGeZi Normal"]
 security_categories = [151, 191, 188, 68]
 content_categories  = [67, 125]
@@ -113,7 +112,7 @@ include             = [
     #"ET Compromised IPs",
     #"ET Emerging Block IPs",
     #"Botvrij Destination",
-    #"HaGeZi TIF IPs",
+    "HaGeZi TIF IPs",
     #"Binary Defense",
     #"CINS Army",
     "IPsum Level 4"
