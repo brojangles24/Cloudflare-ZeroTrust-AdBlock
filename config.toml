@@ -75,7 +75,7 @@ use_spam_tld        = false
 include             = [
     "HaGeZi No SafeSearch", "HaGeZi DynDNS", "HaGeZi TIF Full",
     "Cyber Threat Intel", "Hagezi NSFW", "HaGeZi DynDNS",
-    "HaGeZi Anti Piracy", "HaGeZi Fake",
+    "HaGeZi Anti Piracy", "HaGeZi Fake", "HaGeZi Normal"    
 ]
 exclude             = []
 security_categories = [178, 80, 187, 83, 176, 175, 117, 131, 134, 153]
