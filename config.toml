@@ -74,7 +74,7 @@ action              = "block"
 type                = "DOMAIN"
 use_spam_tld        = false
 include             = [
-    "HaGeZi No SafeSearch", "HaGeZi DynDNS", "HaGeZi TIF Full"
+    "HaGeZi No SafeSearch", "HaGeZi DynDNS", "HaGeZi TIF Full",
     "Cyber Threat Intel", "Hagezi NSFW", "HaGeZi DynDNS",
     "HaGeZi Anti Piracy", "HaGeZi Fake",
 ]
