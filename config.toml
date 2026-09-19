@@ -26,7 +26,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 [sources]
 "HaGeZi Normal"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
 #"HaGeZi Pro"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
-#"HaGeZi Pro++"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
+"HaGeZi Pro++"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
 #"HaGeZi Ultimate"          = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
 "HaGeZi Fake"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
 "HaGeZi TIF Full"          = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
@@ -51,14 +51,14 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 
 # Active Malware C2 & Botnet Controllers
 "Feodo C2 IPs"          = "https://feodotracker.abuse.ch/downloads/ipblocklist.txt"
-#"Abuse.ch SSLBL"        = "https://sslbl.abuse.ch/blacklist/sslipblacklist.txt"
-#"ThreatFox IOC IPs"     = "https://raw.githubusercontent.com/elliotwutingfeng/ThreatFox-IOC-IPs/main/ips.txt"
+"Abuse.ch SSLBL"        = "https://sslbl.abuse.ch/blacklist/sslipblacklist.txt"
+"ThreatFox IOC IPs"     = "https://raw.githubusercontent.com/elliotwutingfeng/ThreatFox-IOC-IPs/main/ips.txt"
 "ET Compromised IPs"    = "https://rules.emergingthreats.net/blockrules/compromised-ips.txt"
 "ET Emerging Block IPs" = "https://rules.emergingthreats.net/fwrules/emerging-Block-IPs.txt"
-#"Botvrij Destination"   = "https://www.botvrij.eu/data/ioclist.ip-dst"
+"Botvrij Destination"   = "https://www.botvrij.eu/data/ioclist.ip-dst"
 
 # Curated C2 & Threat Aggregates
-"HaGeZi TIF IPs"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/ips/tif.txt"
+#"HaGeZi TIF IPs"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/ips/tif.txt"
 "Binary Defense"        = "https://www.binarydefense.com/banlist.txt"
 "CINS Army"             = "https://cinsscore.com/list/ci-badguys.txt"
 "IPsum Level 4"         = "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/4.txt"
@@ -72,7 +72,7 @@ prefix              = "L_Relaxed"
 name                = "Block: Relaxed Profile"
 action              = "block"
 type                = "DOMAIN"
-use_spam_tld        = false
+use_spam_tld        = true
 include             = [
     "HaGeZi Normal", "HaGeZi No SafeSearch", "HaGeZi DynDNS",
     "Cyber Threat Intel", "Hagezi NSFW", "HaGeZi TIF Full",
@@ -89,7 +89,7 @@ action              = "block"
 type                = "DOMAIN"
 restrict_users      = true
 use_spam_tld        = false
-include             = ["HaGeZi Bypass Prevention", "HaGeZi Social", "NoAI"]
+include             = ["HaGeZi Bypass Prevention", "HaGeZi Social", "NoAI", "HaGeZi Pro++"]
 exclude             = ["HaGeZi Normal"]
 security_categories = [151, 191, 188, 68]
 content_categories  = [67, 125]
@@ -108,12 +108,12 @@ include             = [
     "Spamhaus DROP",
     "Spamhaus DROPv6",
     "Feodo C2 IPs",
-    #"Abuse.ch SSLBL",
-    #"ThreatFox IOC IPs",
+    "Abuse.ch SSLBL",
+    "ThreatFox IOC IPs",
     "ET Compromised IPs",
     "ET Emerging Block IPs",
-    #"Botvrij Destination",
-    "HaGeZi TIF IPs",
+    "Botvrij Destination",
+    #"HaGeZi TIF IPs",
     "Binary Defense",
     "CINS Army",
     "IPsum Level 4"
