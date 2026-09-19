@@ -35,7 +35,7 @@ DEFAULT_TOP_LISTS = [
     {"url": "https://tranco-list.eu/top-1m.csv.zip", "col": 1, "skip_header": False, "compression": "zip"},
     {"url": "https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz", "col": 0, "skip_header": True, "compression": "gzip"},
     {"url": "https://downloads.majestic.com/majestic_million.csv", "col": 2, "skip_header": True, "compression": "raw"},
-    {"url": "https://www.domcop.com/files/top/top10milliondomains.csv.zip", "col": 1, "skip_header": True, "compression": "zip"},
+    {"url": "https://openpagerank.keywordseverywhere.com/downloads/top10milliondomains.csv.zip", "col": 1, "skip_header": True, "compression": "zip"},
     {"url": "https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip", "col": 1, "skip_header": False, "compression": "zip"},
 ]
 
