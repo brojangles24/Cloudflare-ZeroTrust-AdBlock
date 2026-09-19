@@ -1,6 +1,6 @@
 [settings]
 max_list_size   = 1000
-total_quota     = 400000
+total_quota     = 300000
 max_workers     = 5
 request_timeout = [5, 25]
 scrub_targets   = [
