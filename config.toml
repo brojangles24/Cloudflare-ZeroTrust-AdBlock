@@ -54,10 +54,10 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 #"ET Emerging Block IPs" = "https://rules.emergingthreats.net/fwrules/emerging-Block-IPs.txt"
 
 # Curated C2 & Threat Aggregates
-#"HaGeZi TIF IPs"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/ips/tif.txt"
+"HaGeZi TIF IPs"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/ips/tif.txt"
 #"Binary Defense"        = "https://www.binarydefense.com/banlist.txt"
 #"CINS Army"             = "https://cinsscore.com/list/ci-badguys.txt"
-"IPsum Level 4"         = "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/4.txt"
+"IPsum Level 3"         = "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/3.txt"
 
 [spam_allow_source]
 name = "HaGeZi Spam Allow"
@@ -107,7 +107,7 @@ include             = [
     #"ThreatFox IOC IPs",
     #"ET Compromised IPs",
     #"ET Emerging Block IPs",
-    #"HaGeZi TIF IPs",
+    "HaGeZi TIF IPs",
     #"Binary Defense",
     #"CINS Army",
     "IPsum Level 4"
