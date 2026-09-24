@@ -57,7 +57,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 #"HaGeZi TIF IPs"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/ips/tif.txt"
 #"Binary Defense"        = "https://www.binarydefense.com/banlist.txt"
 #"CINS Army"             = "https://cinsscore.com/list/ci-badguys.txt"
-"IPsum Level 3"         = "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/3.txt"
+"IPsum Level 4"         = "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/4.txt"
 
 [spam_allow_source]
 name = "HaGeZi Spam Allow"
@@ -110,6 +110,6 @@ include             = [
     #"HaGeZi TIF IPs",
     #"Binary Defense",
     #"CINS Army",
-    "IPsum Level 3"
+    "IPsum Level 4"
 ]
 exclude             = []
