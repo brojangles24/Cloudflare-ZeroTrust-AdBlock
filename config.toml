@@ -35,7 +35,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "HaGeZi Bypass Prevention" = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"
 "HaGeZi Anti Piracy"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt"
 "HaGeZi DynDNS"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
-"NoAI"                     = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
+#"NoAI"                     = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
 
 "Hagezi NSFW" = [
     "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
@@ -85,7 +85,7 @@ action              = "block"
 type                = "DOMAIN"
 restrict_users      = true
 use_spam_tld        = false
-include             = ["HaGeZi Bypass Prevention", "HaGeZi Social", "NoAI"]
+include             = ["HaGeZi Bypass Prevention", "HaGeZi Social"]
 exclude             = ["HaGeZi Normal"]
 security_categories = [151, 191, 188, 68]
 content_categories  = [67, 125]
