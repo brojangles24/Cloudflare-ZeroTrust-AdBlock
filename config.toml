@@ -106,7 +106,7 @@ include             = [
     #"ThreatFox IOC IPs",
     #"ET Compromised IPs",
     #"ET Emerging Block IPs",
-    "HaGeZi TIF IPs",
+    #"HaGeZi TIF IPs",
     #"Binary Defense",
     #"CINS Army",
     "IPsum Level 4"
