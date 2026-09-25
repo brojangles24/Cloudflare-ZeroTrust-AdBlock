@@ -71,7 +71,7 @@ type                = "DOMAIN"
 use_spam_tld        = false
 include             = [
     "HaGeZi No SafeSearch",
-    "HaGeZi Anti Piracy", "HaGeZi Normal"    
+    "HaGeZi Anti Piracy", "HaGeZi Light"    
 ]
 exclude             = []
 security_categories = [178, 80, 187, 83, 176, 175, 117, 131, 134, 153]
@@ -85,7 +85,7 @@ type                = "DOMAIN"
 restrict_users      = true
 use_spam_tld        = false
 include             = ["HaGeZi Bypass Prevention", "HaGeZi Social"]
-exclude             = ["HaGeZi Normal"]
+exclude             = ["HaGeZi Light"]
 security_categories = [151, 191, 188, 68]
 content_categories  = [67, 125]
 app_ids             = [
