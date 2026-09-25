@@ -1,4 +1,4 @@
-[settings]
+ [settings]
 max_list_size   = 1000
 total_quota     = 300000
 max_workers     = 5
@@ -29,11 +29,11 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 #"HaGeZi Ultimate"          = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
 #"HaGeZi Fake"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
 #"HaGeZi TIF Full"          = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
-"HaGeZi Light"            = { url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt", relevance = false }
-"HaGeZi Social"            = { url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt", relevance = false }
-"HaGeZi No SafeSearch"     = { url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt", relevance = false }
-"HaGeZi Bypass Prevention" = { url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt", relevance = false }
-"HaGeZi Anti Piracy"       = { url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt", relevance = false }
+#"HaGeZi Light"            = { url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/light-onlydomains.txt", relevance = false }
+#"HaGeZi Social"            = { url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt", relevance = false }
+#"HaGeZi No SafeSearch"     = { url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt", relevance = false }
+#"HaGeZi Bypass Prevention" = { url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt", relevance = false }
+#"HaGeZi Anti Piracy"       = { url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt", relevance = false }
 #"HaGeZi DynDNS"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
 #"NoAI"                     = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
 
@@ -100,8 +100,8 @@ name                = "Block: Malicious Resolved IPs"
 action              = "block"
 type                = "IP"
 include             = [
-    "Spamhaus DROP",
-    "Spamhaus DROPv6",
+    #"Spamhaus DROP",
+    #"Spamhaus DROPv6",
     #"Feodo C2 IPs",
     #"ThreatFox IOC IPs",
     #"ET Compromised IPs",
@@ -109,6 +109,6 @@ include             = [
     #"HaGeZi TIF IPs",
     #"Binary Defense",
     #"CINS Army",
-    "IPsum Level 4"
+   # "IPsum Level 4"
 ]
 exclude             = []
