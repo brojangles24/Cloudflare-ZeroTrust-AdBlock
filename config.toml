@@ -68,7 +68,7 @@ prefix              = "L_Relaxed"
 name                = "AdBlock HaGeZi Normal"
 action              = "block"
 type                = "DOMAIN"
-use_spam_tld        = true
+use_spam_tld        = false
 include             = [
     "HaGeZi No SafeSearch", "HaGeZi Normal"    
 ]
@@ -108,3 +108,15 @@ include             = [
     "IPsum Level 3"
 ]
 exclude             = []
+
+[policies.spamtld]
+prefix              = "L_SpamTLD"
+name                = "HaGeZi Spam TLD
+action              = "block"
+type                = "DOMAIN"
+use_spam_tld        = true
+include             = []
+exclude             = []
+security_categories = []
+content_categories  = []
+
