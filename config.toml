@@ -111,7 +111,7 @@ exclude             = []
 
 [policies.spamtld]
 prefix              = "L_SpamTLD"
-name                = "HaGeZi Spam TLD
+name                = "HaGeZi Spam TLD"
 action              = "block"
 type                = "DOMAIN"
 use_spam_tld        = true
