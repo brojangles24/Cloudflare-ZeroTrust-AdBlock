@@ -3,12 +3,14 @@ max_list_size   = 1000
 total_quota     = 300000
 max_workers     = 5
 request_timeout = [5, 25]
-scrub_targets   = [
+scrub_targets = [
     "Base", "Pro++", "Ultimate", "Normal", "Social", 
     "Block:", "Allow:", "L_", "ProMini", "ProPlus", 
-    "ProUser", "ProHome", "Piracy", "DynDNS", "Hoster", "L_Social",
-    "Restrictive", "Blocked_IPs", "L_SpamTLD", "L_ExtraPorn", "L_MalwareBlock",
-    "L_Piracy", "L_BypassPrevent", "L_Relaxed", "L_Restrictive", "L_AIBlockIsaac"
+    "ProUser", "ProHome", "Piracy", "DynDNS", "Hoster", 
+    "Restrictive", "Blocked_IPs", "Spam TLD", "Porn Block", "Malware Block",
+    "Bypass Prevention", "AI Block", "Adblock", "L_Social", "L_SpamTLD",
+    "L_ExtraPorn", "L_MalwareBlock", "L_Piracy", "L_BypassPrevent", 
+    "L_Relaxed", "L_Restrictive", "L_AIBlockIsaac"
 ]
 auto_enable_rules = true
 
@@ -22,7 +24,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "Global Bypass"      = true
 "IoT Bypass"         = true
 "Block IoT Network"  = true
-"Malware Block"      = true
+"Restrict YouTube"   = true
 "Scam/Spam Block"    = true
 
 [sources]
@@ -68,7 +70,7 @@ action              = "block"
 type                = "DOMAIN"
 use_spam_tld        = false
 include             = [
-    "HaGeZi Normal"
+    "HaGeZi Normal", "HaGeZi No SafeSearch" 
 ]
 exclude             = []
 security_categories = []
@@ -139,7 +141,7 @@ use_spam_tld        = false
 include             = ["HaGeZi Anti Piracy"]
 exclude             = []
 security_categories = []
-content_categories  = [138, 126]
+content_categories  = [138]
 
 [policies.BypassPrevention]
 prefix              = "L_BypassPrevent"
@@ -169,7 +171,6 @@ prefix              = "L_MalwareBlock"
 name                = "Malware Block"
 action              = "block"
 type                = "DOMAIN"
-restrict_users      = true
 use_spam_tld        = false
 include             = ["HaGeZi TIF Full"]
 exclude             = []
