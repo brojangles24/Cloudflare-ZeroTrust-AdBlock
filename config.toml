@@ -89,7 +89,7 @@ include             = [
 ]
 exclude             = ["HaGeZi Normal"]
 security_categories = []
-content_categories  = [67, 125]
+content_categories  = []
 app_ids             = [
     534, 541, 572, 600, 604, 618, 628, 633, 1110, 1122, 1130, 1135, 1138,
     1853, 2678, 2680, 2826, 2831, 2844, 2845, 2848, 2852, 3097, 3098
