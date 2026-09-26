@@ -76,6 +76,7 @@ include             = [
 exclude             = []
 security_categories = []
 content_categories  = []
+domains             =["pornhoarder.pictures"]
 
 [policies.restrictive]
 prefix              = "L_Restrictive"
