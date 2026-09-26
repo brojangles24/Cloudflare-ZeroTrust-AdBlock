@@ -7,7 +7,7 @@ scrub_targets   = [
     "Base", "Pro++", "Ultimate", "Normal", "Social", 
     "Block:", "Allow:", "L_", "ProMini", "ProPlus", 
     "ProUser", "ProHome", "Piracy", "DynDNS", "Hoster", 
-    "Restrictive", "Blocked_IPs", "L_SpamTLD", "L_ExtraPorn",
+    "Restrictive", "Blocked_IPs", "L_SpamTLD", "L_ExtraPorn", "L_MalwareBlock"
     "L_Piracy", "L_BypassPrevent", "L_Relaxed", "L_Restrictive", "L_AIBlockIsaac"
 ]
 auto_enable_rules = true
@@ -84,7 +84,7 @@ type                = "DOMAIN"
 restrict_users      = true
 use_spam_tld        = false
 include             = [
-    "HaGeZi Pro++", "HaGeZi Social",  "HaGeZi TIF Full"    
+    "HaGeZi Pro++", "HaGeZi Social",   
 ]
 exclude             = ["HaGeZi Normal"]
 security_categories = []
@@ -169,3 +169,15 @@ include             = ["NoAI"]
 exclude             = []
 security_categories = []
 content_categories  = [184]
+
+[policies.MalwareBlock]
+prefix              = "L_MalwareBlock"
+name                = "Malware Block"
+action              = "block"
+type                = "DOMAIN"
+restrict_users      = true
+use_spam_tld        = false
+include             = ["HaGeZi TIF Full"]
+exclude             = []
+security_categories = [178, 80, 187, 83, 176, 175, 117, 131, 134, 153]
+content_categories  = [32, 169, 177, 128]
