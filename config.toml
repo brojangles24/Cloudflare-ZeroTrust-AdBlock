@@ -7,7 +7,8 @@ scrub_targets   = [
     "Base", "Pro++", "Ultimate", "Normal", "Social", 
     "Block:", "Allow:", "L_", "ProMini", "ProPlus", 
     "ProUser", "ProHome", "Piracy", "DynDNS", "Hoster", 
-    "Restrictive", "Blocked_IPs", "L_SpamTLD"
+    "Restrictive", "Blocked_IPs", "L_SpamTLD", "L_ExtraPorn",
+    "L_Piracy",
 ]
 auto_enable_rules = true
 
@@ -33,14 +34,14 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "HaGeZi Social"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
 "HaGeZi No SafeSearch"     = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt"
 "HaGeZi Bypass Prevention" = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"
-#"HaGeZi Anti Piracy"       = { url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt", relevance = false }
+"HaGeZi Anti Piracy"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt"
 #"HaGeZi DynDNS"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
 #"NoAI"                     = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
 
-#"Hagezi NSFW" = [
-#    "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
-#    "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt"
-#]
+"Hagezi NSFW" = [
+    "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
+    "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt"
+]
 
 [ip_sources]
 # Hijacked Subnets & Bulletproof Transit
@@ -121,4 +122,46 @@ include             = []
 exclude             = []
 security_categories = []
 content_categories  = []
+
+[policies.blocked_ips]
+prefix              = "L_Blocked_IPs"
+name                = "Block: Malicious Resolved IPs"
+action              = "block"
+type                = "IP"
+include             = [
+    "Spamhaus DROP",
+    "Spamhaus DROPv6",
+    #"Feodo C2 IPs",
+    #"ThreatFox IOC IPs",
+    #"ET Compromised IPs",
+    #"ET Emerging Block IPs",
+    "HaGeZi TIF IPs",
+    #"Binary Defense",
+    #"CINS Army",
+    "IPsum Level 3"
+]
+exclude             = []
+
+[policies.extrapornblock]
+prefix              = "L_ExtraPorn"
+name                = "Supplemental Porn Block"
+action              = "block"
+type                = "DOMAIN"
+use_spam_tld        = false
+include             = ["Hagezi NSFW"]
+exclude             = []
+security_categories = []
+content_categories  = []
+
+[policies.piracyblock]
+prefix              = "L_Piracy"
+name                = "Piracy Block"
+action              = "block"
+type                = "DOMAIN"
+use_spam_tld        = false
+include             = ["HaGeZi Anti Piracy"]
+exclude             = []
+security_categories = []
+content_categories  = []
+
 
