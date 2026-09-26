@@ -1,4 +1,4 @@
- [settings]
+[settings]
 max_list_size   = 1000
 total_quota     = 300000
 max_workers     = 5
@@ -8,7 +8,7 @@ scrub_targets   = [
     "Block:", "Allow:", "L_", "ProMini", "ProPlus", 
     "ProUser", "ProHome", "Piracy", "DynDNS", "Hoster", 
     "Restrictive", "Blocked_IPs", "L_SpamTLD", "L_ExtraPorn",
-    "L_Piracy", "L_BypassPrevent"
+    "L_Piracy", "L_BypassPrevent", "L_Relaxed", "L_Restrictive"
 ]
 auto_enable_rules = true
 
@@ -22,26 +22,24 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "Global Bypass"      = true
 "IoT Bypass"         = true
 "Block IoT Network"  = true
-"Restrict YouTube"   = true
+"Malware Block"      = true
+"Scam/Spam Block"    = true
 
 [sources]
-#"HaGeZi Pro"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
-"HaGeZi Pro++"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
-#"HaGeZi Ultimate"          = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
-#"HaGeZi Fake"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
-#"HaGeZi TIF Full"          = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
-"HaGeZi Normal"            =  "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
-"HaGeZi Social"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
-"HaGeZi No SafeSearch"     = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt"
-"HaGeZi Bypass Prevention" = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"
-"HaGeZi Anti Piracy"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt"
-#"HaGeZi DynDNS"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
-#"NoAI"                     = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
+#"HaGeZi Pro"                = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
+"HaGeZi Pro++"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
+#"HaGeZi Ultimate"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
+#"HaGeZi Fake"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
+#"HaGeZi TIF Full"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
+"HaGeZi Normal"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
+"HaGeZi Social"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
+"HaGeZi No SafeSearch"      = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt"
+"HaGeZi Bypass Prevention"  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"
+"HaGeZi Anti Piracy"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt"
+#"HaGeZi DynDNS"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
+#"NoAI"                      = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
 
-"Hagezi NSFW" = [
-    "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt",
-    "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/abp_nsfw.txt"
-]
+"Hagezi NSFW" = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt"
 
 [ip_sources]
 # Hijacked Subnets & Bulletproof Transit
@@ -71,12 +69,12 @@ action              = "block"
 type                = "DOMAIN"
 use_spam_tld        = false
 include             = [
-    "HaGeZi No SafeSearch", "HaGeZi Normal"    
+    "HaGeZi Normal"
 ]
 exclude             = []
 security_categories = []
 content_categories  = []
-domains             =["pornhoarder.pictures"]
+domains             = ["pornhoarder.pictures"]
 
 [policies.restrictive]
 prefix              = "L_Restrictive"
