@@ -8,7 +8,7 @@ scrub_targets   = [
     "Block:", "Allow:", "L_", "ProMini", "ProPlus", 
     "ProUser", "ProHome", "Piracy", "DynDNS", "Hoster", 
     "Restrictive", "Blocked_IPs", "L_SpamTLD", "L_ExtraPorn",
-    "L_Piracy",
+    "L_Piracy"
 ]
 auto_enable_rules = true
 
@@ -122,25 +122,6 @@ include             = []
 exclude             = []
 security_categories = []
 content_categories  = []
-
-[policies.blocked_ips]
-prefix              = "L_Blocked_IPs"
-name                = "Block: Malicious Resolved IPs"
-action              = "block"
-type                = "IP"
-include             = [
-    "Spamhaus DROP",
-    "Spamhaus DROPv6",
-    #"Feodo C2 IPs",
-    #"ThreatFox IOC IPs",
-    #"ET Compromised IPs",
-    #"ET Emerging Block IPs",
-    "HaGeZi TIF IPs",
-    #"Binary Defense",
-    #"CINS Army",
-    "IPsum Level 3"
-]
-exclude             = []
 
 [policies.extrapornblock]
 prefix              = "L_ExtraPorn"
