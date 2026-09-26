@@ -346,7 +346,7 @@ def fetch_feed_source(session: requests.Session, name: str, urls: list[str], che
                     continue
 
                 raw_count += 1
-                token = line.split()[-1]
+                token = line.split()[-1].removeprefix("||").removesuffix("^")
                 clean = is_valid_domain(token)
                 if clean:
                     if checker and not checker.is_relevant(clean):
@@ -452,10 +452,7 @@ def build_policy_sets(policies: list[dict], fetched: dict, spam_tlds: set[str] =
         if v.get("type") == "DOMAIN" and k != "HaGeZi Spam Allow"
     ))
 
-    relaxed_tld_active = any(
-        p.get("prefix") == "L_Relaxed" and p.get("use_spam_tld")
-        for p in policies
-    )
+    has_active_spam_tld = any(p.get("use_spam_tld") for p in policies)
 
     for p in policies:
         prefix = p.get("prefix", "unknown")
@@ -489,16 +486,10 @@ def build_policy_sets(policies: list[dict], fetched: dict, spam_tlds: set[str] =
             if p.get("action") == "allow":
                 p_set.difference_update(all_blocked_domains)
             else:
-                if prefix != "L_Normal" and "HaGeZi Normal" not in p.get("include", []) and "HaGeZi Normal" not in p.get("exclude", []) and base_set:
+                if base_set and prefix not in ("L_Normal", "L_Relaxed") and "HaGeZi Normal" not in p.get("include", []):
                     p_set = {d for d in p_set if not has_suffix_match(d, base_set)}
 
-                should_prune_tlds = False
-                if p.get("use_spam_tld"):
-                    should_prune_tlds = True
-                elif relaxed_tld_active and prefix == "L_Restrictive":
-                    should_prune_tlds = True
-
-                if should_prune_tlds and spam_tlds:
+                if spam_tlds and (p.get("use_spam_tld") or has_active_spam_tld):
                     p_set = {d for d in p_set if d.rsplit(".", 1)[-1] not in spam_tlds}
 
             optimized, _ = optimize_domains(p_set)
@@ -613,10 +604,11 @@ def sync_policy_in_place(
     if rule:
         existing_settings = rule.get("rule_settings") or {}
         settings_changed = existing_settings.get("block_page_enabled") != block_page
+        existing_identity = rule.get("identity") or ""
 
         if (
             rule.get("traffic") != traffic_expr
-            or rule.get("identity", "") != identity_expr
+            or existing_identity != identity_expr
             or rule.get("enabled") != rule_enabled
             or settings_changed
         ):
@@ -628,18 +620,20 @@ def sync_policy_in_place(
 
     return active_ids, [l["id"] for l in surplus_lists], [policy_name]
 
-def sync_standalone_policies(cf: CloudflareAPI, cfg: dict, existing_rules: list[dict]) -> None:
+def sync_standalone_policies(cf: CloudflareAPI, cfg: dict, existing_rules: list[dict]) -> list[str]:
     standalone_cfg = cfg.get("gateway_policies", {})
     if not standalone_cfg:
-        return
+        return []
 
     allow_auto_enable = cfg.get("settings", {}).get("auto_enable_rules", True)
+    synced_rules = []
 
     for rule_name, desired_enabled in standalone_cfg.items():
         matched = next((r for r in existing_rules if r["name"] == rule_name), None)
         if not matched:
             continue
 
+        synced_rules.append(rule_name)
         currently_enabled = matched.get("enabled", True)
 
         if not allow_auto_enable and not currently_enabled and desired_enabled:
@@ -667,8 +661,14 @@ def sync_standalone_policies(cf: CloudflareAPI, cfg: dict, existing_rules: list[
             except Exception as e:
                 logger.error(f"Failed to update standalone policy {rule_name}: {e}")
 
+    return synced_rules
+
 def cleanup_orphans(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict], existing_rules: list[dict], active_ids: list[str], surplus_ids: list[str], active_rules: list[str]):
     scrub_targets = cfg["settings"]["scrub_targets"]
+    protected_rules = set(cfg.get("gateway_policies", {}).keys()) | {
+        "IoT Bypass", "Custom", "Keywords", "SafeSearch", "Global Blocklist",
+        "Global Bypass", "Block IoT Network", "YouTube Restricted"
+    }
 
     for sid in surplus_ids:
         try:
@@ -678,7 +678,7 @@ def cleanup_orphans(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict], ex
             logger.error(f"Failed deleting surplus list {sid}: {e}")
 
     for r in existing_rules:
-        if any(k in r["name"] for k in ("IoT Bypass", "Custom", "Keywords", "SafeSearch", "Global Blocklist", "Global Bypass", "Block IoT Network", "YouTube Restricted")):
+        if r["name"] in protected_rules or any(k in r["name"] for k in protected_rules):
             continue
         if r["name"] not in active_rules and any(t in r["name"] for t in scrub_targets):
             try:
@@ -774,9 +774,10 @@ def main() -> None:
     existing_lists = cf.get_lists()
     existing_rules = cf.get_rules()
 
-    sync_standalone_policies(cf, cfg, existing_rules)
+    standalone_rules = sync_standalone_policies(cf, cfg, existing_rules)
 
-    all_active_ids, all_surplus_ids, all_active_rules = [], [], []
+    all_active_ids, all_surplus_ids = [], []
+    all_active_rules = list(standalone_rules)
 
     for policy, optimized_entries in compiled:
         expr = tld_expr if policy.get("use_spam_tld") else ""
