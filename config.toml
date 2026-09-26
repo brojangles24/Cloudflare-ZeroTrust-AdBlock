@@ -8,7 +8,7 @@ scrub_targets   = [
     "Block:", "Allow:", "L_", "ProMini", "ProPlus", 
     "ProUser", "ProHome", "Piracy", "DynDNS", "Hoster", 
     "Restrictive", "Blocked_IPs", "L_SpamTLD", "L_ExtraPorn",
-    "L_Piracy"
+    "L_Piracy", "L_BypassPrevent"
 ]
 auto_enable_rules = true
 
@@ -85,7 +85,7 @@ type                = "DOMAIN"
 restrict_users      = true
 use_spam_tld        = false
 include             = [
-    "HaGeZi Bypass Prevention", "HaGeZi Pro++", "HaGeZi Social"
+    "HaGeZi Pro++", "HaGeZi Social"
 ]
 exclude             = ["HaGeZi Normal"]
 security_categories = []
@@ -145,4 +145,13 @@ exclude             = []
 security_categories = []
 content_categories  = [138]
 
-
+[policies.BypassPrevention]
+prefix              = "L_BypassPrevent"
+name                = "Bypass Prevention"
+action              = "block"
+type                = "DOMAIN"
+use_spam_tld        = false
+include             = ["HaGeZi Bypass Prevention"]
+exclude             = []
+security_categories = [68]
+content_categories  = []
