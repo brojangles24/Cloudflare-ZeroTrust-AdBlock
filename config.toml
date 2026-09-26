@@ -146,7 +146,7 @@ use_spam_tld        = false
 include             = ["HaGeZi Anti Piracy"]
 exclude             = []
 security_categories = []
-content_categories  = [138]
+content_categories  = [138, 126]
 
 [policies.BypassPrevention]
 prefix              = "L_BypassPrevent"
