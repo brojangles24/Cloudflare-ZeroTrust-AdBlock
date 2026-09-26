@@ -123,16 +123,16 @@ exclude             = []
 security_categories = []
 content_categories  = []
 
-[policies.extrapornblock]
+[policies.pornblock]
 prefix              = "L_ExtraPorn"
-name                = "Supplemental Porn Block"
+name                = "Porn Block"
 action              = "block"
 type                = "DOMAIN"
 use_spam_tld        = false
 include             = ["Hagezi NSFW"]
 exclude             = []
 security_categories = []
-content_categories  = []
+content_categories  = [2, 67, 125, 133]
 
 [policies.piracyblock]
 prefix              = "L_Piracy"
@@ -143,6 +143,6 @@ use_spam_tld        = false
 include             = ["HaGeZi Anti Piracy"]
 exclude             = []
 security_categories = []
-content_categories  = []
+content_categories  = [138]
 
 
