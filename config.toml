@@ -8,7 +8,7 @@ scrub_targets   = [
     "Block:", "Allow:", "L_", "ProMini", "ProPlus", 
     "ProUser", "ProHome", "Piracy", "DynDNS", "Hoster", 
     "Restrictive", "Blocked_IPs", "L_SpamTLD", "L_ExtraPorn",
-    "L_Piracy", "L_BypassPrevent", "L_Relaxed", "L_Restrictive"
+    "L_Piracy", "L_BypassPrevent", "L_Relaxed", "L_Restrictive", "L_AIBlockIsaac"
 ]
 auto_enable_rules = true
 
@@ -37,7 +37,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "HaGeZi Bypass Prevention"  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"
 "HaGeZi Anti Piracy"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt"
 #"HaGeZi DynDNS"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
-#"NoAI"                      = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
+"NoAI"                      = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
 
 "Hagezi NSFW" = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt"
 
@@ -157,3 +157,15 @@ include             = ["HaGeZi Bypass Prevention"]
 exclude             = []
 security_categories = [68]
 content_categories  = []
+
+[policies.AIBlockIsaac]
+prefix              = "L_AIBlockIsaac"
+name                = "AI Block Isaac"
+action              = "block"
+type                = "DOMAIN"
+restrict_users      = true
+use_spam_tld        = false
+include             = ["NoAI"]
+exclude             = []
+security_categories = []
+content_categories  = [184]
