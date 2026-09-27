@@ -85,7 +85,7 @@ type                = "DOMAIN"
 restrict_users      = true
 use_spam_tld        = false
 include             = [
-    "HaGeZi Pro",
+    "HaGeZi Pro++",
 ]
 exclude             = ["HaGeZi Normal"]
 security_categories = []
