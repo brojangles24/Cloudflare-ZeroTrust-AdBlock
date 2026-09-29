@@ -10,7 +10,7 @@ scrub_targets = [
     "Restrictive", "Blocked_IPs", "Spam TLD", "Porn Block", "Malware Block",
     "Bypass Prevention", "AI Block", "Adblock", "L_Social", "L_SpamTLD",
     "L_ExtraPorn", "L_MalwareBlock", "L_Piracy", "L_BypassPrevent", 
-    "L_Relaxed", "L_Restrictive", "L_AIBlockIsaac"
+    "L_Relaxed", "L_Restrictive", "L_AIBlockIsaac", "L_Badware" 
 ]
 auto_enable_rules = true
 
@@ -42,6 +42,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "HaGeZi DynDNS"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
 "NoAI"                      = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
 "Hagezi NSFW"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt"
+"HaGeZi Badware"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"
             
 [ip_sources]
 # Hijacked Subnets & Bulletproof Transit
@@ -89,6 +90,19 @@ include             = [
     "HaGeZi Pro++",
 ]
 exclude             = ["HaGeZi Normal"]
+security_categories = []
+content_categories  = []
+
+[policies.badware]
+prefix              = "L_Badware"
+name                = "HaGeZi Badware"
+action              = "block"
+type                = "DOMAIN"
+use_spam_tld        = false
+include             = [
+    "HaGeZi Badware",
+]
+exclude             = []
 security_categories = []
 content_categories  = []
 
