@@ -24,12 +24,13 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "Global Bypass"      = true
 "IoT Bypass"         = true
 "Block IoT Network"  = true
-"Restrict YouTube"   = true
+#"Restrict YouTube"   = true
+#"YouTube Nighttime"  = true
 "Scam/Spam Block"    = true
 
 [sources]
 #"HaGeZi Pro"                = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
-#"HaGeZi Pro++"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
+"HaGeZi Pro++"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
 #"HaGeZi Ultimate"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
 "HaGeZi Fake"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
 "HaGeZi TIF Full"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
@@ -77,19 +78,19 @@ security_categories = []
 content_categories  = []
 domains             = ["pornhoarder.pictures"]
 
-#[policies.restrictive]
-#prefix              = "L_Restrictive"
-#name                = "Adblock HaGeZi Pro++"
-#action              = "block"
-#type                = "DOMAIN"
-#restrict_users      = true
-#use_spam_tld        = false
-#include             = [
-#    "HaGeZi Pro++",
-#]
-#exclude             = ["HaGeZi Normal"]
-#security_categories = []
-#content_categories  = []
+[policies.restrictive]
+prefix              = "L_Restrictive"
+name                = "Adblock HaGeZi Pro++"
+action              = "block"
+type                = "DOMAIN"
+restrict_users      = true
+use_spam_tld        = false
+include             = [
+    "HaGeZi Pro++",
+]
+exclude             = ["HaGeZi Normal"]
+security_categories = []
+content_categories  = []
 
 [policies.blocked_ips]
 prefix              = "L_Blocked_IPs"
@@ -110,16 +111,16 @@ include             = [
 ]
 exclude             = []
 
-#[policies.spamtld]
-#prefix              = "L_SpamTLD"
-#name                = "HaGeZi Spam TLD"
-#action              = "block"
-#type                = "DOMAIN"
-#use_spam_tld        = true
-#include             = []
-#exclude             = []
-#security_categories = []
-#content_categories  = []
+[policies.spamtld]
+prefix              = "L_SpamTLD"
+name                = "HaGeZi Spam TLD"
+action              = "block"
+type                = "DOMAIN"
+use_spam_tld        = true
+include             = []
+exclude             = []
+security_categories = []
+content_categories  = []
 
 [policies.pornblock]
 prefix              = "L_ExtraPorn"
