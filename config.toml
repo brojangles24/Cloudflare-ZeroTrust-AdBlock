@@ -121,7 +121,7 @@ include             = [
     #"HaGeZi TIF IPs",
     #"Binary Defense",
     #"CINS Army",
-    "IPsum Level 4"
+    "IPsum Level 3"
 ]
 exclude             = []
 
