@@ -727,7 +727,7 @@ def main() -> None:
 
     if any(p.get("use_spam_tld") for p in policies) and "spam_allow_source" in cfg:
         sa = cfg["spam_allow_source"]
-        domain_sources.append({"name": sa["name"], "urls": [sa["url"]], "enable_relevance": False, "is_ip": False})
+        domain_sources.append({"name": sa["name"], "urls": [sa["url"]], "enable_relevance": sa.get("relevance", False), "is_ip": False})
 
     session = create_session(workers)
     checker = None
