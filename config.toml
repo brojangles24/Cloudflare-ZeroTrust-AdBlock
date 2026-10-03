@@ -63,8 +63,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 
 [spam_allow_source]
 name = "HaGeZi Spam Allow"
-url  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
-relevance = false
+url  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt", relevance = false
 
 [policies.relaxed]
 prefix              = "L_Relaxed"
