@@ -15,7 +15,7 @@ scrub_targets = [
 auto_enable_rules = true
 
 [tld]
-url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
+url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds.txt"
 
 # Standalone Cloudflare Gateway Firewall Policies
 [gateway_policies]
@@ -63,7 +63,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 
 [spam_allow_source]
 name = "HaGeZi Spam Allow"
-url  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
+url  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow.txt"
 
 [policies.relaxed]
 prefix              = "L_Relaxed"
