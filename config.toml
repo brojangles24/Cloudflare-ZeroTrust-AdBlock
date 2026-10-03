@@ -23,9 +23,9 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "Global Blocklist"   = true
 "Global Bypass"      = true
 "IoT Bypass"         = true
-#"Block IoT Network"  = true
+"Block IoT Network"  = true
 #"Restrict YouTube"   = true
-"YouTube Nighttime"  = true
+#"YouTube Nighttime"  = true
 "Scam/Spam Block"    = true
 
 [sources]
