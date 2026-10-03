@@ -419,7 +419,7 @@ def fetch_spam_tlds(session: requests.Session, url: str, timeout: tuple) -> tupl
         for line in resp.text.splitlines():
             line = line.strip().lower()
             if line and not line.startswith(("#", "!", "/")):
-                clean = line.split()[-1].strip(".")
+                clean = line.split()[-1].removeprefix("*.").strip(".")
                 if clean and "." not in clean and "*" not in clean:
                     tlds.add(clean)
         expr = rf'any(dns.domains[*] matches "(?i)\.({"|".join(sorted(tlds))})$")' if tlds else ""
@@ -600,6 +600,8 @@ def sync_policy_in_place(
     }
     if identity_expr:
         payload["identity"] = identity_expr
+    if rule and rule.get("schedule"):
+        payload["schedule"] = rule["schedule"]
 
     if rule:
         existing_settings = rule.get("rule_settings") or {}
@@ -652,6 +654,8 @@ def sync_standalone_policies(cf: CloudflareAPI, cfg: dict, existing_rules: list[
                 payload["identity"] = matched["identity"]
             if matched.get("rule_settings"):
                 payload["rule_settings"] = matched["rule_settings"]
+            if matched.get("schedule"):
+                payload["schedule"] = matched["schedule"]
 
             try:
                 cf.update_rule(matched["id"], payload)
