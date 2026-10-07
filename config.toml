@@ -29,12 +29,12 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "Scam/Spam Block"    = true
 
 [sources]
-#"HaGeZi Pro"                = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
+"HaGeZi Pro"                = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
 #"HaGeZi Pro++"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
 "HaGeZi Ultimate"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
 "HaGeZi Fake"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
 "HaGeZi TIF Full"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
-"HaGeZi Normal"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
+"HaGeZi Normal"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
 "HaGeZi Social"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
 "HaGeZi No SafeSearch"      = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt"
 "HaGeZi Bypass Prevention"  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"
@@ -68,12 +68,12 @@ relevance = false
 
 [policies.relaxed]
 prefix              = "L_Relaxed"
-name                = "AdBlock HaGeZi Normal"
+name                = "AdBlock HaGeZi Pro"
 action              = "block"
 type                = "DOMAIN"
 use_spam_tld        = false
 include             = [
-    "HaGeZi Normal", "HaGeZi No SafeSearch", "HaGeZi DynDNS", "HaGeZi Fake" 
+    "HaGeZi Pro", "HaGeZi No SafeSearch", "HaGeZi DynDNS", "HaGeZi Fake" 
 ]
 exclude             = []
 security_categories = []
@@ -82,7 +82,7 @@ domains             = []
 
 [policies.restrictive]
 prefix              = "L_Restrictive"
-name                = "Adblock HaGeZi Pro++"
+name                = "Adblock HaGeZi Ultimate"
 action              = "block"
 type                = "DOMAIN"
 restrict_users      = true
@@ -90,7 +90,7 @@ use_spam_tld        = false
 include             = [
     "HaGeZi Ultimate",
 ]
-exclude             = ["HaGeZi Normal"]
+exclude             = ["HaGeZi Pro"]
 security_categories = []
 content_categories  = []
 
