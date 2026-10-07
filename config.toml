@@ -31,18 +31,18 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 [sources]
 "HaGeZi Pro"                = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
 #"HaGeZi Pro++"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
-"HaGeZi Ultimate"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
+#"HaGeZi Ultimate"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
 "HaGeZi Fake"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
 "HaGeZi TIF Full"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
-"HaGeZi Normal"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
+#"HaGeZi Normal"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
 "HaGeZi Social"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
 "HaGeZi No SafeSearch"      = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt"
 "HaGeZi Bypass Prevention"  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"
 "HaGeZi Anti Piracy"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt"
 "HaGeZi DynDNS"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
-"NoAI"                      = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
+#"NoAI"                      = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
 "Hagezi NSFW"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt"
-"HaGeZi Badware"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"
+#"HaGeZi Badware"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"
 
 [ip_sources]
 # Hijacked Subnets & Bulletproof Transit
@@ -59,7 +59,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "HaGeZi TIF IPs"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/ips/tif.txt"
 #"Binary Defense"        = "https://www.binarydefense.com/banlist.txt"
 #"CINS Army"             = "https://cinsscore.com/list/ci-badguys.txt"
-"IPsum Level 3"         = "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/3.txt"
+"IPsum Level 4"         = "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/4.txt"
 
 [spam_allow_source]
 name      = "HaGeZi Spam Allow"
@@ -80,32 +80,32 @@ security_categories = []
 content_categories  = []
 domains             = []
 
-[policies.restrictive]
-prefix              = "L_Restrictive"
-name                = "Adblock HaGeZi Ultimate"
-action              = "block"
-type                = "DOMAIN"
-restrict_users      = true
-use_spam_tld        = false
-include             = [
-    "HaGeZi Ultimate",
-]
-exclude             = ["HaGeZi Pro"]
-security_categories = []
-content_categories  = []
+#[policies.restrictive]
+#prefix              = "L_Restrictive"
+#name                = "Adblock HaGeZi Ultimate"
+#action              = "block"
+#type                = "DOMAIN"
+#restrict_users      = true
+#use_spam_tld        = false
+#include             = [
+#    "HaGeZi Ultimate",
+#]
+#exclude             = ["HaGeZi Pro"]
+#security_categories = []
+#content_categories  = []
 
-[policies.badware]
-prefix              = "L_Badware"
-name                = "HaGeZi Badware"
-action              = "block"
-type                = "DOMAIN"
-use_spam_tld        = false
-include             = [
-    "HaGeZi Badware",
-]
-exclude             = []
-security_categories = []
-content_categories  = []
+#[policies.badware]
+#prefix              = "L_Badware"
+#name                = "HaGeZi Badware"
+#action              = "block"
+#type                = "DOMAIN"
+#use_spam_tld        = false
+#include             = [
+#    "HaGeZi Badware",
+#]
+#exclude             = []
+#security_categories = []
+#content_categories  = []
 
 [policies.blocked_ips]
 prefix              = "L_Blocked_IPs"
@@ -122,20 +122,20 @@ include             = [
     "HaGeZi TIF IPs",
     #"Binary Defense",
     #"CINS Army",
-    "IPsum Level 3"
+    "IPsum Level 4"
 ]
 exclude             = []
 
-[policies.spamtld]
-prefix              = "L_SpamTLD"
-name                = "HaGeZi Spam TLD"
-action              = "block"
-type                = "DOMAIN"
-use_spam_tld        = true
-include             = []
-exclude             = []
-security_categories = []
-content_categories  = []
+#[policies.spamtld]
+#prefix              = "L_SpamTLD"
+#name                = "HaGeZi Spam TLD"
+#action              = "block"
+#type                = "DOMAIN"
+#use_spam_tld        = true
+#include             = []
+#exclude             = []
+#security_categories = []
+#content_categories  = []
 
 [policies.pornblock]
 prefix              = "L_ExtraPorn"
@@ -170,17 +170,17 @@ exclude             = []
 security_categories = [68]
 content_categories  = []
 
-[policies.AIBlockIsaac]
-prefix              = "L_AIBlockIsaac"
-name                = "AI Block Isaac"
-action              = "block"
-type                = "DOMAIN"
-restrict_users      = true
-use_spam_tld        = false
-include             = ["NoAI"]
-exclude             = []
-security_categories = []
-content_categories  = []
+#[policies.AIBlockIsaac]
+#prefix              = "L_AIBlockIsaac"
+#name                = "AI Block Isaac"
+#action              = "block"
+#type                = "DOMAIN"
+#restrict_users      = true
+#use_spam_tld        = false
+#include             = ["NoAI"]
+#exclude             = []
+#security_categories = []
+#content_categories  = []
 
 [policies.MalwareBlock]
 prefix              = "L_MalwareBlock"
