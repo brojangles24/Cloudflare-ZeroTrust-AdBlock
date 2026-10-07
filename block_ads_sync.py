@@ -202,15 +202,12 @@ def has_suffix_match(host: str, lookup_set: set[str]) -> bool:
     return False
 
 def is_valid_domain(domain: str) -> str | None:
-    d = domain.strip().lower().removeprefix("*.").strip(".")
-    if not d or "." not in d or len(d) > 253 or ".." in d:
-        return None
-
+    d = domain.strip().lower()
     if "://" in d:
         d = d.split("://", 1)[1]
-    d = d.split("/", 1)[0].split(":")[0].strip(".")
+    d = d.split("?", 1)[0].split("/", 1)[0].split(":")[0].removeprefix("*.").strip(".")
 
-    if not d or "." not in d:
+    if not d or "." not in d or len(d) > 253 or ".." in d:
         return None
 
     if not d.isascii():
@@ -230,12 +227,7 @@ def is_valid_domain(domain: str) -> str | None:
     for label in labels:
         if not LABEL_REGEX.match(label):
             return None
-        if label.startswith("xn--"):
-            try:
-                label.encode("ascii").decode("punycode")
-            except Exception:
-                return None
-        elif len(label) >= 4 and label[2:4] == "--":
+        if len(label) >= 4 and label[2:4] == "--" and not label.startswith("xn--"):
             return None
 
     if (d[-1].isdigit() or ":" in d) and IP_PATTERN.match(d):
@@ -340,8 +332,12 @@ def fetch_feed_source(session: requests.Session, name: str, urls: list[str], che
                 if not line or line.startswith(("#", "!", "/")):
                     continue
 
-                for comment_char in ("#", "!", ";"):
-                    line = line.split(comment_char)[0].strip()
+                if any(c in line for c in ("#", "!", ";")):
+                    for comment_char in ("#", "!", ";"):
+                        if comment_char in line:
+                            line = line.split(comment_char, 1)[0]
+                    line = line.strip()
+
                 if not line:
                     continue
 
@@ -379,10 +375,16 @@ def fetch_ip_source(session: requests.Session, name: str, urls: list[str], timeo
                 line = line.strip()
                 if not line or line.startswith(("#", ";", "/")):
                     continue
-                raw_count += 1
 
-                for comment_char in ("#", ";", "//"):
-                    line = line.split(comment_char)[0]
+                if any(c in line for c in ("#", ";", "//")):
+                    for comment_char in ("#", ";", "//"):
+                        if comment_char in line:
+                            line = line.split(comment_char, 1)[0]
+                    line = line.strip()
+
+                if not line:
+                    continue
+                raw_count += 1
 
                 cleaned = line.replace('"', ' ').replace("'", ' ').replace(',', ' ').replace('\t', ' ')
                 for raw_token in cleaned.split():
@@ -447,11 +449,6 @@ def optimize_domains(domains: set[str]) -> tuple[list[str], int]:
 def build_policy_sets(policies: list[dict], fetched: dict, spam_tlds: set[str] = None) -> list[tuple[dict, list[str]]]:
     sets = []
     base_set = fetched.get("HaGeZi Normal", {}).get("domains", set())
-    all_blocked_domains = set().union(*(
-        v["domains"] for k, v in fetched.items()
-        if v.get("type") == "DOMAIN" and k != "HaGeZi Spam Allow"
-    ))
-
     has_active_spam_tld = any(p.get("use_spam_tld") for p in policies)
 
     for p in policies:
@@ -483,9 +480,7 @@ def build_policy_sets(policies: list[dict], fetched: dict, spam_tlds: set[str] =
                 if exc in fetched and fetched[exc].get("type") == "DOMAIN":
                     p_set.difference_update(fetched[exc]["domains"])
 
-            if p.get("action") == "allow":
-                p_set.difference_update(all_blocked_domains)
-            else:
+            if p.get("action") != "allow":
                 if base_set and prefix not in ("L_Normal", "L_Relaxed") and "HaGeZi Normal" not in p.get("include", []):
                     p_set = {d for d in p_set if not has_suffix_match(d, base_set)}
 
@@ -526,7 +521,11 @@ def sync_policy_in_place(
 
         if idx < len(matched_lists):
             target = matched_lists[idx]
-            if target.get("description") == chash and (target.get("count") is None or target.get("count") == len(chunk)):
+            if (
+                target.get("name") == name
+                and target.get("description") == chash
+                and (target.get("count") is None or target.get("count") == len(chunk))
+            ):
                 return target["id"]
             cf.update_list(target["id"], name, items, desc=chash)
             logger.info(f"Updated {name} ({len(chunk)} {policy_type.lower()} items)")
@@ -573,6 +572,13 @@ def sync_policy_in_place(
     else:
         traffic_expr = " or ".join(list_items)
         identity_expr = ""
+
+    if len(traffic_expr) > 4000:
+        logger.warning(
+            f"Policy '{policy_name}' expression length ({len(traffic_expr)} chars) "
+            f"is near Cloudflare's 4096-character wirefilter limit. "
+            f"Increase max_list_size in config.toml if list count grows."
+        )
 
     if policy.get("enabled") is False:
         rule_enabled = False
@@ -682,7 +688,7 @@ def cleanup_orphans(
         "Global Bypass", "Block IoT Network", "YouTube Restricted"
     }
 
-    # 1. Clean up orphaned firewall rules FIRST so they release references to any lists
+    # 1. Clean up orphaned firewall rules FIRST to drop policy references
     for r in existing_rules:
         if r["name"] in protected_rules or any(k in r["name"] for k in protected_rules):
             continue
@@ -693,10 +699,10 @@ def cleanup_orphans(
             except Exception as e:
                 logger.error(f"Rule cleanup error ({r['name']}): {e}")
 
-    # 2. Allow Cloudflare Gateway backend graph to propagate rule detachments
+    # 2. Allow Cloudflare Gateway backend dependency graph to propagate detachments
     time.sleep(3)
 
-    # 3. Retrying helper to handle eventual consistency when deleting lists
+    # 3. Retrying helper to handle eventual consistency on list deletions
     def safe_delete_list(lid: str, label: str):
         for attempt in range(4):
             try:
@@ -711,7 +717,7 @@ def cleanup_orphans(
                 )
                 if in_use and attempt < 3:
                     wait_time = (2 ** attempt) + 1
-                    logger.warning(f"List {lid} still releasing backend lock. Retrying in {wait_time}s...")
+                    logger.warning(f"List {lid} still locked on Cloudflare backend. Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                     continue
                 logger.error(f"Failed deleting {label} {lid}: {e}")
