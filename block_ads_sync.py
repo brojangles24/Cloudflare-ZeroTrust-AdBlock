@@ -16,6 +16,11 @@ from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
 try:
+    import idna
+except ImportError:
+    idna = None
+
+try:
     import tomllib
 except ImportError:
     import tomli as tomllib
@@ -211,7 +216,8 @@ def is_valid_domain(domain: str) -> str | None:
         return None
 
     try:
-        d = d.encode("idna").decode("ascii")
+        if not d.isascii():
+            d = d.encode("idna").decode("ascii")
     except (UnicodeError, ValueError):
         return None
 
@@ -226,8 +232,15 @@ def is_valid_domain(domain: str) -> str | None:
     for label in labels:
         if not LABEL_REGEX.match(label):
             return None
-        if len(label) >= 4 and label[2:4] == "--" and not label.startswith("xn--"):
-            return None
+        if len(label) >= 4 and label[2:4] == "--":
+            if not label.startswith("xn--"):
+                return None
+            try:
+                if idna is not None:
+                    idna.decode(label)
+                label.encode("ascii").decode("idna")
+            except Exception:
+                return None
 
     if (d[-1].isdigit() or ":" in d) and IP_PATTERN.match(d):
         return None
@@ -516,28 +529,42 @@ def sync_policy_in_place(
 
     def sync_chunk(idx: int, chunk: list[str]) -> str:
         name = f"{prefix} {idx + 1:03d}"
-        chash = hashlib.sha256(",".join(chunk).encode()).hexdigest()
-        items = [{"value": entry} for entry in chunk]
+        current_chunk = list(chunk)
 
-        try:
-            if idx < len(matched_lists):
-                target = matched_lists[idx]
-                if (
-                    target.get("name") == name
-                    and target.get("description") == chash
-                    and (target.get("count") is None or target.get("count") == len(chunk))
-                ):
+        for attempt in range(3):
+            chash = hashlib.sha256(",".join(current_chunk).encode()).hexdigest()
+            items = [{"value": entry} for entry in current_chunk]
+
+            try:
+                if idx < len(matched_lists):
+                    target = matched_lists[idx]
+                    if (
+                        target.get("name") == name
+                        and target.get("description") == chash
+                        and (target.get("count") is None or target.get("count") == len(current_chunk))
+                    ):
+                        return target["id"]
+                    cf.update_list(target["id"], name, items, desc=chash)
+                    logger.info(f"Updated {name} ({len(current_chunk)} {policy_type.lower()} items)")
                     return target["id"]
-                cf.update_list(target["id"], name, items, desc=chash)
-                logger.info(f"Updated {name} ({len(chunk)} {policy_type.lower()} items)")
-                return target["id"]
-            else:
-                res = cf.create_list(name, items, list_type=policy_type, desc=chash)
-                logger.info(f"Created {name} ({len(chunk)} {policy_type.lower()} items)")
-                return res["result"]["id"]
-        except Exception as e:
-            logger.error(f"Error syncing {name} (chunk size: {len(chunk)}): {e}")
-            raise
+                else:
+                    res = cf.create_list(name, items, list_type=policy_type, desc=chash)
+                    logger.info(f"Created {name} ({len(current_chunk)} {policy_type.lower()} items)")
+                    return res["result"]["id"]
+            except Exception as e:
+                err_str = str(e)
+                # Catch invalid label 400 errors from Cloudflare, remove the offending domain, and retry
+                match = re.search(r'invalid label ["\']?([a-zA-Z0-9_\-\.]+?)["\'\s]', err_str)
+                if match and attempt < 2:
+                    bad_label = match.group(1).lower()
+                    bad_domains = [d for d in current_chunk if bad_label in d.lower()]
+                    if bad_domains:
+                        logger.warning(f"Purging Cloudflare-rejected domain(s) {bad_domains} from {name} and retrying...")
+                        current_chunk = [d for d in current_chunk if d not in bad_domains]
+                        continue
+
+                logger.error(f"Error syncing {name} (chunk size: {len(current_chunk)}): {e}")
+                raise
 
     if chunks:
         with concurrent.futures.ThreadPoolExecutor(max_workers=write_workers) as pool:
