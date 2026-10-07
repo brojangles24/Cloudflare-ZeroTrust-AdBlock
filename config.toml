@@ -14,8 +14,8 @@ scrub_targets = [
 ]
 auto_enable_rules = true
 
-[tld]
-url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
+#[tld]
+#url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
 # Standalone Cloudflare Gateway Firewall Policies
 [gateway_policies]
@@ -32,14 +32,14 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 #"HaGeZi Pro"                = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
 #"HaGeZi Pro++"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
 #"HaGeZi Ultimate"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
-"HaGeZi Fake"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
-"HaGeZi TIF Full"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
+#"HaGeZi Fake"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
+#"HaGeZi TIF Full"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
 "HaGeZi Normal"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
 "HaGeZi Social"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
 "HaGeZi No SafeSearch"      = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nosafesearch-onlydomains.txt"
 "HaGeZi Bypass Prevention"  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"
 "HaGeZi Anti Piracy"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt"
-"HaGeZi DynDNS"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
+#"HaGeZi DynDNS"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
 #"NoAI"                      = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
 "Hagezi NSFW"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt"
 #"OISD NSFW"                 = "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt"
@@ -57,15 +57,15 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 #"ET Emerging Block IPs" = "https://rules.emergingthreats.net/fwrules/emerging-Block-IPs.txt"
 
 # Curated C2 & Threat Aggregates
-"HaGeZi TIF IPs"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/ips/tif.txt"
+#"HaGeZi TIF IPs"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/ips/tif.txt"
 #"Binary Defense"        = "https://www.binarydefense.com/banlist.txt"
 #"CINS Army"             = "https://cinsscore.com/list/ci-badguys.txt"
 "IPsum Level 4"         = "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/4.txt"
 
-[spam_allow_source]
-name      = "HaGeZi Spam Allow"
-url       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
-relevance = false
+#[spam_allow_source]
+#name      = "HaGeZi Spam Allow"
+#url       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
+#relevance = false
 
 [policies.relaxed]
 prefix              = "L_Relaxed"
@@ -74,7 +74,7 @@ action              = "block"
 type                = "DOMAIN"
 use_spam_tld        = false
 include             = [
-    "HaGeZi Normal", "HaGeZi No SafeSearch", "HaGeZi DynDNS", "HaGeZi Fake" 
+    "HaGeZi Normal", "HaGeZi No SafeSearch",
 ]
 exclude             = []
 security_categories = []
@@ -120,7 +120,7 @@ include             = [
     #"ThreatFox IOC IPs",
     #"ET Compromised IPs",
     #"ET Emerging Block IPs",
-    "HaGeZi TIF IPs",
+    #"HaGeZi TIF IPs",
     #"Binary Defense",
     #"CINS Army",
     "IPsum Level 4"
@@ -144,7 +144,7 @@ name                = "Porn Block"
 action              = "block"
 type                = "DOMAIN"
 use_spam_tld        = false
-include             = ["Hagezi NSFW", "OISD NSFW"]
+include             = ["Hagezi NSFW"]
 exclude             = []
 security_categories = []
 content_categories  = [2, 67, 125, 133]
@@ -189,7 +189,7 @@ name                = "Malware Block"
 action              = "block"
 type                = "DOMAIN"
 use_spam_tld        = false
-include             = ["HaGeZi TIF Full"]
+include             = []
 exclude             = []
 security_categories = [178, 80, 187, 83, 176, 175, 117, 131, 134, 153]
 content_categories  = [32, 169, 177, 128]
@@ -211,4 +211,4 @@ app_ids             = [
     534, 541, 572, 600, 604, 618, 628, 633, 1110, 1122, 1130, 1135, 1138,
     1853, 2678, 2680, 2826, 2831, 2844, 2845, 2848, 2852, 3097, 3098
 ]
-domains             = ["web.archive.org", "linkvertise.com", "vercel.com", "rumble.com"]
+domains             = ["web.archive.org", "linkvertise.com", "rumble.com"]
