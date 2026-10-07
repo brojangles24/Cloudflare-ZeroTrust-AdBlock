@@ -77,9 +77,9 @@ def load_config() -> dict:
 def create_session(workers: int) -> requests.Session:
     s = requests.Session()
     retry_strategy = Retry(
-        total=3,
-        backoff_factor=1.5,
-        status_forcelist=[500, 502, 503, 504],
+        total=5,
+        backoff_factor=2.0,
+        status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=None
     )
     adapter = HTTPAdapter(pool_connections=workers, pool_maxsize=workers + 2, max_retries=retry_strategy)
@@ -96,7 +96,7 @@ class CloudflareAPI:
 
     def req(self, method: str, endpoint: str, **kwargs) -> dict:
         url = f"{self.base_url}/{endpoint}"
-        retries = 5
+        retries = 6
         base_delay = 2
 
         for attempt in range(retries):
@@ -104,18 +104,18 @@ class CloudflareAPI:
             if resp.status_code == 429:
                 retry_after = resp.headers.get("Retry-After")
                 wait_time = int(retry_after) if retry_after and retry_after.isdigit() else (base_delay * (2 ** attempt))
-                logger.warning(f"Rate limited (429) on {endpoint}. Backing off for {wait_time}s.")
+                logger.warning(f"Rate limited (429) on {method} {endpoint}. Backing off for {wait_time}s.")
                 time.sleep(wait_time)
                 continue
 
             if not resp.ok:
-                logger.error(f"Cloudflare API error [{resp.status_code}] on {endpoint}: {resp.text}")
+                logger.error(f"Cloudflare API error [{resp.status_code}] on {method} {endpoint}: {resp.text}")
                 resp.raise_for_status()
 
             payload = resp.json()
             if isinstance(payload, dict) and payload.get("success") is False:
                 errors = payload.get("errors", [])
-                logger.error(f"Cloudflare API returned error payload on {endpoint}: {errors}")
+                logger.error(f"Cloudflare API returned error payload on {method} {endpoint}: {errors}")
                 raise RuntimeError(f"Cloudflare API failed on {endpoint}: {errors}")
 
             return payload
@@ -210,11 +210,10 @@ def is_valid_domain(domain: str) -> str | None:
     if not d or "." not in d or len(d) > 253 or ".." in d:
         return None
 
-    if not d.isascii():
-        try:
-            d = d.encode("idna").decode("ascii")
-        except (UnicodeError, ValueError):
-            return None
+    try:
+        d = d.encode("idna").decode("ascii")
+    except (UnicodeError, ValueError):
+        return None
 
     labels = d.split(".")
     if len(labels) < 2:
@@ -505,7 +504,8 @@ def sync_policy_in_place(
     policy_name = policy["name"]
     policy_type = policy.get("type", "DOMAIN").upper()
     max_size = cfg["settings"]["max_list_size"]
-    workers = cfg["settings"]["max_workers"]
+    configured_workers = cfg["settings"]["max_workers"]
+    write_workers = min(configured_workers, 3)
     allow_auto_enable = cfg.get("settings", {}).get("auto_enable_rules", True)
 
     matched_lists = sorted([l for l in existing_lists if l["name"].startswith(f"{prefix} ")], key=lambda x: x["name"])
@@ -519,24 +519,28 @@ def sync_policy_in_place(
         chash = hashlib.sha256(",".join(chunk).encode()).hexdigest()
         items = [{"value": entry} for entry in chunk]
 
-        if idx < len(matched_lists):
-            target = matched_lists[idx]
-            if (
-                target.get("name") == name
-                and target.get("description") == chash
-                and (target.get("count") is None or target.get("count") == len(chunk))
-            ):
+        try:
+            if idx < len(matched_lists):
+                target = matched_lists[idx]
+                if (
+                    target.get("name") == name
+                    and target.get("description") == chash
+                    and (target.get("count") is None or target.get("count") == len(chunk))
+                ):
+                    return target["id"]
+                cf.update_list(target["id"], name, items, desc=chash)
+                logger.info(f"Updated {name} ({len(chunk)} {policy_type.lower()} items)")
                 return target["id"]
-            cf.update_list(target["id"], name, items, desc=chash)
-            logger.info(f"Updated {name} ({len(chunk)} {policy_type.lower()} items)")
-            return target["id"]
-        else:
-            res = cf.create_list(name, items, list_type=policy_type, desc=chash)
-            logger.info(f"Created {name} ({len(chunk)} {policy_type.lower()} items)")
-            return res["result"]["id"]
+            else:
+                res = cf.create_list(name, items, list_type=policy_type, desc=chash)
+                logger.info(f"Created {name} ({len(chunk)} {policy_type.lower()} items)")
+                return res["result"]["id"]
+        except Exception as e:
+            logger.error(f"Error syncing {name} (chunk size: {len(chunk)}): {e}")
+            raise
 
     if chunks:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=write_workers) as pool:
             active_ids = list(pool.map(sync_chunk, range(len(chunks)), chunks))
 
     if len(matched_lists) > len(chunks):
