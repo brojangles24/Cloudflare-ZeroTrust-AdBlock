@@ -553,7 +553,6 @@ def sync_policy_in_place(
                     return res["result"]["id"]
             except Exception as e:
                 err_str = str(e)
-                # Catch invalid label 400 errors from Cloudflare, remove the offending domain, and retry
                 match = re.search(r'invalid label ["\']?([a-zA-Z0-9_\-\.]+?)["\'\s]', err_str)
                 if match and attempt < 2:
                     bad_label = match.group(1).lower()
@@ -603,13 +602,6 @@ def sync_policy_in_place(
     else:
         traffic_expr = " or ".join(list_items)
         identity_expr = ""
-
-    if len(traffic_expr) > 4000:
-        logger.warning(
-            f"Policy '{policy_name}' expression length ({len(traffic_expr)} chars) "
-            f"is near Cloudflare's 4096-character wirefilter limit. "
-            f"Increase max_list_size in config.toml if list count grows."
-        )
 
     if policy.get("enabled") is False:
         rule_enabled = False
@@ -719,7 +711,6 @@ def cleanup_orphans(
         "Global Bypass", "Block IoT Network", "YouTube Restricted"
     }
 
-    # 1. Clean up orphaned firewall rules FIRST to drop policy references
     for r in existing_rules:
         if r["name"] in protected_rules or any(k in r["name"] for k in protected_rules):
             continue
@@ -730,10 +721,8 @@ def cleanup_orphans(
             except Exception as e:
                 logger.error(f"Rule cleanup error ({r['name']}): {e}")
 
-    # 2. Allow Cloudflare Gateway backend dependency graph to propagate detachments
     time.sleep(3)
 
-    # 3. Retrying helper to handle eventual consistency on list deletions
     def safe_delete_list(lid: str, label: str):
         for attempt in range(4):
             try:
@@ -757,11 +746,9 @@ def cleanup_orphans(
                 logger.error(f"Failed deleting {label} {lid}: {e}")
                 break
 
-    # 4. Remove surplus lists from shrunken policies
     for sid in surplus_ids:
         safe_delete_list(sid, "surplus list")
 
-    # 5. Remove orphaned lists matching target prefixes
     for l in existing_lists:
         if "IoT Bypass" in l["name"]:
             continue
