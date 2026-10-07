@@ -53,10 +53,9 @@ def load_config() -> dict:
 
     cfg["api_token"] = os.environ.get("API_TOKEN", "").strip()
     cfg["account_id"] = os.environ.get("ACCOUNT_ID", "").strip()
-    cfg["primary_email"] = os.environ.get("PRIMARY_EMAIL", "").strip()
 
-    if not cfg["api_token"] or not cfg["account_id"] or not cfg["primary_email"]:
-        raise EnvironmentError("Missing API_TOKEN, ACCOUNT_ID, or PRIMARY_EMAIL in environment.")
+    if not cfg["api_token"] or not cfg["account_id"]:
+        raise EnvironmentError("Missing API_TOKEN or ACCOUNT_ID in environment.")
 
     excluded = []
     for var in ("SECONDARY_EMAIL", "TERTIARY_EMAIL"):
@@ -238,7 +237,8 @@ def is_valid_domain(domain: str) -> str | None:
             try:
                 if idna is not None:
                     idna.decode(label)
-                label.encode("ascii").decode("idna")
+                else:
+                    label.encode("ascii").decode("idna")
             except Exception:
                 return None
 
@@ -325,9 +325,8 @@ class RelevanceChecker:
             clean = clean[4:]
         return has_suffix_match(clean, self.master_allowlist)
 
-def fetch_feed_source(session: requests.Session, name: str, urls: list[str], checker: RelevanceChecker | None, timeout: tuple) -> tuple[str, set[str], int, int]:
-    kept, pruned = set(), 0
-    raw_count = 0
+def fetch_feed_source(session: requests.Session, name: str, urls: list[str], checker: RelevanceChecker | None, timeout: tuple) -> tuple[str, set[str]]:
+    kept = set()
     for u in urls:
         with session.get(u, timeout=timeout, stream=True) as resp:
             resp.raise_for_status()
@@ -353,21 +352,16 @@ def fetch_feed_source(session: requests.Session, name: str, urls: list[str], che
                 if not line:
                     continue
 
-                raw_count += 1
                 token = line.split()[-1].removeprefix("||").removesuffix("^")
                 clean = is_valid_domain(token)
-                if clean:
-                    if checker and not checker.is_relevant(clean):
-                        pruned += 1
-                    else:
-                        kept.add(clean)
+                if clean and (not checker or checker.is_relevant(clean)):
+                    kept.add(clean)
 
-    logger.info(f"Fetched {name}: {len(kept):,} kept (Raw: {raw_count:,}, Pruned: {pruned:,})")
-    return name, kept, pruned, raw_count
+    logger.info(f"Fetched {name}: {len(kept):,} kept")
+    return name, kept
 
-def fetch_ip_source(session: requests.Session, name: str, urls: list[str], timeout: tuple) -> tuple[str, set, int]:
+def fetch_ip_source(session: requests.Session, name: str, urls: list[str], timeout: tuple) -> tuple[str, set]:
     networks = set()
-    raw_count = 0
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
@@ -396,7 +390,6 @@ def fetch_ip_source(session: requests.Session, name: str, urls: list[str], timeo
 
                 if not line:
                     continue
-                raw_count += 1
 
                 cleaned = line.replace('"', ' ').replace("'", ' ').replace(',', ' ').replace('\t', ' ')
                 for raw_token in cleaned.split():
@@ -422,8 +415,8 @@ def fetch_ip_source(session: requests.Session, name: str, urls: list[str], timeo
                     except ValueError:
                         continue
 
-    logger.info(f"Fetched IP feed {name}: {len(networks):,} unique subnets/IPs (Raw lines: {raw_count:,})")
-    return name, networks, raw_count
+    logger.info(f"Fetched IP feed {name}: {len(networks):,} unique subnets/IPs")
+    return name, networks
 
 def fetch_spam_tlds(session: requests.Session, url: str, timeout: tuple) -> tuple[str, set[str]]:
     try:
@@ -442,21 +435,17 @@ def fetch_spam_tlds(session: requests.Session, url: str, timeout: tuple) -> tupl
         logger.error(f"TLD compilation failed: {e}")
         return "", set()
 
-def optimize_domains(domains: set[str]) -> tuple[list[str], int]:
+def optimize_domains(domains: set[str]) -> list[str]:
     sorted_domains = sorted(domains, key=lambda d: d.split(".")[::-1])
-    optimized, last_kept = [], None
-    last_kept_suffix = ""
-    subdomain_duplicates = 0
+    optimized, last_kept_suffix = [], ""
 
     for dom in sorted_domains:
-        if last_kept and dom.endswith(last_kept_suffix):
-            subdomain_duplicates += 1
+        if last_kept_suffix and dom.endswith(last_kept_suffix):
             continue
         optimized.append(dom)
-        last_kept = dom
         last_kept_suffix = f".{dom}"
 
-    return optimized, subdomain_duplicates
+    return optimized
 
 def build_policy_sets(policies: list[dict], fetched: dict, spam_tlds: set[str] = None) -> list[tuple[dict, list[str]]]:
     sets = []
@@ -499,8 +488,7 @@ def build_policy_sets(policies: list[dict], fetched: dict, spam_tlds: set[str] =
                 if spam_tlds and (p.get("use_spam_tld") or has_active_spam_tld):
                     p_set = {d for d in p_set if d.rsplit(".", 1)[-1] not in spam_tlds}
 
-            optimized, _ = optimize_domains(p_set)
-            sets.append((p, optimized))
+            sets.append((p, optimize_domains(p_set)))
 
     return sets
 
@@ -807,7 +795,7 @@ def main() -> None:
         for f in concurrent.futures.as_completed(domain_futures):
             name = domain_futures[f]
             try:
-                name, kept, _, _ = f.result()
+                name, kept = f.result()
                 fetched[name] = {"type": "DOMAIN", "domains": kept}
             except Exception as e:
                 if name == "HaGeZi Normal":
@@ -818,7 +806,7 @@ def main() -> None:
         for f in concurrent.futures.as_completed(ip_futures):
             name = ip_futures[f]
             try:
-                name, networks, _ = f.result()
+                name, networks = f.result()
                 fetched[name] = {"type": "IP", "networks": networks}
             except Exception as e:
                 logger.warning(f"IP feed failure ({name}): {e}")
