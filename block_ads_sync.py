@@ -667,20 +667,22 @@ def sync_standalone_policies(cf: CloudflareAPI, cfg: dict, existing_rules: list[
 
     return synced_rules
 
-def cleanup_orphans(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict], existing_rules: list[dict], active_ids: list[str], surplus_ids: list[str], active_rules: list[str]):
+def cleanup_orphans(
+    cf: CloudflareAPI,
+    cfg: dict,
+    existing_lists: list[dict],
+    existing_rules: list[dict],
+    active_ids: list[str],
+    surplus_ids: list[str],
+    active_rules: list[str]
+) -> None:
     scrub_targets = cfg["settings"]["scrub_targets"]
     protected_rules = set(cfg.get("gateway_policies", {}).keys()) | {
         "IoT Bypass", "Custom", "Keywords", "SafeSearch", "Global Blocklist",
         "Global Bypass", "Block IoT Network", "YouTube Restricted"
     }
 
-    for sid in surplus_ids:
-        try:
-            cf.delete_list(sid)
-            logger.info(f"Removed surplus list: {sid}")
-        except Exception as e:
-            logger.error(f"Failed deleting surplus list {sid}: {e}")
-
+    # 1. Clean up orphaned firewall rules FIRST so they release references to any lists
     for r in existing_rules:
         if r["name"] in protected_rules or any(k in r["name"] for k in protected_rules):
             continue
@@ -691,15 +693,43 @@ def cleanup_orphans(cf: CloudflareAPI, cfg: dict, existing_lists: list[dict], ex
             except Exception as e:
                 logger.error(f"Rule cleanup error ({r['name']}): {e}")
 
+    # 2. Allow Cloudflare Gateway backend graph to propagate rule detachments
+    time.sleep(3)
+
+    # 3. Retrying helper to handle eventual consistency when deleting lists
+    def safe_delete_list(lid: str, label: str):
+        for attempt in range(4):
+            try:
+                cf.delete_list(lid)
+                logger.info(f"Removed {label}: {lid}")
+                return
+            except requests.exceptions.HTTPError as e:
+                in_use = (
+                    e.response is not None 
+                    and e.response.status_code == 400 
+                    and "in use at gateway policies" in e.response.text
+                )
+                if in_use and attempt < 3:
+                    wait_time = (2 ** attempt) + 1
+                    logger.warning(f"List {lid} still releasing backend lock. Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                logger.error(f"Failed deleting {label} {lid}: {e}")
+                break
+            except Exception as e:
+                logger.error(f"Failed deleting {label} {lid}: {e}")
+                break
+
+    # 4. Remove surplus lists from shrunken policies
+    for sid in surplus_ids:
+        safe_delete_list(sid, "surplus list")
+
+    # 5. Remove orphaned lists matching target prefixes
     for l in existing_lists:
         if "IoT Bypass" in l["name"]:
             continue
         if l["id"] not in active_ids and l["id"] not in surplus_ids and any(t in l["name"] for t in scrub_targets):
-            try:
-                cf.delete_list(l["id"])
-                logger.info(f"Removed orphaned list: {l['name']}")
-            except Exception as e:
-                logger.error(f"List cleanup error ({l['name']}): {e}")
+            safe_delete_list(l["id"], f"orphaned list ({l['name']})")
 
 def main() -> None:
     start = time.perf_counter()
