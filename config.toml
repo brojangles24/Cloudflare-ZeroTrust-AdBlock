@@ -42,6 +42,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "HaGeZi DynDNS"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
 #"NoAI"                      = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
 "Hagezi NSFW"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt"
+"OISD NSFW"                 = "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt"
 #"HaGeZi Badware"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"
 
 [ip_sources]
@@ -143,7 +144,7 @@ name                = "Porn Block"
 action              = "block"
 type                = "DOMAIN"
 use_spam_tld        = false
-include             = ["Hagezi NSFW"]
+include             = ["Hagezi NSFW", "OISD NSFW"]
 exclude             = []
 security_categories = []
 content_categories  = [2, 67, 125, 133]
