@@ -14,8 +14,8 @@ scrub_targets = [
 ]
 auto_enable_rules = true
 
-#[tld]
-#url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
+[tld]
+url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
 # Standalone Cloudflare Gateway Firewall Policies
 [gateway_policies]
@@ -30,7 +30,7 @@ auto_enable_rules = true
 
 [sources]
 #"HaGeZi Pro"                = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
-#"HaGeZi Pro++"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
+"HaGeZi Pro++"              = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
 #"HaGeZi Ultimate"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
 #"HaGeZi Fake"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
 #"HaGeZi TIF Full"           = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
@@ -62,10 +62,10 @@ auto_enable_rules = true
 #"CINS Army"             = "https://cinsscore.com/list/ci-badguys.txt"
 "IPsum Level 4"         = "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/4.txt"
 
-#[spam_allow_source]
-#name      = "HaGeZi Spam Allow"
-#url       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
-#relevance = false
+[spam_allow_source]
+name      = "HaGeZi Spam Allow"
+url       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
+relevance = false
 
 [policies.relaxed]
 prefix              = "L_Relaxed"
@@ -81,19 +81,19 @@ security_categories = []
 content_categories  = []
 domains             = []
 
-#[policies.restrictive]
-#prefix              = "L_Restrictive"
-#name                = "Adblock HaGeZi Ultimate"
-#action              = "block"
-#type                = "DOMAIN"
-#restrict_users      = true
-#use_spam_tld        = false
-#include             = [
-#    "HaGeZi Ultimate",
-#]
-#exclude             = ["HaGeZi Normal"]
-#security_categories = []
-#content_categories  = []
+[policies.restrictive]
+prefix              = "L_Restrictive"
+name                = "Adblock HaGeZi Pro++"
+action              = "block"
+type                = "DOMAIN"
+restrict_users      = true
+use_spam_tld        = false
+include             = [
+    "HaGeZi Ultimate",
+]
+exclude             = ["HaGeZi Normal"]
+security_categories = []
+content_categories  = []
 
 #[policies.badware]
 #prefix              = "L_Badware"
@@ -127,16 +127,16 @@ include             = [
 ]
 exclude             = []
 
-#[policies.spamtld]
-#prefix              = "L_SpamTLD"
-#name                = "HaGeZi Spam TLD"
-#action              = "block"
-#type                = "DOMAIN"
-#use_spam_tld        = true
-#include             = []
-#exclude             = []
-#security_categories = []
-#content_categories  = []
+[policies.spamtld]
+prefix              = "L_SpamTLD"
+name                = "HaGeZi Spam TLD"
+action              = "block"
+type                = "DOMAIN"
+use_spam_tld        = true
+include             = []
+exclude             = []
+security_categories = []
+content_categories  = []
 
 [policies.pornblock]
 prefix              = "L_ExtraPorn"
