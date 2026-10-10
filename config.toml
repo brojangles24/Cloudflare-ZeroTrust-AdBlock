@@ -5,11 +5,11 @@ max_workers     = 5
 request_timeout = [5, 25]
 scrub_targets = [
     "Base", "Pro++", "Ultimate", "Normal", "Social", 
-    "Block:", "Allow:", "L_", "ProMini", "ProPlus", 
+    "Block:", "Allow:", "L_", "ProMini", "ProPlus", "L_NewDomainBlock",
     "ProUser", "ProHome", "Piracy", "DynDNS", "Hoster", "Badware",
     "Restrictive", "Blocked_IPs", "Spam TLD", "Porn Block", "Malware Block",
     "Bypass Prevention", "AI Block", "Adblock", "L_Social", "L_SpamTLD",
-    "L_ExtraPorn", "L_MalwareBlock", "L_Piracy", "L_BypassPrevent", 
+    "L_ExtraPorn", "L_MalwareBlock", "L_Piracy", "L_BypassPrevent", "New Domain Block",
     "L_Relaxed", "L_Restrictive", "L_AIBlockIsaac", "L_Badware", "L_Blocked_IPs"
 ]
 auto_enable_rules = true
@@ -189,9 +189,21 @@ name                = "Malware Block"
 action              = "block"
 type                = "DOMAIN"
 use_spam_tld        = false
+ip_categories       = true
 include             = []
 exclude             = []
 security_categories = [178, 80, 187, 83, 176, 175, 117, 131, 134, 153]
+content_categories  = []
+
+[policies.NewDomainBlock]
+prefix              = "L_NewDomainBlock"
+name                = "New Domain Block"
+action              = "block"
+type                = "DOMAIN"
+use_spam_tld        = false
+include             = []
+exclude             = []
+security_categories = []
 content_categories  = [32, 169, 177, 128]
 
 [policies.social]
