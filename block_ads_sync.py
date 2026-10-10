@@ -604,6 +604,7 @@ def sync_policy_in_place(
         "block_page_enabled",
         cfg.get("settings", {}).get("block_page_enabled", False)
     )
+    ip_cat = policy.get("ip_categories", False)
 
     payload = {
         "name": policy_name,
@@ -612,7 +613,8 @@ def sync_policy_in_place(
         "filters": ["dns"],
         "traffic": traffic_expr,
         "rule_settings": {
-            "block_page_enabled": block_page
+            "block_page_enabled": block_page,
+            "ip_categories": ip_cat
         }
     }
     if identity_expr:
@@ -622,7 +624,10 @@ def sync_policy_in_place(
 
     if rule:
         existing_settings = rule.get("rule_settings") or {}
-        settings_changed = existing_settings.get("block_page_enabled") != block_page
+        settings_changed = (
+            existing_settings.get("block_page_enabled") != block_page
+            or existing_settings.get("ip_categories", False) != ip_cat
+        )
         existing_identity = rule.get("identity") or ""
 
         if (
@@ -632,10 +637,10 @@ def sync_policy_in_place(
             or settings_changed
         ):
             cf.update_rule(rule["id"], payload)
-            logger.info(f"Updated firewall rule: {policy_name} (enabled={rule_enabled}, block_page={block_page})")
+            logger.info(f"Updated firewall rule: {policy_name} (enabled={rule_enabled}, block_page={block_page}, ip_categories={ip_cat})")
     else:
         cf.create_rule(payload)
-        logger.info(f"Created firewall rule: {policy_name} (enabled={rule_enabled}, block_page={block_page})")
+        logger.info(f"Created firewall rule: {policy_name} (enabled={rule_enabled}, block_page={block_page}, ip_categories={ip_cat})")
 
     return active_ids, [l["id"] for l in surplus_lists], [policy_name]
 
