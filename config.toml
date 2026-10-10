@@ -127,16 +127,16 @@ include             = [
 ]
 exclude             = []
 
-[policies.spamtld]
-prefix              = "L_SpamTLD"
-name                = "HaGeZi Spam TLD"
-action              = "block"
-type                = "DOMAIN"
-use_spam_tld        = true
-include             = []
-exclude             = []
-security_categories = []
-content_categories  = []
+#[policies.spamtld]
+#prefix              = "L_SpamTLD"
+#name                = "HaGeZi Spam TLD"
+#action              = "block"
+#type                = "DOMAIN"
+#use_spam_tld        = true
+#include             = []
+#exclude             = []
+#security_categories = []
+#content_categories  = []
 
 [policies.pornblock]
 prefix              = "L_ExtraPorn"
