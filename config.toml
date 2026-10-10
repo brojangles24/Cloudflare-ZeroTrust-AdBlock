@@ -192,7 +192,9 @@ use_spam_tld        = false
 ip_categories       = true
 include             = []
 exclude             = []
-security_categories = [178, 80, 187, 83, 176, 175, 117, 131, 134, 153]
+# Strictly dedicated malicious infrastructure:
+# C2/Botnets (178), Malware (80), Spyware (187), Crypto (176), DNS Tunneling (175), DGA (117), Private IP (153)
+security_categories = [178, 80, 187, 176, 175, 117, 153]
 content_categories  = []
 
 [policies.NewDomainBlock]
@@ -201,9 +203,13 @@ name                = "New Domain Block"
 action              = "block"
 type                = "DOMAIN"
 use_spam_tld        = false
+ip_categories       = false
 include             = []
 exclude             = []
-security_categories = []
+# Domain-only threat heuristics (no resolved IP checking):
+# Phishing (83), Brand Embedding (131), Compromised Domains (134)
+security_categories = [83, 131, 134]
+# Domain age & grayware content categories:
 content_categories  = [32, 169, 177, 128]
 
 [policies.social]
