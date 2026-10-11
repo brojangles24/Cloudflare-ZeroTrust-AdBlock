@@ -42,7 +42,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 #"HaGeZi DynDNS"             = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
 #"NoAI"                      = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
 "Hagezi NSFW"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt"
-#"OISD NSFW"                 = "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt"
+"OISD NSFW"                 = "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt"
 "HaGeZi Badware"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"
 
 [ip_sources]
@@ -62,10 +62,10 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 #"CINS Army"             = "https://cinsscore.com/list/ci-badguys.txt"
 "IPsum Level 4"         = "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/4.txt"
 
-#[spam_allow_source]
-#name      = "HaGeZi Spam Allow"
-#url       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
-#relevance = false
+[spam_allow_source]
+name      = "HaGeZi Spam Allow"
+url       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
+relevance = false
 
 [policies.relaxed]
 prefix              = "L_Relaxed"
@@ -144,7 +144,7 @@ name                = "Porn Block"
 action              = "block"
 type                = "DOMAIN"
 use_spam_tld        = false
-include             = ["Hagezi NSFW"]
+include             = ["Hagezi NSFW", "OISD NSFW"]
 exclude             = []
 security_categories = []
 content_categories  = [2, 67, 125, 133]
