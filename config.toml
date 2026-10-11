@@ -43,7 +43,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 #"NoAI"                      = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
 "Hagezi NSFW"               = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt"
 #"OISD NSFW"                 = "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt"
-"HaGeZi Badware"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"
+#"HaGeZi Badware"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"
 
 [ip_sources]
 # Hijacked Subnets & Bulletproof Transit
@@ -95,18 +95,18 @@ exclude             = ["HaGeZi Normal"]
 security_categories = []
 content_categories  = []
 
-[policies.badware]
-prefix              = "L_Badware"
-name                = "HaGeZi Badware"
-action              = "block"
-type                = "DOMAIN"
-use_spam_tld        = false
-include             = [
-    "HaGeZi Badware",
-]
-exclude             = []
-security_categories = []
-content_categories  = []
+#[policies.badware]
+#prefix              = "L_Badware"
+#name                = "HaGeZi Badware"
+#action              = "block"
+#type                = "DOMAIN"
+#use_spam_tld        = false
+#include             = [
+#    "HaGeZi Badware",
+#]
+#exclude             = []
+#security_categories = []
+#content_categories  = []
 
 [policies.blocked_ips]
 prefix              = "L_Blocked_IPs"
