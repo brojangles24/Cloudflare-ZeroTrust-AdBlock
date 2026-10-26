@@ -154,6 +154,7 @@ prefix              = "L_BypassPrevent"
 name                = "Bypass Prevention"
 action              = "block"
 type                = "DOMAIN"
+restrict_users      = true
 use_spam_tld        = false
 include             = ["HaGeZi Bypass Prevention"]
 exclude             = []
