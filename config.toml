@@ -48,7 +48,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "HaGeZi DynDNS"    = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
 #"NoAI"             = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
 #"OISD NSFW"        = "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw.txt"
-"HaGeZi Badware"   = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"
+#"HaGeZi Badware"   = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"
 
 [ip_sources]
 "Spamhaus DROP"     = "https://www.spamhaus.org/drop/drop.txt"
@@ -92,16 +92,16 @@ exclude             = []
 security_categories = []
 content_categories  = []
 
-[policies.badware]
-prefix              = "L_Badware"
-name                = "HaGeZi Badware"
-action              = "block"
-type                = "DOMAIN"
-use_spam_tld        = false
-include             = ["HaGeZi Badware"]
-exclude             = []
-security_categories = []
-content_categories  = []
+#[policies.badware]
+#prefix              = "L_Badware"
+#name                = "HaGeZi Badware"
+#action              = "block"
+#type                = "DOMAIN"
+#use_spam_tld        = false
+#include             = ["HaGeZi Badware"]
+#exclude             = []
+#security_categories = []
+#content_categories  = []
 
 [policies.blocked_ips]
 prefix              = "L_Blocked_IPs"
@@ -183,7 +183,7 @@ ip_categories       = true
 include             = ["HaGeZi TIF Full"]
 exclude             = []
 # C2/Botnets (178), Malware (80), Spyware (187), Crypto (176), DNS Tunneling (175), DGA (117), Private IP (153)
-security_categories = [178, 80, 187, 176, 175, 117, 153]
+security_categories = [178, 80, 187, 176, 175, 117, 83, 153]
 content_categories  = []
 
 [policies.NewDomainBlock]
@@ -195,8 +195,8 @@ use_spam_tld        = false
 ip_categories       = false
 include             = []
 exclude             = []
-# Phishing (83), Brand Embedding (131), Compromised Domains (134)
-security_categories = [83, 131, 134]
+# Brand Embedding (131), Compromised Domains (134)
+#security_categories = [131, 134]
 # Domain age & grayware content categories:
 content_categories  = [32, 169, 177, 128]
 
