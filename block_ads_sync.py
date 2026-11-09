@@ -155,7 +155,6 @@ class CloudflareAPI:
     def __init__(self, cfg: dict):
         self.account_id = cfg["account_id"]
         self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{self.account_id}/gateway"
-        # Disable urllib3 internal retries so req() manages backoff and 429s directly
         self.session = create_session(cfg["settings"]["max_workers"], with_retries=False)
         self.session.headers.update(
             {
@@ -331,7 +330,6 @@ def is_valid_domain(domain: str) -> str | None:
     if not d or "." not in d or len(d) > 253 or ".." in d:
         return None
 
-    # C-speed fast path for standard ASCII domains without punycode/double-dashes
     if d.isascii() and "--" not in d and FAST_DOMAIN_RE.match(d):
         return d
 
@@ -493,7 +491,6 @@ def fetch_feed_source(
                     if not line:
                         continue
 
-                # Strip Adblock modifiers ($third-party, $important, etc.) and anchors cleanly
                 token = line.split()[-1].split("$", 1)[0].removeprefix("||").split("^", 1)[0]
                 clean = is_valid_domain(token)
                 if clean and clean not in kept and (not checker or checker.is_relevant(clean)):
@@ -584,7 +581,6 @@ def fetch_spam_tlds(session: requests.Session, url: str, timeout: tuple) -> tupl
 def optimize_domains(domains: set[str]) -> list[str]:
     if not domains:
         return []
-    # O(N) set-based parent pruning followed by deterministic sort
     pruned = [d for d in domains if not has_parent_match(d, domains)]
     return sorted(pruned)
 
@@ -1049,11 +1045,1186 @@ def main() -> None:
                 logger.critical(f"IP feed failure ({name}): {e}. Aborting to preserve existing Cloudflare state.")
                 sys.exit(1)
 
+    quota = cfg["settings"]["total_quota"]
     compiled = build_policy_sets(policies, fetched, spam_tlds)
     total_entries = sum(len(items) for _, items in compiled)
-    if total_entries > cfg["settings"]["total_quota"]:
+
+    # Fallback Tier 1: Shed HaGeZi TIF IPs if over quota for this run
+    if total_entries > quota:
+        logger.warning(
+            f"Quota exceeded ({total_entries:,}/{quota:,}). "
+            "Shedding HaGeZi TIF IPs for this run..."
+        )
+        policies = [
+            {
+                **p,
+                "include": [
+                    inc for inc in p.get("include", [])
+                    if not ("tif" in inc.lower() and "ip" in inc.lower())
+                ],
+            }
+            for p in policies
+        ]
+        compiled = build_policy_sets(policies, fetched, spam_tlds)
+        total_entries = sum(len(items) for _, items in compiled)
+
+    # Fallback Tier 2: Shed HaGeZi TIF domain feeds if still over quota
+    if total_entries > quota:
+        logger.warning(
+            f"Quota still exceeded ({total_entries:,}/{quota:,}). "
+            "Shedding HaGeZi TIF domain feeds for this run..."
+        )
+        policies = [
+            {
+                **p,
+                "include": [
+                    inc for inc in p.get("include", [])
+                    if "tif" not in inc.lower()
+                ],
+            }
+            for p in policies
+        ]
+        compiled = build_policy_sets(policies, fetched, spam_tlds)
+        total_entries = sum(len(items) for _, items in compiled)
+
+    if total_entries > quota:
         logger.error(
-            f"Total entries ({total_entries:,}) exceeds quota ({cfg['settings']['total_quota']:,})."
+            f"Total entries ({total_entries:,}) still exceeds quota ({quota:,}) after shedding TIF feeds. Aborting."
+        )
+        sys.exit(1)
+
+    existing_lists = cf.get_lists()
+    existing_rules = cf.get_rules()
+
+    standalone_rules = sync_standalone_policies(cf, cfg, existing_rules)
+
+    all_active_ids, all_surplus_ids = [], []
+    all_active_rules = list(standalone_rules)
+
+    for policy, optimized_entries in compiled:
+        expr = tld_expr if policy.get("use_spam_tld") else ""
+        active_ids, surplus_ids, rule_names = sync_policy_in_place(
+            cf,
+            cfg,
+            existing_lists,
+            existing_rules,
+            optimized_entries,
+            policy,
+            tld_expr=expr,
+        )
+        all_active_ids.extend(active_ids)
+        all_surplus_ids.extend(surplus_ids)
+        all_active_rules.extend(rule_names)
+
+    cleanup_orphans(
+        cf,
+        cfg,
+        existing_lists,
+        existing_rules,
+        all_active_ids,
+        all_surplus_ids,
+        all_active_rules,
+    )
+
+    duration = time.perf_counter() - start
+    logger.info(
+        f"Sync completed successfully in {duration:.2f}s ({total_entries:,} items across {len(all_active_ids)} lists)."
+    )
+
+
+if __name__ == "__main__":
+    main()import concurrent.futures
+import gzip
+import hashlib
+import io
+import ipaddress
+import logging
+import os
+import re
+import sys
+import tempfile
+import time
+import zipfile
+from pathlib import Path
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
+
+try:
+    import idna
+except ImportError:
+    idna = None
+
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger("block_ads_sync")
+
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
+IP_PATTERN = re.compile(
+    r"^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$|"
+    r"^(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}$|"
+    r"^(?:[A-Fa-f0-9]{1,4}:)*:[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*$"
+)
+
+LABEL_REGEX = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+TLD_REGEX = re.compile(r"^[a-z]{2,63}$")
+
+# Fast-path regex for standard ASCII domains without punycode/double-hyphens
+FAST_DOMAIN_RE = re.compile(
+    r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"
+)
+
+INVALID_LABEL_RE = re.compile(r'invalid label ["\']?([a-zA-Z0-9_\-\.]+?)["\'\s]')
+
+MIN_RELEVANCE_DOMAINS = 500_000
+
+DEFAULT_TOP_LISTS = [
+    {
+        "url": "https://tranco-list.eu/top-1m.csv.zip",
+        "col": 1,
+        "skip_header": False,
+        "compression": "zip",
+    },
+    {
+        "url": "https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz",
+        "col": 0,
+        "skip_header": True,
+        "compression": "gzip",
+    },
+    {
+        "url": "https://downloads.majestic.com/majestic_million.csv",
+        "col": 2,
+        "skip_header": True,
+        "compression": "raw",
+    },
+    {
+        "url": "https://openpagerank.keywordseverywhere.com/downloads/top10milliondomains.csv.zip",
+        "col": 1,
+        "skip_header": True,
+        "compression": "zip",
+    },
+    {
+        "url": "https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip",
+        "col": 1,
+        "skip_header": False,
+        "compression": "zip",
+    },
+]
+
+
+def load_config() -> dict:
+    cfg_path = Path("config.toml")
+    if not cfg_path.exists():
+        raise FileNotFoundError("config.toml not found.")
+    with open(cfg_path, "rb") as f:
+        cfg = tomllib.load(f)
+
+    cfg["api_token"] = os.environ.get("API_TOKEN", "").strip()
+    cfg["account_id"] = os.environ.get("ACCOUNT_ID", "").strip()
+
+    if not cfg["api_token"] or not cfg["account_id"]:
+        raise EnvironmentError("Missing API_TOKEN or ACCOUNT_ID in environment.")
+
+    excluded = []
+    for var in ("SECONDARY_EMAIL", "TERTIARY_EMAIL"):
+        val = os.environ.get(var, "").strip()
+        if val and val not in excluded:
+            excluded.append(val)
+
+    extra_env = os.environ.get("EXCLUDED_EMAILS", "").strip()
+    if extra_env:
+        for email in extra_env.split(","):
+            cleaned = email.strip()
+            if cleaned and cleaned not in excluded:
+                excluded.append(cleaned)
+
+    if excluded:
+        formatted_emails = " ".join(f'"{e}"' for e in excluded)
+        cfg["target_identity"] = f"not(identity.email in {{{formatted_emails}}})"
+    else:
+        cfg["target_identity"] = None
+
+    return cfg
+
+
+def create_session(workers: int, with_retries: bool = True) -> requests.Session:
+    s = requests.Session()
+    s.headers.update({"User-Agent": USER_AGENT})
+    if with_retries:
+        retry_strategy = Retry(
+            total=5,
+            backoff_factor=1.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=None,
+            respect_retry_after_header=True,
+        )
+        adapter = HTTPAdapter(
+            pool_connections=workers,
+            pool_maxsize=workers + 4,
+            max_retries=retry_strategy,
+        )
+    else:
+        adapter = HTTPAdapter(
+            pool_connections=workers,
+            pool_maxsize=workers + 4,
+        )
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)
+    return s
+
+
+class CloudflareAPI:
+    def __init__(self, cfg: dict):
+        self.account_id = cfg["account_id"]
+        self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{self.account_id}/gateway"
+        self.session = create_session(cfg["settings"]["max_workers"], with_retries=False)
+        self.session.headers.update(
+            {
+                "Authorization": f"Bearer {cfg['api_token']}",
+                "Content-Type": "application/json",
+            }
+        )
+        self.timeout = tuple(cfg["settings"]["request_timeout"])
+
+    def req(self, method: str, endpoint: str, **kwargs) -> dict:
+        url = f"{self.base_url}/{endpoint}"
+        retries = 5
+        base_delay = 2
+
+        for attempt in range(retries):
+            try:
+                resp = self.session.request(method, url, timeout=self.timeout, **kwargs)
+            except requests.exceptions.RequestException as e:
+                if attempt < retries - 1:
+                    wait_time = base_delay * (2 ** attempt)
+                    logger.warning(f"Network error on {method} {endpoint}: {e}. Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                raise
+
+            if resp.status_code == 429:
+                retry_after = resp.headers.get("Retry-After")
+                wait_time = (
+                    int(retry_after)
+                    if retry_after and retry_after.isdigit()
+                    else (base_delay * (2 ** attempt))
+                )
+                logger.warning(f"Rate limited (429) on {method} {endpoint}. Backing off for {wait_time}s.")
+                time.sleep(wait_time)
+                continue
+
+            if resp.status_code in (500, 502, 503, 504) and attempt < retries - 1:
+                wait_time = base_delay * (2 ** attempt)
+                logger.warning(f"Server error ({resp.status_code}) on {method} {endpoint}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                continue
+
+            if not resp.ok:
+                err_text = resp.text
+                logger.error(f"Cloudflare API error [{resp.status_code}] on {method} {endpoint}: {err_text}")
+                raise requests.exceptions.HTTPError(
+                    f"HTTP {resp.status_code} on {method} {endpoint}: {err_text}",
+                    response=resp,
+                )
+
+            payload = resp.json()
+            if isinstance(payload, dict) and payload.get("success") is False:
+                errors = payload.get("errors", [])
+                logger.error(f"Cloudflare API error payload on {method} {endpoint}: {errors}")
+                raise RuntimeError(f"Cloudflare API failed on {endpoint}: {errors}")
+
+            return payload
+
+        raise RuntimeError(f"Exceeded max retries on Cloudflare endpoint: {endpoint}")
+
+    def paginate(self, endpoint: str) -> list[dict]:
+        results, page = [], 1
+        while True:
+            resp = self.req("GET", f"{endpoint}?page={page}&per_page=100")
+            results.extend(resp.get("result") or [])
+            info = resp.get("result_info") or {}
+            if page >= info.get("total_pages", 1):
+                break
+            page += 1
+        return results
+
+    def get_lists(self) -> list[dict]:
+        return self.paginate("lists")
+
+    def get_rules(self) -> list[dict]:
+        return self.paginate("rules")
+
+    def delete_list(self, lid: str):
+        return self.req("DELETE", f"lists/{lid}")
+
+    def delete_rule(self, rid: str):
+        return self.req("DELETE", f"rules/{rid}")
+
+    def create_list(self, name: str, items: list[dict], list_type: str = "DOMAIN", desc: str = ""):
+        return self.req(
+            "POST",
+            "lists",
+            json={"name": name, "type": list_type, "items": items, "description": desc},
+        )
+
+    def update_list(self, lid: str, name: str, items: list[dict], desc: str = ""):
+        return self.req(
+            "PUT",
+            f"lists/{lid}",
+            json={"name": name, "items": items, "description": desc},
+        )
+
+    def create_rule(self, data: dict):
+        payload = dict(data)
+        settings = dict(payload.get("rule_settings") or {})
+        settings.setdefault("block_page_enabled", False)
+        payload["rule_settings"] = settings
+        return self.req("POST", "rules", json=payload)
+
+    def update_rule(self, rid: str, data: dict):
+        payload = dict(data)
+        settings = dict(payload.get("rule_settings") or {})
+        settings.setdefault("block_page_enabled", False)
+        payload["rule_settings"] = settings
+        return self.req("PUT", f"rules/{rid}", json=payload)
+
+
+def parse_sources(sources_table: dict, is_ip: bool = False) -> list[dict]:
+    parsed = []
+    for name, data in sources_table.items():
+        if isinstance(data, str):
+            parsed.append({"name": name, "urls": [data], "enable_relevance": not is_ip, "is_ip": is_ip})
+        elif isinstance(data, list):
+            parsed.append({"name": name, "urls": data, "enable_relevance": not is_ip, "is_ip": is_ip})
+        elif isinstance(data, dict):
+            urls = data.get("urls") or ([data["url"]] if data.get("url") else [])
+            parsed.append(
+                {
+                    "name": name,
+                    "urls": urls,
+                    "enable_relevance": data.get("relevance", not is_ip) if not is_ip else False,
+                    "is_ip": is_ip,
+                }
+            )
+    return parsed
+
+
+def compile_category_expression(p: dict) -> str:
+    expr_parts = []
+    if p.get("security_categories"):
+        ids = " ".join(str(i) for i in p["security_categories"])
+        expr_parts.append(f"any(dns.security_category[*] in {{{ids}}})")
+    if p.get("content_categories"):
+        ids = " ".join(str(i) for i in p["content_categories"])
+        expr_parts.append(f"any(dns.content_category[*] in {{{ids}}})")
+    if p.get("app_ids"):
+        ids = " ".join(str(i) for i in p["app_ids"])
+        expr_parts.append(f"any(app.ids[*] in {{{ids}}})")
+    if p.get("domains"):
+        doms = " ".join(f'"{d}"' for d in p["domains"])
+        expr_parts.append(f"any(dns.domains[*] in {{{doms}}})")
+    return " or ".join(expr_parts)
+
+
+def has_parent_match(host: str, lookup_set: set[str]) -> bool:
+    idx = host.find(".")
+    while idx != -1:
+        if host[idx + 1 :] in lookup_set:
+            return True
+        idx = host.find(".", idx + 1)
+    return False
+
+
+def has_suffix_match(host: str, lookup_set: set[str]) -> bool:
+    return host in lookup_set or has_parent_match(host, lookup_set)
+
+
+def is_valid_domain(domain: str) -> str | None:
+    d = domain.strip().lower()
+    if not d:
+        return None
+
+    if "://" in d:
+        d = d.split("://", 1)[1]
+    if "/" in d or "?" in d or ":" in d or "*" in d or "." in (d[0], d[-1]):
+        d = d.split("?", 1)[0].split("/", 1)[0].split(":")[0].removeprefix("*.").strip(".")
+
+    if not d or "." not in d or len(d) > 253 or ".." in d:
+        return None
+
+    if d.isascii() and "--" not in d and FAST_DOMAIN_RE.match(d):
+        return d
+
+    try:
+        if not d.isascii():
+            d = d.encode("idna").decode("ascii")
+    except (UnicodeError, ValueError):
+        return None
+
+    labels = d.split(".")
+    if len(labels) < 2:
+        return None
+
+    tld = labels[-1]
+    if tld.isdigit() or not TLD_REGEX.match(tld):
+        return None
+
+    for label in labels:
+        if not LABEL_REGEX.match(label):
+            return None
+        if len(label) >= 4 and label[2:4] == "--":
+            if not label.startswith("xn--"):
+                return None
+            try:
+                if idna is not None:
+                    idna.decode(label)
+                else:
+                    label.encode("ascii").decode("idna")
+            except Exception:
+                return None
+
+    if (d[-1].isdigit() or ":" in d) and IP_PATTERN.match(d):
+        return None
+
+    return d
+
+
+def _parse_csv_stream(iterable, col: int, skip_header: bool) -> set[str]:
+    domains = set()
+    it = iter(iterable)
+    if skip_header:
+        next(it, None)
+
+    for line in it:
+        parts = line.split(",")
+        if len(parts) > col:
+            raw = parts[col].strip().lower().strip('"')
+            if not raw or raw in domains:
+                continue
+            clean = is_valid_domain(raw)
+            if clean:
+                domains.add(clean)
+    return domains
+
+
+class RelevanceChecker:
+    def __init__(self, session: requests.Session, workers: int):
+        self.master_allowlist: set[str] = set()
+        self.session = session
+        self.workers = workers
+
+    def _fetch_source(self, item: dict) -> tuple[str, set[str]]:
+        url = item["url"]
+        col = item["col"]
+        skip_header = item["skip_header"]
+        compression = item["compression"]
+
+        try:
+            with self.session.get(url, stream=True, timeout=90) as r:
+                r.raise_for_status()
+
+                with tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024, mode="w+b") as tmp:
+                    for chunk in r.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            tmp.write(chunk)
+                    tmp.seek(0)
+
+                    if compression == "zip":
+                        with zipfile.ZipFile(tmp) as z:
+                            names = z.namelist()
+                            target_file = next(
+                                (
+                                    n
+                                    for n in names
+                                    if n.lower().endswith((".csv", ".txt")) and not n.endswith("/")
+                                ),
+                                names[0],
+                            )
+                            with z.open(target_file) as zf, io.TextIOWrapper(
+                                zf, encoding="utf-8", errors="ignore"
+                            ) as text_io:
+                                domains = _parse_csv_stream(text_io, col, skip_header)
+                    elif compression == "gzip":
+                        with gzip.open(tmp, mode="rt", encoding="utf-8", errors="ignore") as gz:
+                            domains = _parse_csv_stream(gz, col, skip_header)
+                    else:
+                        with io.TextIOWrapper(tmp, encoding="utf-8", errors="ignore") as text_io:
+                            domains = _parse_csv_stream(text_io, col, skip_header)
+
+                logger.info(f"Fetched & parsed {len(domains):,} domains from {url}")
+                return url, domains
+        except Exception as e:
+            logger.warning(f"Failed to fetch top list ({url}): {e}")
+            return url, set()
+
+    def build_dataset(self) -> None:
+        logger.info("Fetching fresh relevance datasets directly from sources...")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as executor:
+            futures = [executor.submit(self._fetch_source, item) for item in DEFAULT_TOP_LISTS]
+            for f in concurrent.futures.as_completed(futures):
+                _, domains = f.result()
+                self.master_allowlist.update(domains)
+
+        if len(self.master_allowlist) < MIN_RELEVANCE_DOMAINS:
+            raise RuntimeError(
+                f"Relevance dataset critically low ({len(self.master_allowlist):,} domains). "
+                "Aborting sync to prevent accidental list truncation."
+            )
+
+        logger.info(f"Relevance dataset compiled: {len(self.master_allowlist):,} root domains.")
+
+    def is_relevant(self, domain: str) -> bool:
+        clean = domain.lower().strip(".")
+        if clean.startswith("www."):
+            clean = clean[4:]
+        return has_suffix_match(clean, self.master_allowlist)
+
+
+def fetch_feed_source(
+    session: requests.Session,
+    name: str,
+    urls: list[str],
+    checker: RelevanceChecker | None,
+    timeout: tuple,
+) -> tuple[str, set[str]]:
+    kept = set()
+    for u in urls:
+        with session.get(u, timeout=timeout, stream=True) as resp:
+            resp.raise_for_status()
+            if not resp.encoding:
+                resp.encoding = "utf-8"
+
+            for line in resp.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8", errors="ignore")
+
+                line = line.strip()
+                if not line or line.startswith(("#", "!", "/")):
+                    continue
+
+                if "#" in line or "!" in line or ";" in line:
+                    for comment_char in ("#", "!", ";"):
+                        if comment_char in line:
+                            line = line.split(comment_char, 1)[0]
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                token = line.split()[-1].split("$", 1)[0].removeprefix("||").split("^", 1)[0]
+                clean = is_valid_domain(token)
+                if clean and clean not in kept and (not checker or checker.is_relevant(clean)):
+                    kept.add(clean)
+
+    logger.info(f"Fetched {name}: {len(kept):,} kept")
+    return name, kept
+
+
+def fetch_ip_source(
+    session: requests.Session, name: str, urls: list[str], timeout: tuple
+) -> tuple[str, set]:
+    networks = set()
+
+    for u in urls:
+        with session.get(u, timeout=timeout, stream=True) as resp:
+            resp.raise_for_status()
+            if not resp.encoding:
+                resp.encoding = "utf-8"
+
+            for line in resp.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8", errors="ignore")
+
+                line = line.strip()
+                if not line or line.startswith(("#", ";", "/")):
+                    continue
+
+                if "#" in line or ";" in line or "//" in line:
+                    for comment_char in ("#", ";", "//"):
+                        if comment_char in line:
+                            line = line.split(comment_char, 1)[0]
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                cleaned = (
+                    line.replace('"', " ")
+                    .replace("'", " ")
+                    .replace(",", " ")
+                    .replace("\t", " ")
+                )
+                for raw_token in cleaned.split():
+                    token = raw_token.strip().strip("[]")
+                    if "." not in token and ":" not in token:
+                        continue
+                    if "." in token and ":" in token:
+                        token = token.split(":", 1)[0]
+                    elif "]:" in raw_token:
+                        token = raw_token.split("]:", 1)[0].lstrip("[")
+
+                    try:
+                        net = ipaddress.ip_network(token, strict=False)
+                        if (
+                            net.is_private
+                            or net.is_loopback
+                            or net.is_multicast
+                            or net.is_link_local
+                            or net.is_unspecified
+                        ):
+                            continue
+                        networks.add(net)
+                    except ValueError:
+                        continue
+
+    logger.info(f"Fetched IP feed {name}: {len(networks):,} unique subnets/IPs")
+    return name, networks
+
+
+def fetch_spam_tlds(session: requests.Session, url: str, timeout: tuple) -> tuple[str, set[str]]:
+    resp = session.get(url, timeout=timeout)
+    resp.raise_for_status()
+    tlds = set()
+    for line in resp.text.splitlines():
+        line = line.strip().lower()
+        if line and not line.startswith(("#", "!", "/")):
+            clean = line.split()[-1].removeprefix("*.").strip(".")
+            if clean and "." not in clean and "*" not in clean:
+                tlds.add(clean)
+    if not tlds:
+        raise ValueError(f"Zero TLDs parsed from {url}")
+    expr = rf'any(dns.domains[*] matches "(?i)\.({"|".join(sorted(tlds))})$")'
+    return expr, tlds
+
+
+def optimize_domains(domains: set[str]) -> list[str]:
+    if not domains:
+        return []
+    pruned = [d for d in domains if not has_parent_match(d, domains)]
+    return sorted(pruned)
+
+
+def build_policy_sets(
+    policies: list[dict], fetched: dict, spam_tlds: set[str] | None = None
+) -> list[tuple[dict, list[str]]]:
+    sets = []
+    base_set = fetched.get("HaGeZi Normal", {}).get("domains", set())
+    has_active_spam_tld = any(p.get("use_spam_tld") for p in policies)
+
+    for p in policies:
+        prefix = p.get("prefix", "unknown")
+        policy_type = p.get("type", "DOMAIN").upper()
+
+        if policy_type == "IP":
+            ip_set = set()
+            for inc in p.get("include", []):
+                if inc in fetched and fetched[inc].get("type") == "IP":
+                    ip_set.update(fetched[inc]["networks"])
+            for exc in p.get("exclude", []):
+                if exc in fetched and fetched[exc].get("type") == "IP":
+                    ip_set.difference_update(fetched[exc]["networks"])
+
+            v4_nets = [net for net in ip_set if net.version == 4]
+            v6_nets = [net for net in ip_set if net.version == 6]
+
+            collapsed_v4 = [str(net) for net in ipaddress.collapse_addresses(v4_nets)]
+            collapsed_v6 = [str(net) for net in ipaddress.collapse_addresses(v6_nets)]
+
+            sets.append((p, collapsed_v4 + collapsed_v6))
+        else:
+            p_set = set()
+            for inc in p.get("include", []):
+                if inc in fetched and fetched[inc].get("type") == "DOMAIN":
+                    p_set.update(fetched[inc]["domains"])
+            for exc in p.get("exclude", []):
+                if exc in fetched and fetched[exc].get("type") == "DOMAIN":
+                    p_set.difference_update(fetched[exc]["domains"])
+
+            if p.get("action") != "allow":
+                if (
+                    base_set
+                    and prefix not in ("L_Normal", "L_Relaxed")
+                    and "HaGeZi Normal" not in p.get("include", [])
+                ):
+                    p_set = {d for d in p_set if not has_suffix_match(d, base_set)}
+
+                if spam_tlds and (p.get("use_spam_tld") or has_active_spam_tld):
+                    p_set = {d for d in p_set if d.rsplit(".", 1)[-1] not in spam_tlds}
+
+            sets.append((p, optimize_domains(p_set)))
+
+    return sets
+
+
+def sync_policy_in_place(
+    cf: CloudflareAPI,
+    cfg: dict,
+    existing_lists: list[dict],
+    existing_rules: list[dict],
+    entries: list[str],
+    policy: dict,
+    tld_expr: str = "",
+) -> tuple[list[str], list[str], list[str]]:
+    prefix = policy["prefix"]
+    policy_name = policy["name"]
+    policy_type = policy.get("type", "DOMAIN").upper()
+    max_size = cfg["settings"]["max_list_size"]
+    configured_workers = cfg["settings"]["max_workers"]
+    write_workers = min(configured_workers, 3)
+    allow_auto_enable = cfg.get("settings", {}).get("auto_enable_rules", True)
+
+    matched_lists = sorted(
+        [l for l in existing_lists if l["name"].startswith(f"{prefix} ")],
+        key=lambda x: x["name"],
+    )
+    chunks = [entries[i : i + max_size] for i in range(0, len(entries), max_size)] if entries else []
+
+    active_ids = []
+    surplus_lists = []
+
+    def sync_chunk(idx: int, chunk: list[str]) -> str | None:
+        name = f"{prefix} {idx + 1:03d}"
+        current_chunk = list(chunk)
+
+        for attempt in range(3):
+            if not current_chunk:
+                return None
+
+            chash = hashlib.sha256(",".join(current_chunk).encode()).hexdigest()
+            items = [{"value": entry} for entry in current_chunk]
+
+            try:
+                if idx < len(matched_lists):
+                    target = matched_lists[idx]
+                    if (
+                        target.get("name") == name
+                        and target.get("description") == chash
+                        and (target.get("count") is None or target.get("count") == len(current_chunk))
+                    ):
+                        return target["id"]
+                    cf.update_list(target["id"], name, items, desc=chash)
+                    logger.info(f"Updated {name} ({len(current_chunk)} {policy_type.lower()} items)")
+                    return target["id"]
+                else:
+                    res = cf.create_list(name, items, list_type=policy_type, desc=chash)
+                    logger.info(f"Created {name} ({len(current_chunk)} {policy_type.lower()} items)")
+                    return res["result"]["id"]
+            except Exception as e:
+                err_str = str(e)
+                match = INVALID_LABEL_RE.search(err_str)
+                if match and attempt < 2:
+                    bad_label = match.group(1).lower()
+                    bad_domains = [
+                        d for d in current_chunk
+                        if bad_label == d.lower() or bad_label in d.lower().split(".")
+                    ]
+                    if bad_domains:
+                        logger.warning(
+                            f"Purging Cloudflare-rejected domain(s) {bad_domains} from {name} and retrying..."
+                        )
+                        bad_set = set(bad_domains)
+                        current_chunk = [d for d in current_chunk if d not in bad_set]
+                        continue
+
+                logger.error(f"Error syncing {name} (chunk size: {len(current_chunk)}): {e}")
+                raise
+
+        return None
+
+    if chunks:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=write_workers) as pool:
+            raw_ids = list(pool.map(sync_chunk, range(len(chunks)), chunks))
+            active_ids = [lid for lid in raw_ids if lid is not None]
+
+    if len(matched_lists) > len(chunks):
+        surplus_lists = matched_lists[len(chunks) :]
+
+    if policy_type == "IP":
+        list_items = [f"any(dns.resolved_ips[*] in ${lid})" for lid in active_ids]
+    else:
+        list_items = [f"any(dns.domains[*] in ${lid})" for lid in active_ids]
+        if tld_expr and policy.get("use_spam_tld"):
+            list_items.append(f"({tld_expr})")
+
+    cat_expr = compile_category_expression(policy)
+    if cat_expr:
+        list_items.append(cat_expr)
+
+    rule = next((r for r in existing_rules if r["name"] == policy_name), None)
+
+    if not list_items:
+        logger.warning(f"Policy '{policy_name}' has no active list items, categories, or expressions.")
+        if rule:
+            try:
+                cf.delete_rule(rule["id"])
+                logger.info(f"Removed inactive firewall rule: {policy_name}")
+            except Exception as e:
+                logger.error(f"Failed deleting inactive rule {policy_name}: {e}")
+        return active_ids, [l["id"] for l in surplus_lists], []
+
+    cond = cfg["target_identity"] if policy.get("restrict_users") else policy.get("identity_condition")
+    if cond:
+        traffic_expr = (
+            " or ".join(list_items)
+            if "dns." not in cond
+            else " or ".join(f"({cond} and {item})" for item in list_items)
+        )
+        identity_expr = cond if "dns." not in cond else ""
+    else:
+        traffic_expr = " or ".join(list_items)
+        identity_expr = ""
+
+    if policy.get("enabled") is False:
+        rule_enabled = False
+    elif not allow_auto_enable and rule is not None and not rule.get("enabled", True):
+        rule_enabled = False
+    elif not allow_auto_enable and rule is None:
+        rule_enabled = policy.get("enabled", False)
+    else:
+        rule_enabled = policy.get("enabled", True) if rule is None else rule.get("enabled", True)
+
+    block_page = policy.get(
+        "block_page_enabled",
+        cfg.get("settings", {}).get("block_page_enabled", False),
+    )
+    ip_cat = policy.get("ip_categories", False)
+
+    existing_settings = dict((rule or {}).get("rule_settings") or {})
+    existing_settings["block_page_enabled"] = block_page
+    existing_settings["ip_categories"] = ip_cat
+
+    payload = {
+        "name": policy_name,
+        "action": policy.get("action", "block"),
+        "enabled": rule_enabled,
+        "filters": ["dns"],
+        "traffic": traffic_expr,
+        "rule_settings": existing_settings,
+    }
+    if identity_expr:
+        payload["identity"] = identity_expr
+
+    if rule:
+        for preserved_key in ("precedence", "description", "schedule", "device_posture"):
+            if rule.get(preserved_key) is not None:
+                payload[preserved_key] = rule[preserved_key]
+
+        old_settings = rule.get("rule_settings") or {}
+        settings_changed = (
+            old_settings.get("block_page_enabled") != block_page
+            or old_settings.get("ip_categories", False) != ip_cat
+        )
+        existing_identity = rule.get("identity") or ""
+
+        if (
+            rule.get("traffic") != traffic_expr
+            or existing_identity != identity_expr
+            or rule.get("enabled") != rule_enabled
+            or rule.get("action") != payload["action"]
+            or settings_changed
+        ):
+            cf.update_rule(rule["id"], payload)
+            logger.info(
+                f"Updated firewall rule: {policy_name} (enabled={rule_enabled}, block_page={block_page}, ip_categories={ip_cat})"
+            )
+    else:
+        cf.create_rule(payload)
+        logger.info(
+            f"Created firewall rule: {policy_name} (enabled={rule_enabled}, block_page={block_page}, ip_categories={ip_cat})"
+        )
+
+    return active_ids, [l["id"] for l in surplus_lists], [policy_name]
+
+
+def sync_standalone_policies(
+    cf: CloudflareAPI, cfg: dict, existing_rules: list[dict]
+) -> list[str]:
+    standalone_cfg = cfg.get("gateway_policies", {})
+    if not standalone_cfg:
+        return []
+
+    allow_auto_enable = cfg.get("settings", {}).get("auto_enable_rules", True)
+    synced_rules = []
+
+    for rule_name, desired_enabled in standalone_cfg.items():
+        matched = next((r for r in existing_rules if r["name"] == rule_name), None)
+        if not matched:
+            continue
+
+        synced_rules.append(rule_name)
+        currently_enabled = matched.get("enabled", True)
+
+        if not allow_auto_enable and not currently_enabled and desired_enabled:
+            logger.info(f"Skipping auto-enable for disabled standalone policy: {rule_name}")
+            continue
+
+        if currently_enabled != desired_enabled:
+            payload = {
+                "name": matched["name"],
+                "action": matched["action"],
+                "enabled": desired_enabled,
+                "filters": matched.get("filters", ["dns"]),
+                "traffic": matched.get("traffic", ""),
+            }
+            for optional_key in (
+                "identity",
+                "device_posture",
+                "rule_settings",
+                "schedule",
+                "precedence",
+                "description",
+            ):
+                if matched.get(optional_key) is not None:
+                    payload[optional_key] = matched[optional_key]
+
+            try:
+                cf.update_rule(matched["id"], payload)
+                matched["enabled"] = desired_enabled
+                state = "enabled" if desired_enabled else "disabled"
+                logger.info(f"Updated standalone policy state: {rule_name} -> {state}")
+            except Exception as e:
+                logger.error(f"Failed to update standalone policy {rule_name}: {e}")
+
+    return synced_rules
+
+
+def cleanup_orphans(
+    cf: CloudflareAPI,
+    cfg: dict,
+    existing_lists: list[dict],
+    existing_rules: list[dict],
+    active_ids: list[str],
+    surplus_ids: list[str],
+    active_rules: list[str],
+) -> None:
+    scrub_targets = cfg["settings"]["scrub_targets"]
+    protected_rules = set(cfg.get("gateway_policies", {}).keys()) | {
+        "IoT Bypass",
+        "Custom",
+        "Keywords",
+        "SafeSearch",
+        "Global Blocklist",
+        "Global Bypass",
+        "Block IoT Network",
+        "YouTube Restricted",
+    }
+
+    active_rules_set = set(active_rules)
+    deleted_any_rule = False
+
+    for r in existing_rules:
+        if r["name"] in protected_rules or any(k in r["name"] for k in protected_rules):
+            continue
+        if r["name"] not in active_rules_set and any(t in r["name"] for t in scrub_targets):
+            try:
+                cf.delete_rule(r["id"])
+                deleted_any_rule = True
+                logger.info(f"Removed orphaned rule: {r['name']}")
+            except Exception as e:
+                logger.error(f"Rule cleanup error ({r['name']}): {e}")
+
+    if deleted_any_rule or surplus_ids:
+        time.sleep(2)
+
+    def safe_delete_list(lid: str, label: str):
+        for attempt in range(4):
+            try:
+                cf.delete_list(lid)
+                logger.info(f"Removed {label}: {lid}")
+                return
+            except requests.exceptions.HTTPError as e:
+                in_use = (
+                    e.response is not None
+                    and e.response.status_code == 400
+                    and "in use at gateway policies" in e.response.text
+                )
+                if in_use and attempt < 3:
+                    wait_time = (2 ** attempt) + 1
+                    logger.warning(
+                        f"List {lid} still locked on Cloudflare backend. Retrying in {wait_time}s..."
+                    )
+                    time.sleep(wait_time)
+                    continue
+                logger.error(f"Failed deleting {label} {lid}: {e}")
+                break
+            except Exception as e:
+                logger.error(f"Failed deleting {label} {lid}: {e}")
+                break
+
+    active_ids_set = set(active_ids)
+    surplus_ids_set = set(surplus_ids)
+
+    for sid in surplus_ids:
+        safe_delete_list(sid, "surplus list")
+
+    for l in existing_lists:
+        if "IoT Bypass" in l["name"]:
+            continue
+        if (
+            l["id"] not in active_ids_set
+            and l["id"] not in surplus_ids_set
+            and any(t in l["name"] for t in scrub_targets)
+        ):
+            safe_delete_list(l["id"], f"orphaned list ({l['name']})")
+
+
+def main() -> None:
+    start = time.perf_counter()
+    cfg = load_config()
+    cf = CloudflareAPI(cfg)
+    workers = cfg["settings"]["max_workers"]
+    timeout = tuple(cfg["settings"]["request_timeout"])
+
+    policies = list(cfg.get("policies", {}).values())
+    use_spam_tld_any = any(p.get("use_spam_tld") for p in policies)
+
+    if use_spam_tld_any:
+        spam_allow = cfg.get("spam_allow_source")
+        if spam_allow:
+            policies.append(
+                {
+                    "prefix": "L_AllowSpam",
+                    "name": "Allow: Spam Exceptions",
+                    "action": "allow",
+                    "type": "DOMAIN",
+                    "include": [spam_allow["name"]],
+                    "exclude": [],
+                    "use_spam_tld": False,
+                }
+            )
+
+    domain_sources = parse_sources(cfg.get("sources", {}), is_ip=False)
+    ip_sources = parse_sources(cfg.get("ip_sources", {}), is_ip=True)
+
+    if use_spam_tld_any and "spam_allow_source" in cfg:
+        sa = cfg["spam_allow_source"]
+        domain_sources.append(
+            {
+                "name": sa["name"],
+                "urls": [sa["url"]],
+                "enable_relevance": sa.get("relevance", False),
+                "is_ip": False,
+            }
+        )
+
+    session = create_session(workers, with_retries=True)
+    checker = None
+    if any(s.get("enable_relevance") for s in domain_sources):
+        checker = RelevanceChecker(session, workers)
+        checker.build_dataset()
+
+    tld_url = cfg.get("tld", {}).get("url", "")
+    if tld_url and use_spam_tld_any:
+        try:
+            tld_expr, spam_tlds = fetch_spam_tlds(session, tld_url, timeout)
+        except Exception as e:
+            logger.critical(f"Spam TLD feed failure ({tld_url}): {e}. Aborting to preserve existing Cloudflare state.")
+            sys.exit(1)
+    else:
+        tld_expr, spam_tlds = "", set()
+
+    fetched = {}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        domain_futures = {
+            pool.submit(
+                fetch_feed_source,
+                session,
+                s["name"],
+                s["urls"],
+                checker if s.get("enable_relevance") else None,
+                timeout,
+            ): s["name"]
+            for s in domain_sources
+        }
+        ip_futures = {
+            pool.submit(fetch_ip_source, session, s["name"], s["urls"], timeout): s["name"]
+            for s in ip_sources
+        }
+
+        for f in concurrent.futures.as_completed(domain_futures):
+            name = domain_futures[f]
+            try:
+                name, kept = f.result()
+                if not kept:
+                    raise ValueError(f"Feed '{name}' returned 0 valid domains.")
+                fetched[name] = {"type": "DOMAIN", "domains": kept}
+            except Exception as e:
+                logger.critical(f"Domain feed failure ({name}): {e}. Aborting to preserve existing Cloudflare state.")
+                sys.exit(1)
+
+        for f in concurrent.futures.as_completed(ip_futures):
+            name = ip_futures[f]
+            try:
+                name, networks = f.result()
+                if not networks:
+                    raise ValueError(f"IP feed '{name}' returned 0 valid subnets.")
+                fetched[name] = {"type": "IP", "networks": networks}
+            except Exception as e:
+                logger.critical(f"IP feed failure ({name}): {e}. Aborting to preserve existing Cloudflare state.")
+                sys.exit(1)
+
+    quota = cfg["settings"]["total_quota"]
+    compiled = build_policy_sets(policies, fetched, spam_tlds)
+    total_entries = sum(len(items) for _, items in compiled)
+
+    # Fallback Tier 1: Shed HaGeZi TIF IPs if over quota for this run
+    if total_entries > quota:
+        logger.warning(
+            f"Quota exceeded ({total_entries:,}/{quota:,}). "
+            "Shedding HaGeZi TIF IPs for this run..."
+        )
+        policies = [
+            {
+                **p,
+                "include": [
+                    inc for inc in p.get("include", [])
+                    if not ("tif" in inc.lower() and "ip" in inc.lower())
+                ],
+            }
+            for p in policies
+        ]
+        compiled = build_policy_sets(policies, fetched, spam_tlds)
+        total_entries = sum(len(items) for _, items in compiled)
+
+    # Fallback Tier 2: Shed HaGeZi TIF domain feeds if still over quota
+    if total_entries > quota:
+        logger.warning(
+            f"Quota still exceeded ({total_entries:,}/{quota:,}). "
+            "Shedding HaGeZi TIF domain feeds for this run..."
+        )
+        policies = [
+            {
+                **p,
+                "include": [
+                    inc for inc in p.get("include", [])
+                    if "tif" not in inc.lower()
+                ],
+            }
+            for p in policies
+        ]
+        compiled = build_policy_sets(policies, fetched, spam_tlds)
+        total_entries = sum(len(items) for _, items in compiled)
+
+    if total_entries > quota:
+        logger.error(
+            f"Total entries ({total_entries:,}) still exceeds quota ({quota:,}) after shedding TIF feeds. Aborting."
         )
         sys.exit(1)
 
