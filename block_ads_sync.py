@@ -54,6 +54,8 @@ FAST_DOMAIN_RE = re.compile(
 
 INVALID_LABEL_RE = re.compile(r'invalid label ["\']?([a-zA-Z0-9_\-\.]+?)["\'\s]')
 
+MIN_RELEVANCE_DOMAINS = 500_000
+
 DEFAULT_TOP_LISTS = [
     {
         "url": "https://tranco-list.eu/top-1m.csv.zip",
@@ -123,21 +125,27 @@ def load_config() -> dict:
     return cfg
 
 
-def create_session(workers: int) -> requests.Session:
+def create_session(workers: int, with_retries: bool = True) -> requests.Session:
     s = requests.Session()
     s.headers.update({"User-Agent": USER_AGENT})
-    retry_strategy = Retry(
-        total=5,
-        backoff_factor=1.5,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=None,
-        respect_retry_after_header=True,
-    )
-    adapter = HTTPAdapter(
-        pool_connections=workers,
-        pool_maxsize=workers + 4,
-        max_retries=retry_strategy,
-    )
+    if with_retries:
+        retry_strategy = Retry(
+            total=5,
+            backoff_factor=1.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=None,
+            respect_retry_after_header=True,
+        )
+        adapter = HTTPAdapter(
+            pool_connections=workers,
+            pool_maxsize=workers + 4,
+            max_retries=retry_strategy,
+        )
+    else:
+        adapter = HTTPAdapter(
+            pool_connections=workers,
+            pool_maxsize=workers + 4,
+        )
     s.mount("https://", adapter)
     s.mount("http://", adapter)
     return s
@@ -147,7 +155,8 @@ class CloudflareAPI:
     def __init__(self, cfg: dict):
         self.account_id = cfg["account_id"]
         self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{self.account_id}/gateway"
-        self.session = create_session(cfg["settings"]["max_workers"])
+        # Disable urllib3 internal retries so req() manages backoff and 429s directly
+        self.session = create_session(cfg["settings"]["max_workers"], with_retries=False)
         self.session.headers.update(
             {
                 "Authorization": f"Bearer {cfg['api_token']}",
@@ -180,6 +189,12 @@ class CloudflareAPI:
                     else (base_delay * (2 ** attempt))
                 )
                 logger.warning(f"Rate limited (429) on {method} {endpoint}. Backing off for {wait_time}s.")
+                time.sleep(wait_time)
+                continue
+
+            if resp.status_code in (500, 502, 503, 504) and attempt < retries - 1:
+                wait_time = base_delay * (2 ** attempt)
+                logger.warning(f"Server error ({resp.status_code}) on {method} {endpoint}. Retrying in {wait_time}s...")
                 time.sleep(wait_time)
                 continue
 
@@ -431,6 +446,12 @@ class RelevanceChecker:
                 _, domains = f.result()
                 self.master_allowlist.update(domains)
 
+        if len(self.master_allowlist) < MIN_RELEVANCE_DOMAINS:
+            raise RuntimeError(
+                f"Relevance dataset critically low ({len(self.master_allowlist):,} domains). "
+                "Aborting sync to prevent accidental list truncation."
+            )
+
         logger.info(f"Relevance dataset compiled: {len(self.master_allowlist):,} root domains.")
 
     def is_relevant(self, domain: str) -> bool:
@@ -472,7 +493,8 @@ def fetch_feed_source(
                     if not line:
                         continue
 
-                token = line.split()[-1].removeprefix("||").removesuffix("^")
+                # Strip Adblock modifiers ($third-party, $important, etc.) and anchors cleanly
+                token = line.split()[-1].split("$", 1)[0].removeprefix("||").split("^", 1)[0]
                 clean = is_valid_domain(token)
                 if clean and clean not in kept and (not checker or checker.is_relevant(clean)):
                     kept.add(clean)
@@ -544,21 +566,19 @@ def fetch_ip_source(
 
 
 def fetch_spam_tlds(session: requests.Session, url: str, timeout: tuple) -> tuple[str, set[str]]:
-    try:
-        resp = session.get(url, timeout=timeout)
-        resp.raise_for_status()
-        tlds = set()
-        for line in resp.text.splitlines():
-            line = line.strip().lower()
-            if line and not line.startswith(("#", "!", "/")):
-                clean = line.split()[-1].removeprefix("*.").strip(".")
-                if clean and "." not in clean and "*" not in clean:
-                    tlds.add(clean)
-        expr = rf'any(dns.domains[*] matches "(?i)\.({"|".join(sorted(tlds))})$")' if tlds else ""
-        return expr, tlds
-    except Exception as e:
-        logger.error(f"TLD compilation failed: {e}")
-        return "", set()
+    resp = session.get(url, timeout=timeout)
+    resp.raise_for_status()
+    tlds = set()
+    for line in resp.text.splitlines():
+        line = line.strip().lower()
+        if line and not line.startswith(("#", "!", "/")):
+            clean = line.split()[-1].removeprefix("*.").strip(".")
+            if clean and "." not in clean and "*" not in clean:
+                tlds.add(clean)
+    if not tlds:
+        raise ValueError(f"Zero TLDs parsed from {url}")
+    expr = rf'any(dns.domains[*] matches "(?i)\.({"|".join(sorted(tlds))})$")'
+    return expr, tlds
 
 
 def optimize_domains(domains: set[str]) -> list[str]:
@@ -679,12 +699,16 @@ def sync_policy_in_place(
                 match = INVALID_LABEL_RE.search(err_str)
                 if match and attempt < 2:
                     bad_label = match.group(1).lower()
-                    bad_domains = [d for d in current_chunk if bad_label in d.lower()]
+                    bad_domains = [
+                        d for d in current_chunk
+                        if bad_label == d.lower() or bad_label in d.lower().split(".")
+                    ]
                     if bad_domains:
                         logger.warning(
                             f"Purging Cloudflare-rejected domain(s) {bad_domains} from {name} and retrying..."
                         )
-                        current_chunk = [d for d in current_chunk if d not in bad_domains]
+                        bad_set = set(bad_domains)
+                        current_chunk = [d for d in current_chunk if d not in bad_set]
                         continue
 
                 logger.error(f"Error syncing {name} (chunk size: {len(current_chunk)}): {e}")
@@ -937,7 +961,9 @@ def main() -> None:
     timeout = tuple(cfg["settings"]["request_timeout"])
 
     policies = list(cfg.get("policies", {}).values())
-    if any(p.get("use_spam_tld") for p in policies):
+    use_spam_tld_any = any(p.get("use_spam_tld") for p in policies)
+
+    if use_spam_tld_any:
         spam_allow = cfg.get("spam_allow_source")
         if spam_allow:
             policies.append(
@@ -955,7 +981,7 @@ def main() -> None:
     domain_sources = parse_sources(cfg.get("sources", {}), is_ip=False)
     ip_sources = parse_sources(cfg.get("ip_sources", {}), is_ip=True)
 
-    if any(p.get("use_spam_tld") for p in policies) and "spam_allow_source" in cfg:
+    if use_spam_tld_any and "spam_allow_source" in cfg:
         sa = cfg["spam_allow_source"]
         domain_sources.append(
             {
@@ -966,14 +992,21 @@ def main() -> None:
             }
         )
 
-    session = create_session(workers)
+    session = create_session(workers, with_retries=True)
     checker = None
     if any(s.get("enable_relevance") for s in domain_sources):
         checker = RelevanceChecker(session, workers)
         checker.build_dataset()
 
     tld_url = cfg.get("tld", {}).get("url", "")
-    tld_expr, spam_tlds = fetch_spam_tlds(session, tld_url, timeout) if tld_url else ("", set())
+    if tld_url and use_spam_tld_any:
+        try:
+            tld_expr, spam_tlds = fetch_spam_tlds(session, tld_url, timeout)
+        except Exception as e:
+            logger.critical(f"Spam TLD feed failure ({tld_url}): {e}. Aborting to preserve existing Cloudflare state.")
+            sys.exit(1)
+    else:
+        tld_expr, spam_tlds = "", set()
 
     fetched = {}
 
@@ -998,20 +1031,23 @@ def main() -> None:
             name = domain_futures[f]
             try:
                 name, kept = f.result()
+                if not kept:
+                    raise ValueError(f"Feed '{name}' returned 0 valid domains.")
                 fetched[name] = {"type": "DOMAIN", "domains": kept}
             except Exception as e:
-                if name == "HaGeZi Normal":
-                    logger.critical(f"Critical baseline failure ({name}): {e}")
-                    sys.exit(1)
-                logger.warning(f"Non-critical feed failure ({name}): {e}")
+                logger.critical(f"Domain feed failure ({name}): {e}. Aborting to preserve existing Cloudflare state.")
+                sys.exit(1)
 
         for f in concurrent.futures.as_completed(ip_futures):
             name = ip_futures[f]
             try:
                 name, networks = f.result()
+                if not networks:
+                    raise ValueError(f"IP feed '{name}' returned 0 valid subnets.")
                 fetched[name] = {"type": "IP", "networks": networks}
             except Exception as e:
-                logger.warning(f"IP feed failure ({name}): {e}")
+                logger.critical(f"IP feed failure ({name}): {e}. Aborting to preserve existing Cloudflare state.")
+                sys.exit(1)
 
     compiled = build_policy_sets(policies, fetched, spam_tlds)
     total_entries = sum(len(items) for _, items in compiled)
