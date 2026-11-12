@@ -14,8 +14,8 @@ scrub_targets = [
     "Bypass Prevention", "AI Block", "New Domain Block"
 ]
 
-[tld]
-url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
+#[tld]
+#url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
 # Standalone Cloudflare Gateway Firewall Policies
 [gateway_policies]
@@ -63,10 +63,10 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 #"Binary Defense"        = "https://www.binarydefense.com/banlist.txt"
 #"CINS Army"             = "https://cinsscore.com/list/ci-badguys.txt"
 
-[spam_allow_source]
-name      = "HaGeZi Spam Allow"
-url       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
-relevance = false
+#[spam_allow_source]
+#name      = "HaGeZi Spam Allow"
+#url       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
+#relevance = false
 
 [policies.relaxed]
 prefix              = "L_Relaxed"
@@ -116,16 +116,16 @@ include             = [
 ]
 exclude             = []
 
-[policies.spamtld]
-prefix              = "L_SpamTLD"
-name                = "HaGeZi Spam TLD"
-action              = "block"
-type                = "DOMAIN"
-use_spam_tld        = true
-include             = []
-exclude             = []
-security_categories = []
-content_categories  = []
+#[policies.spamtld]
+#prefix              = "L_SpamTLD"
+#name                = "HaGeZi Spam TLD"
+#action              = "block"
+#type                = "DOMAIN"
+#use_spam_tld        = true
+#include             = []
+#exclude             = []
+#security_categories = []
+#content_categories  = []
 
 [policies.pornblock]
 prefix              = "L_ExtraPorn"
