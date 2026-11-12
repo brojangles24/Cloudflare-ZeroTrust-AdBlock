@@ -7,7 +7,7 @@ auto_enable_rules  = true
 block_page_enabled = false
 scrub_targets = [
     "L_", "Block:", "Allow:", "Adblock", "AdBlock",
-    "Base", "Pro++", "Ultimate", "Normal", "Social",
+    "Base", "Pro++", "Ultimate", "Normal", "Social", "Pro",
     "ProMini", "ProPlus", "ProUser", "ProHome",
     "Piracy", "DynDNS", "Hoster", "Badware", "Restrictive",
     "Blocked_IPs", "Spam TLD", "Porn Block", "Malware Block",
@@ -31,7 +31,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 [sources]
 # Large feeds (relevance = true by default to fit 300k quota)
 "HaGeZi Normal"      = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
-"HaGeZi Pro++"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
+"HaGeZi Pro"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
 "HaGeZi TIF Full"    = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
 "Hagezi NSFW"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt"
 "HaGeZi Anti Piracy" = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt"
@@ -82,12 +82,12 @@ domains             = []
 
 [policies.restrictive]
 prefix              = "L_Restrictive"
-name                = "Adblock HaGeZi Pro++"
+name                = "Adblock HaGeZi Pro"
 action              = "block"
 type                = "DOMAIN"
 restrict_users      = true
 use_spam_tld        = false
-include             = ["HaGeZi Pro++"]
+include             = ["HaGeZi Pro"]
 exclude             = []
 security_categories = []
 content_categories  = []
