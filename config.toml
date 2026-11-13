@@ -82,7 +82,7 @@ domains             = []
 
 [policies.restrictive]
 prefix              = "L_Restrictive"
-name                = "Adblock HaGeZi Pro"
+name                = "Adblock HaGeZi Pro++"
 action              = "block"
 type                = "DOMAIN"
 restrict_users      = true
