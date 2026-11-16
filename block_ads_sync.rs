@@ -34,13 +34,14 @@ use std::io::{BufRead, BufReader, Cursor, Read};
 use std::net::IpAddr;
 use std::sync::OnceLock;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use zip::ZipArchive;
 
 const UA_STR: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 const MIN_RELEVANCE_DOMAINS: usize = 500_000;
 const MAX_SAFE_DOMAINS: usize = 299_000;
 const MAX_CLOUDFLARE_LISTS: usize = 299;
+const MAX_DROP_RATIO: f64 = 0.60;
 
 struct TopListSpec {
     url: &'static str,
@@ -65,6 +66,14 @@ macro_rules! log_warn {
 }
 macro_rules! log_err {
     ($($arg:tt)*) => { eprintln!("[ERROR] {}", format_args!($($arg)*)) };
+}
+
+fn jitter_ms(max_ms: u64) -> Duration {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0);
+    Duration::from_millis(nanos % max_ms.max(1))
 }
 
 fn fast_domain_re() -> &'static Regex {
@@ -211,6 +220,10 @@ impl CloudflareAPI {
         let retries = 5;
         let base_delay = 2u64;
 
+        if method != reqwest::Method::GET {
+            thread::sleep(Duration::from_millis(150) + jitter_ms(100));
+        }
+
         for attempt in 0..retries {
             let mut builder = self.client.request(method.clone(), &url);
             if let Some(b) = body {
@@ -221,9 +234,9 @@ impl CloudflareAPI {
                 Ok(r) => r,
                 Err(e) => {
                     if attempt < retries - 1 {
-                        let wait = base_delay * (1 << attempt);
-                        log_warn!("Network error on {} {}: {}. Retrying in {}s...", method, endpoint, e, wait);
-                        thread::sleep(Duration::from_secs(wait));
+                        let wait = Duration::from_secs(base_delay * (1 << attempt)) + jitter_ms(1000);
+                        log_warn!("Network error on {} {}: {}. Retrying in {:.2}s...", method, endpoint, e, wait.as_secs_f64());
+                        thread::sleep(wait);
                         continue;
                     }
                     return Err(e.into());
@@ -232,21 +245,22 @@ impl CloudflareAPI {
 
             let status = resp.status();
             if status.as_u16() == 429 {
-                let wait = resp
+                let wait_secs = resp
                     .headers()
                     .get("Retry-After")
                     .and_then(|v| v.to_str().ok())
                     .and_then(|s| s.parse::<u64>().ok())
                     .unwrap_or_else(|| base_delay * (1 << attempt));
-                log_warn!("Rate limited (429) on {} {}. Backing off for {}s.", method, endpoint, wait);
-                thread::sleep(Duration::from_secs(wait));
+                let wait = Duration::from_secs(wait_secs) + jitter_ms(1000);
+                log_warn!("Rate limited (429) on {} {}. Backing off for {:.2}s.", method, endpoint, wait.as_secs_f64());
+                thread::sleep(wait);
                 continue;
             }
 
             if matches!(status.as_u16(), 500 | 502 | 503 | 504) && attempt < retries - 1 {
-                let wait = base_delay * (1 << attempt);
-                log_warn!("Server error ({}) on {} {}. Retrying in {}s...", status, method, endpoint, wait);
-                thread::sleep(Duration::from_secs(wait));
+                let wait = Duration::from_secs(base_delay * (1 << attempt)) + jitter_ms(1000);
+                log_warn!("Server error ({}) on {} {}. Retrying in {:.2}s...", status, method, endpoint, wait.as_secs_f64());
+                thread::sleep(wait);
                 continue;
             }
 
@@ -427,7 +441,7 @@ fn fetch_with_retry(client: &Client, url: &str) -> Result<Vec<u8>> {
         match client.get(url).send().and_then(|r| r.error_for_status()) {
             Ok(resp) => return Ok(resp.bytes()?.to_vec()),
             Err(e) if attempt < 4 => {
-                thread::sleep(Duration::from_millis(1500 * (1 << attempt)));
+                thread::sleep(Duration::from_millis(1500 * (1 << attempt)) + jitter_ms(500));
                 if attempt == 3 {
                     log_warn!("Retry failed for {}: {}", url, e);
                 }
@@ -776,11 +790,35 @@ fn compile_category_expression(p: &Value) -> String {
     parts.join(" or ")
 }
 
-fn detach_lists_from_rules(cf: &CloudflareAPI, list_ids: &[String], existing_rules: &mut [Value]) -> Result<()> {
-    if list_ids.is_empty() {
-        return Ok(());
+fn build_rule_update_payload(rule: &Value, enabled: bool, traffic: &str) -> Value {
+    let mut payload = json!({
+        "name": rule.get("name").and_then(Value::as_str).unwrap_or(""),
+        "action": rule.get("action").and_then(Value::as_str).unwrap_or("block"),
+        "enabled": enabled,
+        "filters": rule.get("filters").cloned().unwrap_or_else(|| json!(["dns"])),
+        "traffic": traffic,
+    });
+    for opt_key in ["identity", "device_posture", "rule_settings", "schedule", "precedence", "description"] {
+        if let Some(v) = rule.get(opt_key) {
+            if !v.is_null() {
+                payload.as_object_mut().unwrap().insert(opt_key.to_string(), v.clone());
+            }
+        }
     }
+    payload
+}
+
+fn detach_lists_from_rules(
+    cf: &CloudflareAPI,
+    list_ids: &[String],
+    existing_rules: &mut [Value],
+) -> Result<Vec<Value>> {
+    if list_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut snapshots = Vec::new();
     let mut detached_any = false;
+
     for rule in existing_rules.iter_mut() {
         let traffic = rule.get("traffic").and_then(Value::as_str).unwrap_or("");
         if !list_ids.iter().any(|id| traffic.contains(&format!("${}", id))) {
@@ -790,21 +828,11 @@ fn detach_lists_from_rules(cf: &CloudflareAPI, list_ids: &[String], existing_rul
         let rid = rule.get("id").and_then(Value::as_str).unwrap_or("");
         log_info!("Detaching lists from policy rule '{}'...", rname);
 
+        snapshots.push(rule.clone());
+
         let dummy_traffic = r#"any(dns.domains[*] in {"invalid.local.blocklist.temp"})"#;
-        let mut payload = json!({
-            "name": rname,
-            "action": rule.get("action").and_then(Value::as_str).unwrap_or("block"),
-            "enabled": false,
-            "filters": rule.get("filters").cloned().unwrap_or_else(|| json!(["dns"])),
-            "traffic": dummy_traffic,
-        });
-        for opt_key in ["identity", "device_posture", "rule_settings", "schedule", "precedence", "description"] {
-            if let Some(v) = rule.get(opt_key) {
-                if !v.is_null() {
-                    payload.as_object_mut().unwrap().insert(opt_key.to_string(), v.clone());
-                }
-            }
-        }
+        let payload = build_rule_update_payload(rule, false, dummy_traffic);
+
         cf.update_rule(rid, &payload)
             .with_context(|| format!("Failed to detach lists from rule {}", rname))?;
         rule.as_object_mut().unwrap().insert("traffic".to_string(), json!(dummy_traffic));
@@ -814,7 +842,26 @@ fn detach_lists_from_rules(cf: &CloudflareAPI, list_ids: &[String], existing_rul
     if detached_any {
         thread::sleep(Duration::from_secs(2));
     }
-    Ok(())
+    Ok(snapshots)
+}
+
+fn restore_detached_rules(cf: &CloudflareAPI, snapshots: &[Value]) {
+    if snapshots.is_empty() {
+        return;
+    }
+    log_warn!("Restoring {} detached rule(s) to previous state after sync failure...", snapshots.len());
+    for rule in snapshots {
+        let rname = rule.get("name").and_then(Value::as_str).unwrap_or("");
+        let rid = rule.get("id").and_then(Value::as_str).unwrap_or("");
+        let enabled = rule.get("enabled").and_then(Value::as_bool).unwrap_or(true);
+        let traffic = rule.get("traffic").and_then(Value::as_str).unwrap_or("");
+        let payload = build_rule_update_payload(rule, enabled, traffic);
+        if let Err(e) = cf.update_rule(rid, &payload) {
+            log_err!("Failed restoring rule '{}': {}", rname, e);
+        } else {
+            log_info!("Restored rule '{}'", rname);
+        }
+    }
 }
 
 fn safe_delete_list_with_rule_disabling(
@@ -836,9 +883,9 @@ fn safe_delete_list_with_rule_disabling(
             Err(e) => {
                 let err_str = e.to_string();
                 if err_str.contains("400") && err_str.contains("in use at gateway policies") && attempt < 2 {
-                    let wait = (1 << attempt) + 1;
-                    log_warn!("List {} still locked. Retrying in {}s...", list_id, wait);
-                    thread::sleep(Duration::from_secs(wait));
+                    let wait = Duration::from_secs((1 << attempt) + 1) + jitter_ms(500);
+                    log_warn!("List {} still locked. Retrying in {:.2}s...", list_id, wait.as_secs_f64());
+                    thread::sleep(wait);
                     continue;
                 }
                 log_err!("Failed deleting list {} ({}) after {} attempts: {}", list_name, list_id, attempt + 1, e);
@@ -1087,20 +1134,8 @@ fn sync_standalone_policies(cf: &CloudflareAPI, cfg: &AppConfig, existing_rules:
             continue;
         }
         if currently_enabled != desired_enabled {
-            let mut payload = json!({
-                "name": matched["name"],
-                "action": matched["action"],
-                "enabled": desired_enabled,
-                "filters": matched.get("filters").cloned().unwrap_or_else(|| json!(["dns"])),
-                "traffic": matched.get("traffic").cloned().unwrap_or_else(|| json!("")),
-            });
-            for key in ["identity", "device_posture", "rule_settings", "schedule", "precedence", "description"] {
-                if let Some(v) = matched.get(key) {
-                    if !v.is_null() {
-                        payload.as_object_mut().unwrap().insert(key.to_string(), v.clone());
-                    }
-                }
-            }
+            let traffic = matched.get("traffic").and_then(Value::as_str).unwrap_or("");
+            let payload = build_rule_update_payload(matched, desired_enabled, traffic);
             let rid = matched.get("id").and_then(Value::as_str).unwrap_or("");
             match cf.update_rule(rid, &payload) {
                 Ok(_) => {
@@ -1295,37 +1330,25 @@ fn main() -> Result<()> {
     let mut existing_lists = cf.get_lists()?;
     let mut existing_rules = cf.get_rules()?;
 
-    let unmanaged_lists_count = existing_lists
-        .iter()
-        .filter(|l| {
-            let lname = l.get("name").and_then(Value::as_str).unwrap_or("");
-            !(cfg.scrub_targets.iter().any(|t| lname.contains(t)) && !lname.contains("IoT Bypass"))
-        })
-        .count();
+    let mut unmanaged_lists_count = 0usize;
+    let mut current_managed_items = 0usize;
+    for l in &existing_lists {
+        let lname = l.get("name").and_then(Value::as_str).unwrap_or("");
+        let is_managed = cfg.scrub_targets.iter().any(|t| lname.contains(t)) && !lname.contains("IoT Bypass");
+        if is_managed {
+            current_managed_items += l.get("count").and_then(Value::as_u64).unwrap_or(0) as usize;
+        } else {
+            unmanaged_lists_count += 1;
+        }
+    }
 
     let max_managed_lists = MAX_CLOUDFLARE_LISTS.saturating_sub(unmanaged_lists_count);
 
     let mut compiled = build_policy_sets(&policies, &fetched, &spam_tlds);
     let mut total_entries: usize = compiled.iter().map(|(_, items)| items.len()).sum();
+    let mut estimated_chunks: usize = compiled.iter().map(|(_, items)| items.len().div_ceil(cfg.max_list_size)).sum();
 
-    if total_entries > cfg.total_quota {
-        log_warn!("Quota exceeded ({}/{}). Shedding HaGeZi TIF IPs...", total_entries, cfg.total_quota);
-        filter_policy_includes(&mut policies, |inc| {
-            let l = inc.to_lowercase();
-            !(l.contains("tif") && l.contains("ip"))
-        });
-        compiled = build_policy_sets(&policies, &fetched, &spam_tlds);
-        total_entries = compiled.iter().map(|(_, items)| items.len()).sum();
-    }
-
-    if total_entries > cfg.total_quota {
-        log_warn!("Quota still exceeded ({}/{}). Shedding HaGeZi TIF domain feeds...", total_entries, cfg.total_quota);
-        filter_policy_includes(&mut policies, |inc| !inc.to_lowercase().contains("tif"));
-        compiled = build_policy_sets(&policies, &fetched, &spam_tlds);
-        total_entries = compiled.iter().map(|(_, items)| items.len()).sum();
-    }
-
-    let estimated_chunks: usize = compiled.iter().map(|(_, items)| items.len().div_ceil(cfg.max_list_size)).sum();
+    // Fallback Tier 1: Shed OISD NSFW first to preserve threat-intelligence feeds
     if total_entries > cfg.total_quota || estimated_chunks > max_managed_lists {
         log_warn!(
             "Capacity constraint reached (Entries: {}/{}, Estimated Lists: {}/{}). Shedding OISD NSFW...",
@@ -1340,6 +1363,52 @@ fn main() -> Result<()> {
         });
         compiled = build_policy_sets(&policies, &fetched, &spam_tlds);
         total_entries = compiled.iter().map(|(_, items)| items.len()).sum();
+        estimated_chunks = compiled.iter().map(|(_, items)| items.len().div_ceil(cfg.max_list_size)).sum();
+    }
+
+    // Fallback Tier 2: Shed HaGeZi TIF IPs if still over quota/list limits
+    if total_entries > cfg.total_quota || estimated_chunks > max_managed_lists {
+        log_warn!(
+            "Capacity still exceeded (Entries: {}/{}, Estimated Lists: {}/{}). Shedding HaGeZi TIF IPs...",
+            total_entries,
+            cfg.total_quota,
+            estimated_chunks,
+            max_managed_lists
+        );
+        filter_policy_includes(&mut policies, |inc| {
+            let l = inc.to_lowercase();
+            !(l.contains("tif") && l.contains("ip"))
+        });
+        compiled = build_policy_sets(&policies, &fetched, &spam_tlds);
+        total_entries = compiled.iter().map(|(_, items)| items.len()).sum();
+        estimated_chunks = compiled.iter().map(|(_, items)| items.len().div_ceil(cfg.max_list_size)).sum();
+    }
+
+    // Fallback Tier 3: Shed HaGeZi TIF domain feeds if still over quota/list limits
+    if total_entries > cfg.total_quota || estimated_chunks > max_managed_lists {
+        log_warn!(
+            "Capacity still exceeded (Entries: {}/{}, Estimated Lists: {}/{}). Shedding HaGeZi TIF domain feeds...",
+            total_entries,
+            cfg.total_quota,
+            estimated_chunks,
+            max_managed_lists
+        );
+        filter_policy_includes(&mut policies, |inc| !inc.to_lowercase().contains("tif"));
+        compiled = build_policy_sets(&policies, &fetched, &spam_tlds);
+        total_entries = compiled.iter().map(|(_, items)| items.len()).sum();
+    }
+
+    // Truncation / Feed Poisoning Protection Guard
+    if current_managed_items > 10_000 {
+        let ratio = total_entries as f64 / current_managed_items as f64;
+        if ratio < MAX_DROP_RATIO {
+            bail!(
+                "Upstream feed truncation detected! Compiled entries dropped by {:.1}% ({} vs {} currently active). Aborting to protect live rules.",
+                (1.0 - ratio) * 100.0,
+                total_entries,
+                current_managed_items
+            );
+        }
     }
 
     let final_chunks: usize = compiled.iter().map(|(_, items)| items.len().div_ceil(cfg.max_list_size)).sum();
@@ -1354,9 +1423,10 @@ fn main() -> Result<()> {
     }
 
     log_info!(
-        "Current Cloudflare lists count: {} ({} unmanaged). Syncing {} lists in place...",
+        "Current Cloudflare lists count: {} ({} unmanaged, {} live items). Syncing {} lists in place...",
         existing_lists.len(),
         unmanaged_lists_count,
+        current_managed_items,
         final_chunks
     );
 
@@ -1391,7 +1461,7 @@ fn main() -> Result<()> {
     if let Err(e) = run_sync(&compiled, &existing_lists, &existing_rules, &mut all_active_ids, &mut all_surplus_ids, &mut all_active_rules) {
         let err_str = e.to_string();
         if err_str.contains("Maximum number of lists reached") || err_str.contains("2017") {
-            log_err!("Cloudflare list limit (300) hit during sync! Forcing emergency OISD NSFW purge and list reclamation...");
+            log_err!("Cloudflare list limit (300) hit during sync! Forcing emergency OISD NSFW & TIF purge and list reclamation...");
             existing_lists = cf.get_lists()?;
             existing_rules = cf.get_rules()?;
 
@@ -1408,24 +1478,31 @@ fn main() -> Result<()> {
                 .filter_map(|l| l.get("id").and_then(Value::as_str).map(String::from))
                 .collect();
 
-            detach_lists_from_rules(&cf, &managed_ids, &mut existing_rules)?;
+            let rule_snapshots = detach_lists_from_rules(&cf, &managed_ids, &mut existing_rules)?;
 
-            for l_obj in managed_lists {
-                safe_delete_list_with_rule_disabling(&cf, l_obj, &mut existing_rules)?;
+            let recovery_result: Result<()> = (|| {
+                for l_obj in managed_lists {
+                    safe_delete_list_with_rule_disabling(&cf, l_obj, &mut existing_rules)?;
+                }
+                thread::sleep(Duration::from_secs(3));
+
+                filter_policy_includes(&mut policies, |inc| {
+                    let l = inc.to_lowercase();
+                    !(l.contains("oisd") && l.contains("nsfw")) && !l.contains("tif")
+                });
+                compiled = build_policy_sets(&policies, &fetched, &spam_tlds);
+                existing_lists = cf.get_lists()?;
+                existing_rules = cf.get_rules()?;
+
+                all_active_ids.clear();
+                all_surplus_ids.clear();
+                run_sync(&compiled, &existing_lists, &existing_rules, &mut all_active_ids, &mut all_surplus_ids, &mut all_active_rules)
+            })();
+
+            if let Err(rec_err) = recovery_result {
+                restore_detached_rules(&cf, &rule_snapshots);
+                return Err(rec_err);
             }
-            thread::sleep(Duration::from_secs(3));
-
-            filter_policy_includes(&mut policies, |inc| {
-                let l = inc.to_lowercase();
-                !(l.contains("oisd") && l.contains("nsfw"))
-            });
-            compiled = build_policy_sets(&policies, &fetched, &spam_tlds);
-            existing_lists = cf.get_lists()?;
-            existing_rules = cf.get_rules()?;
-
-            all_active_ids.clear();
-            all_surplus_ids.clear();
-            run_sync(&compiled, &existing_lists, &existing_rules, &mut all_active_ids, &mut all_surplus_ids, &mut all_active_rules)?;
         } else {
             return Err(e);
         }
