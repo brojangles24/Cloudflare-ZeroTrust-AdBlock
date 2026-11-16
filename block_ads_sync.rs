@@ -776,9 +776,9 @@ fn compile_category_expression(p: &Value) -> String {
     parts.join(" or ")
 }
 
-fn detach_lists_from_rules(cf: &CloudflareAPI, list_ids: &[String], existing_rules: &mut [Value]) {
+fn detach_lists_from_rules(cf: &CloudflareAPI, list_ids: &[String], existing_rules: &mut [Value]) -> Result<()> {
     if list_ids.is_empty() {
-        return;
+        return Ok(());
     }
     let mut detached_any = false;
     for rule in existing_rules.iter_mut() {
@@ -790,7 +790,7 @@ fn detach_lists_from_rules(cf: &CloudflareAPI, list_ids: &[String], existing_rul
         let rid = rule.get("id").and_then(Value::as_str).unwrap_or("");
         log_info!("Detaching lists from policy rule '{}'...", rname);
 
-        let dummy_traffic = r#"dns.domain == "invalid.local.blocklist.temp""#;
+        let dummy_traffic = r#"any(dns.domains[*] in {"invalid.local.blocklist.temp"})"#;
         let mut payload = json!({
             "name": rname,
             "action": rule.get("action").and_then(Value::as_str).unwrap_or("block"),
@@ -805,18 +805,16 @@ fn detach_lists_from_rules(cf: &CloudflareAPI, list_ids: &[String], existing_rul
                 }
             }
         }
-        match cf.update_rule(rid, &payload) {
-            Ok(_) => {
-                rule.as_object_mut().unwrap().insert("traffic".to_string(), json!(dummy_traffic));
-                rule.as_object_mut().unwrap().insert("enabled".to_string(), json!(false));
-                detached_any = true;
-            }
-            Err(e) => log_warn!("Could not detach lists from rule {}: {}", rname, e),
-        }
+        cf.update_rule(rid, &payload)
+            .with_context(|| format!("Failed to detach lists from rule {}", rname))?;
+        rule.as_object_mut().unwrap().insert("traffic".to_string(), json!(dummy_traffic));
+        rule.as_object_mut().unwrap().insert("enabled".to_string(), json!(false));
+        detached_any = true;
     }
     if detached_any {
         thread::sleep(Duration::from_secs(2));
     }
+    Ok(())
 }
 
 fn safe_delete_list_with_rule_disabling(
@@ -827,7 +825,7 @@ fn safe_delete_list_with_rule_disabling(
     let list_name = list_item.get("name").and_then(Value::as_str).unwrap_or("");
     let list_id = list_item.get("id").and_then(Value::as_str).unwrap_or("");
 
-    detach_lists_from_rules(cf, &[list_id.to_string()], existing_rules);
+    detach_lists_from_rules(cf, &[list_id.to_string()], existing_rules)?;
 
     for attempt in 0..3 {
         match cf.delete_list(list_id) {
@@ -1181,7 +1179,7 @@ fn cleanup_orphans(
         .iter()
         .filter_map(|l| l.get("id").and_then(Value::as_str).map(String::from))
         .collect();
-    detach_lists_from_rules(cf, &ids_to_detach, existing_rules);
+    detach_lists_from_rules(cf, &ids_to_detach, existing_rules)?;
 
     for l in lists_to_delete {
         safe_delete_list_with_rule_disabling(cf, l, existing_rules)?;
@@ -1294,6 +1292,19 @@ fn main() -> Result<()> {
         fetched.insert(k, v);
     }
 
+    let mut existing_lists = cf.get_lists()?;
+    let mut existing_rules = cf.get_rules()?;
+
+    let unmanaged_lists_count = existing_lists
+        .iter()
+        .filter(|l| {
+            let lname = l.get("name").and_then(Value::as_str).unwrap_or("");
+            !(cfg.scrub_targets.iter().any(|t| lname.contains(t)) && !lname.contains("IoT Bypass"))
+        })
+        .count();
+
+    let max_managed_lists = MAX_CLOUDFLARE_LISTS.saturating_sub(unmanaged_lists_count);
+
     let mut compiled = build_policy_sets(&policies, &fetched, &spam_tlds);
     let mut total_entries: usize = compiled.iter().map(|(_, items)| items.len()).sum();
 
@@ -1315,11 +1326,13 @@ fn main() -> Result<()> {
     }
 
     let estimated_chunks: usize = compiled.iter().map(|(_, items)| items.len().div_ceil(cfg.max_list_size)).sum();
-    if total_entries > cfg.total_quota || estimated_chunks > MAX_CLOUDFLARE_LISTS {
+    if total_entries > cfg.total_quota || estimated_chunks > max_managed_lists {
         log_warn!(
-            "Capacity constraint reached (Entries: {}, Estimated Lists: {}). Shedding OISD NSFW...",
+            "Capacity constraint reached (Entries: {}/{}, Estimated Lists: {}/{}). Shedding OISD NSFW...",
             total_entries,
-            estimated_chunks
+            cfg.total_quota,
+            estimated_chunks,
+            max_managed_lists
         );
         filter_policy_includes(&mut policies, |inc| {
             let l = inc.to_lowercase();
@@ -1329,13 +1342,23 @@ fn main() -> Result<()> {
         total_entries = compiled.iter().map(|(_, items)| items.len()).sum();
     }
 
-    if total_entries > cfg.total_quota {
-        bail!("Total entries ({}) still exceeds quota ({}) after all fallback tiers. Aborting.", total_entries, cfg.total_quota);
+    let final_chunks: usize = compiled.iter().map(|(_, items)| items.len().div_ceil(cfg.max_list_size)).sum();
+    if total_entries > cfg.total_quota || final_chunks > max_managed_lists {
+        bail!(
+            "Capacity exceeded after all fallback tiers (Entries: {}/{}, Lists: {}/{}). Aborting.",
+            total_entries,
+            cfg.total_quota,
+            final_chunks,
+            max_managed_lists
+        );
     }
 
-    let mut existing_lists = cf.get_lists()?;
-    let mut existing_rules = cf.get_rules()?;
-    log_info!("Current Cloudflare lists count: {}. Syncing in place...", existing_lists.len());
+    log_info!(
+        "Current Cloudflare lists count: {} ({} unmanaged). Syncing {} lists in place...",
+        existing_lists.len(),
+        unmanaged_lists_count,
+        final_chunks
+    );
 
     let standalone_rules = sync_standalone_policies(&cf, &cfg, &mut existing_rules);
 
@@ -1385,7 +1408,7 @@ fn main() -> Result<()> {
                 .filter_map(|l| l.get("id").and_then(Value::as_str).map(String::from))
                 .collect();
 
-            detach_lists_from_rules(&cf, &managed_ids, &mut existing_rules);
+            detach_lists_from_rules(&cf, &managed_ids, &mut existing_rules)?;
 
             for l_obj in managed_lists {
                 safe_delete_list_with_rule_disabling(&cf, l_obj, &mut existing_rules)?;
