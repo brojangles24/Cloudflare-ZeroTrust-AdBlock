@@ -776,28 +776,27 @@ fn compile_category_expression(p: &Value) -> String {
     parts.join(" or ")
 }
 
-fn safe_delete_list_with_rule_disabling(cf: &CloudflareAPI, list_item: &Value, existing_rules: &[Value]) -> bool {
-    let list_name = list_item.get("name").and_then(Value::as_str).unwrap_or("");
-    let list_id = list_item.get("id").and_then(Value::as_str).unwrap_or("");
-    let prefix = list_name.rsplit_once(' ').map(|(p, _)| p).unwrap_or(list_name);
-
-    let matched_rule = existing_rules.iter().find(|r| {
-        let rname = r.get("name").and_then(Value::as_str).unwrap_or("");
-        let traffic = r.get("traffic").and_then(Value::as_str).unwrap_or("");
-        rname.contains(prefix) || traffic.contains(prefix)
-    });
-
-    if let Some(rule) = matched_rule {
+fn detach_lists_from_rules(cf: &CloudflareAPI, list_ids: &[String], existing_rules: &mut [Value]) {
+    if list_ids.is_empty() {
+        return;
+    }
+    let mut detached_any = false;
+    for rule in existing_rules.iter_mut() {
+        let traffic = rule.get("traffic").and_then(Value::as_str).unwrap_or("");
+        if !list_ids.iter().any(|id| traffic.contains(&format!("${}", id))) {
+            continue;
+        }
         let rname = rule.get("name").and_then(Value::as_str).unwrap_or("");
         let rid = rule.get("id").and_then(Value::as_str).unwrap_or("");
-        log_info!("Disabling policy rule '{}' before deleting list {}...", rname, list_name);
+        log_info!("Detaching lists from policy rule '{}'...", rname);
 
+        let dummy_traffic = r#"dns.domain == "invalid.local.blocklist.temp""#;
         let mut payload = json!({
             "name": rname,
             "action": rule.get("action").and_then(Value::as_str).unwrap_or("block"),
             "enabled": false,
             "filters": rule.get("filters").cloned().unwrap_or_else(|| json!(["dns"])),
-            "traffic": r#"dns.domain == "invalid.local.blocklist.temp""#,
+            "traffic": dummy_traffic,
         });
         for opt_key in ["identity", "device_posture", "rule_settings", "schedule", "precedence", "description"] {
             if let Some(v) = rule.get(opt_key) {
@@ -806,33 +805,50 @@ fn safe_delete_list_with_rule_disabling(cf: &CloudflareAPI, list_item: &Value, e
                 }
             }
         }
-        if let Err(e) = cf.update_rule(rid, &payload) {
-            log_warn!("Could not disable rule for list {}: {}", list_name, e);
-        } else {
-            thread::sleep(Duration::from_secs(1));
+        match cf.update_rule(rid, &payload) {
+            Ok(_) => {
+                rule.as_object_mut().unwrap().insert("traffic".to_string(), json!(dummy_traffic));
+                rule.as_object_mut().unwrap().insert("enabled".to_string(), json!(false));
+                detached_any = true;
+            }
+            Err(e) => log_warn!("Could not detach lists from rule {}: {}", rname, e),
         }
     }
+    if detached_any {
+        thread::sleep(Duration::from_secs(2));
+    }
+}
 
-    for attempt in 0..4 {
+fn safe_delete_list_with_rule_disabling(
+    cf: &CloudflareAPI,
+    list_item: &Value,
+    existing_rules: &mut [Value],
+) -> Result<()> {
+    let list_name = list_item.get("name").and_then(Value::as_str).unwrap_or("");
+    let list_id = list_item.get("id").and_then(Value::as_str).unwrap_or("");
+
+    detach_lists_from_rules(cf, &[list_id.to_string()], existing_rules);
+
+    for attempt in 0..3 {
         match cf.delete_list(list_id) {
             Ok(_) => {
                 log_info!("Removed list: {} ({})", list_name, list_id);
-                return true;
+                return Ok(());
             }
             Err(e) => {
                 let err_str = e.to_string();
-                if err_str.contains("400") && err_str.contains("in use at gateway policies") && attempt < 3 {
+                if err_str.contains("400") && err_str.contains("in use at gateway policies") && attempt < 2 {
                     let wait = (1 << attempt) + 1;
                     log_warn!("List {} still locked. Retrying in {}s...", list_id, wait);
                     thread::sleep(Duration::from_secs(wait));
                     continue;
                 }
-                log_err!("Failed deleting list {} ({}): {}", list_name, list_id, e);
-                break;
+                log_err!("Failed deleting list {} ({}) after {} attempts: {}", list_name, list_id, attempt + 1, e);
+                return Err(e);
             }
         }
     }
-    false
+    bail!("Failed deleting list {} ({}) after 3 attempts.", list_name, list_id)
 }
 
 fn sync_policy_in_place(
@@ -1104,11 +1120,11 @@ fn cleanup_orphans(
     cf: &CloudflareAPI,
     cfg: &AppConfig,
     existing_lists: &[Value],
-    existing_rules: &[Value],
+    existing_rules: &mut [Value],
     active_ids: &[String],
     surplus_ids: &[String],
     active_rules: &[String],
-) {
+) -> Result<()> {
     let mut protected_rules: HashSet<String> = [
         "IoT Bypass", "Custom", "Keywords", "SafeSearch",
         "Global Blocklist", "Global Bypass", "Block IoT Network", "YouTube Restricted",
@@ -1124,7 +1140,7 @@ fn cleanup_orphans(
     let active_rules_set: HashSet<&str> = active_rules.iter().map(String::as_str).collect();
     let mut deleted_any_rule = false;
 
-    for r in existing_rules {
+    for r in existing_rules.iter() {
         let rname = r.get("name").and_then(Value::as_str).unwrap_or("");
         if protected_rules.contains(rname) || protected_rules.iter().any(|k| rname.contains(k)) {
             continue;
@@ -1148,24 +1164,30 @@ fn cleanup_orphans(
     let active_set: HashSet<&str> = active_ids.iter().map(String::as_str).collect();
     let surplus_set: HashSet<&str> = surplus_ids.iter().map(String::as_str).collect();
 
-    for l in existing_lists {
-        let lid = l.get("id").and_then(Value::as_str).unwrap_or("");
-        if surplus_set.contains(lid) {
-            safe_delete_list_with_rule_disabling(cf, l, existing_rules);
-        }
-    }
-
+    let mut lists_to_delete: Vec<&Value> = Vec::new();
     for l in existing_lists {
         let lid = l.get("id").and_then(Value::as_str).unwrap_or("");
         let lname = l.get("name").and_then(Value::as_str).unwrap_or("");
-        if !active_set.contains(lid)
-            && !surplus_set.contains(lid)
-            && cfg.scrub_targets.iter().any(|t| lname.contains(t))
-            && !lname.contains("IoT Bypass")
+        if surplus_set.contains(lid)
+            || (!active_set.contains(lid)
+                && cfg.scrub_targets.iter().any(|t| lname.contains(t))
+                && !lname.contains("IoT Bypass"))
         {
-            safe_delete_list_with_rule_disabling(cf, l, existing_rules);
+            lists_to_delete.push(l);
         }
     }
+
+    let ids_to_detach: Vec<String> = lists_to_delete
+        .iter()
+        .filter_map(|l| l.get("id").and_then(Value::as_str).map(String::from))
+        .collect();
+    detach_lists_from_rules(cf, &ids_to_detach, existing_rules);
+
+    for l in lists_to_delete {
+        safe_delete_list_with_rule_disabling(cf, l, existing_rules)?;
+    }
+
+    Ok(())
 }
 
 fn filter_policy_includes<F>(policies: &mut [Value], pred: F)
@@ -1272,20 +1294,6 @@ fn main() -> Result<()> {
         fetched.insert(k, v);
     }
 
-    let mut existing_lists = cf.get_lists()?;
-    let mut existing_rules = cf.get_rules()?;
-
-    log_info!("Current Cloudflare lists count: {}. Performing pre-sync cleanup...", existing_lists.len());
-    for l_obj in &existing_lists {
-        let lname = l_obj.get("name").and_then(Value::as_str).unwrap_or("");
-        if cfg.scrub_targets.iter().any(|t| lname.contains(t)) && !lname.contains("IoT Bypass") {
-            safe_delete_list_with_rule_disabling(&cf, l_obj, &existing_rules);
-        }
-    }
-
-    existing_lists = cf.get_lists()?;
-    existing_rules = cf.get_rules()?;
-
     let mut compiled = build_policy_sets(&policies, &fetched, &spam_tlds);
     let mut total_entries: usize = compiled.iter().map(|(_, items)| items.len()).sum();
 
@@ -1325,6 +1333,10 @@ fn main() -> Result<()> {
         bail!("Total entries ({}) still exceeds quota ({}) after all fallback tiers. Aborting.", total_entries, cfg.total_quota);
     }
 
+    let mut existing_lists = cf.get_lists()?;
+    let mut existing_rules = cf.get_rules()?;
+    log_info!("Current Cloudflare lists count: {}. Syncing in place...", existing_lists.len());
+
     let standalone_rules = sync_standalone_policies(&cf, &cfg, &mut existing_rules);
 
     let mut all_active_ids = Vec::new();
@@ -1359,11 +1371,24 @@ fn main() -> Result<()> {
             log_err!("Cloudflare list limit (300) hit during sync! Forcing emergency OISD NSFW purge and list reclamation...");
             existing_lists = cf.get_lists()?;
             existing_rules = cf.get_rules()?;
-            for l_obj in &existing_lists {
-                let lname = l_obj.get("name").and_then(Value::as_str).unwrap_or("");
-                if cfg.scrub_targets.iter().any(|t| lname.contains(t)) && !lname.contains("IoT Bypass") {
-                    safe_delete_list_with_rule_disabling(&cf, l_obj, &existing_rules);
-                }
+
+            let managed_lists: Vec<&Value> = existing_lists
+                .iter()
+                .filter(|l| {
+                    let lname = l.get("name").and_then(Value::as_str).unwrap_or("");
+                    cfg.scrub_targets.iter().any(|t| lname.contains(t)) && !lname.contains("IoT Bypass")
+                })
+                .collect();
+
+            let managed_ids: Vec<String> = managed_lists
+                .iter()
+                .filter_map(|l| l.get("id").and_then(Value::as_str).map(String::from))
+                .collect();
+
+            detach_lists_from_rules(&cf, &managed_ids, &mut existing_rules);
+
+            for l_obj in managed_lists {
+                safe_delete_list_with_rule_disabling(&cf, l_obj, &mut existing_rules)?;
             }
             thread::sleep(Duration::from_secs(3));
 
@@ -1383,7 +1408,7 @@ fn main() -> Result<()> {
         }
     }
 
-    cleanup_orphans(&cf, &cfg, &existing_lists, &existing_rules, &all_active_ids, &all_surplus_ids, &all_active_rules);
+    cleanup_orphans(&cf, &cfg, &existing_lists, &mut existing_rules, &all_active_ids, &all_surplus_ids, &all_active_rules)?;
 
     log_info!(
         "Sync completed successfully in {:.2}s ({} items across {} lists).",
