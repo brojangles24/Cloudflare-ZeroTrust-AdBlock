@@ -55,6 +55,8 @@ FAST_DOMAIN_RE = re.compile(
 INVALID_LABEL_RE = re.compile(r'invalid label ["\']?([a-zA-Z0-9_\-\.]+?)["\'\s]')
 
 MIN_RELEVANCE_DOMAINS = 500_000
+MAX_SAFE_DOMAINS = 299_000  # 299 lists * 1,000 max size, leaving 1 list for manual allowlist
+MAX_CLOUDTARE_LISTS = 299  # Reserve 1 out of 300 for manual allowlist
 
 DEFAULT_TOP_LISTS = [
     {
@@ -949,12 +951,22 @@ def cleanup_orphans(
             safe_delete_list(l["id"], f"orphaned list ({l['name']})")
 
 
+def purge_oisd_nsfw(policies: list[dict]) -> list[dict]:
+    """Sheds OISD NSFW from policy includes (Tier 3 fallback)."""
+    cleaned = []
+    for p in policies:
+        inc = [i for i in p.get("include", []) if not ("oisd" in i.lower() and "nsfw" in i.lower())]
+        cleaned.append({**p, "include": inc})
+    return cleaned
+
+
 def main() -> None:
     start = time.perf_counter()
     cfg = load_config()
     cf = CloudflareAPI(cfg)
     workers = cfg["settings"]["max_workers"]
     timeout = tuple(cfg["settings"]["request_timeout"])
+    scrub_targets = cfg["settings"]["scrub_targets"]
 
     policies = list(cfg.get("policies", {}).values())
     use_spam_tld_any = any(p.get("use_spam_tld") for p in policies)
@@ -1045,23 +1057,38 @@ def main() -> None:
                 logger.critical(f"IP feed failure ({name}): {e}. Aborting to preserve existing Cloudflare state.")
                 sys.exit(1)
 
-    quota = cfg["settings"]["total_quota"]
+    quota = min(cfg["settings"].get("total_quota", MAX_SAFE_DOMAINS), MAX_SAFE_DOMAINS)
+
+    # Pre-fetch existing lists early so we can clean up orphaned/surplus lists before syncing
+    existing_lists = cf.get_lists()
+    existing_rules = cf.get_rules()
+
+    # Pre-clean orphaned managed lists to immediately recover list slots (e.g. if count is at 301)
+    logger.info(f"Current Cloudflare lists count: {len(existing_lists)}. Performing pre-sync cleanup...")
+    for l in existing_lists:
+        if "IoT Bypass" in l["name"]:
+            continue
+        if any(t in l["name"] for t in scrub_targets):
+            try:
+                cf.delete_list(l["id"])
+                logger.info(f"Pre-cleaned managed list: {l['name']} ({l['id']})")
+            except Exception as e:
+                logger.warning(f"Failed pre-cleaning list {l['name']}: {e}")
+    
+    # Refresh existing lists after pre-cleaning
+    existing_lists = cf.get_lists()
+
+    # Compilation & Fallback Tiers
     compiled = build_policy_sets(policies, fetched, spam_tlds)
     total_entries = sum(len(items) for _, items in compiled)
 
-    # Fallback Tier 1: Shed HaGeZi TIF IPs if over quota for this run
+    # Fallback Tier 1: Shed HaGeZi TIF IPs if over quota
     if total_entries > quota:
-        logger.warning(
-            f"Quota exceeded ({total_entries:,}/{quota:,}). "
-            "Shedding HaGeZi TIF IPs for this run..."
-        )
+        logger.warning(f"Quota exceeded ({total_entries:,}/{quota:,}). Shedding HaGeZi TIF IPs...")
         policies = [
             {
                 **p,
-                "include": [
-                    inc for inc in p.get("include", [])
-                    if not ("tif" in inc.lower() and "ip" in inc.lower())
-                ],
+                "include": [inc for inc in p.get("include", []) if not ("tif" in inc.lower() and "ip" in inc.lower())],
             }
             for p in policies
         ]
@@ -1070,51 +1097,89 @@ def main() -> None:
 
     # Fallback Tier 2: Shed HaGeZi TIF domain feeds if still over quota
     if total_entries > quota:
-        logger.warning(
-            f"Quota still exceeded ({total_entries:,}/{quota:,}). "
-            "Shedding HaGeZi TIF domain feeds for this run..."
-        )
+        logger.warning(f"Quota still exceeded ({total_entries:,}/{quota:,}). Shedding HaGeZi TIF domain feeds...")
         policies = [
             {
                 **p,
-                "include": [
-                    inc for inc in p.get("include", [])
-                    if "tif" not in inc.lower()
-                ],
+                "include": [inc for inc in p.get("include", []) if "tif" not in inc.lower()],
             }
             for p in policies
         ]
         compiled = build_policy_sets(policies, fetched, spam_tlds)
         total_entries = sum(len(items) for _, items in compiled)
 
-    if total_entries > quota:
-        logger.error(
-            f"Total entries ({total_entries:,}) still exceeds quota ({quota:,}) after shedding TIF feeds. Aborting."
-        )
-        sys.exit(1)
+    # Fallback Tier 3: Shed OISD NSFW after HaGeZi TIF Full if over quota or estimated list chunks exceed limit
+    max_size = cfg["settings"]["max_list_size"]
+    estimated_chunks = sum((len(items) + max_size - 1) // max_size for _, items in compiled)
 
-    existing_lists = cf.get_lists()
-    existing_rules = cf.get_rules()
+    if total_entries > quota or estimated_chunks > MAX_CLOUDTARE_LISTS:
+        logger.warning(
+            f"Capacity constraint reached (Entries: {total_entries:,}, Estimated Lists: {estimated_chunks}). "
+            "Triggering Tier 3 Defense: Disabling/Shedding OISD NSFW..."
+        )
+        policies = purge_oisd_nsfw(policies)
+        compiled = build_policy_sets(policies, fetched, spam_tlds)
+        total_entries = sum(len(items) for _, items in compiled)
+
+    if total_entries > quota:
+        logger.error(f"Total entries ({total_entries:,}) still exceeds quota ({quota:,}) after all fallback tiers. Aborting.")
+        sys.exit(1)
 
     standalone_rules = sync_standalone_policies(cf, cfg, existing_rules)
 
     all_active_ids, all_surplus_ids = [], []
     all_active_rules = list(standalone_rules)
 
-    for policy, optimized_entries in compiled:
-        expr = tld_expr if policy.get("use_spam_tld") else ""
-        active_ids, surplus_ids, rule_names = sync_policy_in_place(
-            cf,
-            cfg,
-            existing_lists,
-            existing_rules,
-            optimized_entries,
-            policy,
-            tld_expr=expr,
-        )
-        all_active_ids.extend(active_ids)
-        all_surplus_ids.extend(surplus_ids)
-        all_active_rules.extend(rule_names)
+    try:
+        for policy, optimized_entries in compiled:
+            expr = tld_expr if policy.get("use_spam_tld") else ""
+            active_ids, surplus_ids, rule_names = sync_policy_in_place(
+                cf,
+                cfg,
+                existing_lists,
+                existing_rules,
+                optimized_entries,
+                policy,
+                tld_expr=expr,
+            )
+            all_active_ids.extend(active_ids)
+            all_surplus_ids.extend(surplus_ids)
+            all_active_rules.extend(rule_names)
+    except Exception as e:
+        # Emergency catch for Cloudflare Error Code 2017 (Maximum number of lists reached)
+        if "Maximum number of lists reached" in str(e) or "2017" in str(e):
+            logger.error("Cloudflare list limit (300) hit during sync! Forcing emergency OISD NSFW purge and list reclamation...")
+            # Purge OISD NSFW, re-compile, pre-clean all managed lists, and re-run sync once
+            existing_lists = cf.get_lists()
+            for l in existing_lists:
+                if any(t in l["name"] for t in scrub_targets) and "IoT Bypass" not in l["name"]:
+                    try:
+                        cf.delete_list(l["id"])
+                    except Exception:
+                        pass
+            time.sleep(3)
+            
+            policies = purge_oisd_nsfw(policies)
+            compiled = build_policy_sets(policies, fetched, spam_tlds)
+            existing_lists = cf.get_lists()
+
+            all_active_ids, all_surplus_ids = [], []
+            for policy, optimized_entries in compiled:
+                expr = tld_expr if policy.get("use_spam_tld") else ""
+                active_ids, surplus_ids, rule_names = sync_policy_in_place(
+                    cf,
+                    cfg,
+                    existing_lists,
+                    existing_rules,
+                    optimized_entries,
+                    policy,
+                    tld_expr=expr,
+                )
+                all_active_ids.extend(active_ids)
+                all_surplus_ids.extend(surplus_ids)
+                all_active_rules.extend(rule_names)
+        else:
+            raise
 
     cleanup_orphans(
         cf,
