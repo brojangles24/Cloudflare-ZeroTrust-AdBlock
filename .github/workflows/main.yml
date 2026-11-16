@@ -15,23 +15,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+      - name: Set up Rust Nightly
+        uses: dtolnay/rust-toolchain@nightly
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests urllib3 tomli
-
-      - name: Cache Relevance Dataset
+      - name: Cache Rust build artifacts
         uses: actions/cache@v4
         with:
-          path: .relevance_cache
-          key: relevance-cache-${{ runner.os }}-${{ github.run_id }}
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ~/.cargo/target/
+          key: rust-script-${{ runner.os }}-${{ hashFiles('block_ads_sync.rs') }}
           restore-keys: |
-            relevance-cache-${{ runner.os }}-
+            rust-script-${{ runner.os }}-
 
       - name: Execute Sync Script
         env:
@@ -41,4 +39,4 @@ jobs:
           SECONDARY_EMAIL: ${{ secrets.SECONDARY_EMAIL }}
           TERTIARY_EMAIL: ${{ secrets.TERTIARY_EMAIL }}
           EXCLUDED_EMAILS: ${{ secrets.EXCLUDED_EMAILS }}
-        run: python block_ads_sync.py
+        run: cargo +nightly -Zscript block_ads_sync.rs
