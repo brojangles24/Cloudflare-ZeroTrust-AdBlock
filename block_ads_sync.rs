@@ -18,7 +18,7 @@ toml = "0.8"
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 ---
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use flate2::read::GzDecoder;
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use rayon::prelude::*;
@@ -58,13 +58,13 @@ const DEFAULT_TOP_LISTS: &[TopListSpec] = &[
 ];
 
 macro_rules! log_info {
-    ($($arg:tt)*) => { println!("[INFO] {}", format_args!($($arg)*)); };
+    ($($arg:tt)*) => { println!("[INFO] {}", format_args!($($arg)*)) };
 }
 macro_rules! log_warn {
-    ($($arg:tt)*) => { eprintln!("[WARN] {}", format_args!($($arg)*)); };
+    ($($arg:tt)*) => { eprintln!("[WARN] {}", format_args!($($arg)*)) };
 }
 macro_rules! log_err {
-    ($($arg:tt)*) => { eprintln!("[ERROR] {}", format_args!($($arg)*)); };
+    ($($arg:tt)*) => { eprintln!("[ERROR] {}", format_args!($($arg)*)) };
 }
 
 fn fast_domain_re() -> &'static Regex {
@@ -464,11 +464,12 @@ fn build_relevance_dataset(client: &Client) -> Result<HashSet<String>> {
                             }
                         }
                     }
-                    if let Ok(file) = archive.by_index(target_idx) {
+                    let parsed = if let Ok(file) = archive.by_index(target_idx) {
                         parse_csv_stream(file, item.col, item.skip_header)
                     } else {
                         HashSet::new()
-                    }
+                    };
+                    parsed
                 }
                 "gzip" => parse_csv_stream(GzDecoder::new(Cursor::new(bytes)), item.col, item.skip_header),
                 _ => parse_csv_stream(Cursor::new(bytes), item.col, item.skip_header),
