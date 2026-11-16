@@ -1465,12 +1465,13 @@ fn main() -> Result<()> {
             existing_lists = cf.get_lists()?;
             existing_rules = cf.get_rules()?;
 
-            let managed_lists: Vec<&Value> = existing_lists
+            let managed_lists: Vec<Value> = existing_lists
                 .iter()
                 .filter(|l| {
                     let lname = l.get("name").and_then(Value::as_str).unwrap_or("");
                     cfg.scrub_targets.iter().any(|t| lname.contains(t)) && !lname.contains("IoT Bypass")
                 })
+                .cloned()
                 .collect();
 
             let managed_ids: Vec<String> = managed_lists
@@ -1481,7 +1482,7 @@ fn main() -> Result<()> {
             let rule_snapshots = detach_lists_from_rules(&cf, &managed_ids, &mut existing_rules)?;
 
             let recovery_result: Result<()> = (|| {
-                for l_obj in managed_lists {
+                for l_obj in &managed_lists {
                     safe_delete_list_with_rule_disabling(&cf, l_obj, &mut existing_rules)?;
                 }
                 thread::sleep(Duration::from_secs(3));
