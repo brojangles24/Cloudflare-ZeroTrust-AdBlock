@@ -161,17 +161,17 @@ exclude             = []
 security_categories = [68]
 content_categories  = []
 
-#[policies.AIBlockIsaac]
-#prefix              = "L_AIBlockIsaac"
-#name                = "AI Block Isaac"
-#action              = "block"
-#type                = "DOMAIN"
-#restrict_users      = true
-#use_spam_tld        = false
-#include             = ["NoAI"]
-#exclude             = []
-#security_categories = []
-#content_categories  = []
+[policies.AIBlockIsaac]
+prefix              = "L_AIBlockIsaac"
+name                = "AI Block Isaac"
+action              = "block"
+type                = "DOMAIN"
+restrict_users      = true
+use_spam_tld        = false
+include             = ["NoAI"]
+exclude             = []
+security_categories = []
+content_categories  = []
 
 [policies.MalwareBlock]
 prefix              = "L_MalwareBlock"
