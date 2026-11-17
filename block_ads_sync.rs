@@ -900,7 +900,7 @@ fn sync_policy_in_place(
     cf: &CloudflareAPI,
     cfg: &AppConfig,
     existing_lists: &[Value],
-    existing_rules: &[Value],
+    existing_rules: &mut Vec<Value>,
     entries: &[String],
     policy: &Value,
     tld_expr: &str,
@@ -1013,16 +1013,19 @@ fn sync_policy_in_place(
         list_items.push(cat_expr);
     }
 
-    let rule = existing_rules.iter().find(|r| r.get("name").and_then(Value::as_str) == Some(policy_name));
+    let rule_idx = existing_rules
+        .iter()
+        .position(|r| r.get("name").and_then(Value::as_str) == Some(policy_name));
 
     if list_items.is_empty() {
         log_warn!("Policy '{}' has no active list items, categories, or expressions.", policy_name);
-        if let Some(r) = rule {
-            let rid = r.get("id").and_then(Value::as_str).unwrap_or("");
+        if let Some(idx) = rule_idx {
+            let rid = existing_rules[idx].get("id").and_then(Value::as_str).unwrap_or("");
             if let Err(e) = cf.delete_rule(rid) {
                 log_err!("Failed deleting inactive rule {}: {}", policy_name, e);
             } else {
                 log_info!("Removed inactive firewall rule: {}", policy_name);
+                existing_rules.remove(idx);
             }
         }
         return Ok((active_ids, surplus_ids, Vec::new()));
@@ -1048,24 +1051,20 @@ fn sync_policy_in_place(
     let pol_enabled_opt = policy.get("enabled").and_then(Value::as_bool);
     let rule_enabled = if pol_enabled_opt == Some(false) {
         false
-    } else if !cfg.auto_enable_rules {
-        match rule {
-            Some(r) if !r.get("enabled").and_then(Value::as_bool).unwrap_or(true) => false,
-            None => pol_enabled_opt.unwrap_or(false),
-            _ => true,
-        }
+    } else if cfg.auto_enable_rules {
+        true
     } else {
-        match rule {
-            None => pol_enabled_opt.unwrap_or(true),
+        match rule_idx.map(|i| &existing_rules[i]) {
             Some(r) => r.get("enabled").and_then(Value::as_bool).unwrap_or(true),
+            None => pol_enabled_opt.unwrap_or(false),
         }
     };
 
     let block_page = policy.get("block_page_enabled").and_then(Value::as_bool).unwrap_or(cfg.block_page_enabled);
     let ip_cat = policy.get("ip_categories").and_then(Value::as_bool).unwrap_or(false);
 
-    let mut existing_settings = rule
-        .and_then(|r| r.get("rule_settings"))
+    let mut existing_settings = rule_idx
+        .and_then(|i| existing_rules[i].get("rule_settings"))
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
@@ -1085,31 +1084,45 @@ fn sync_policy_in_place(
         payload.as_object_mut().unwrap().insert("identity".to_string(), json!(identity_expr));
     }
 
-    if let Some(r) = rule {
-        for key in ["precedence", "description", "schedule", "device_posture"] {
-            if let Some(v) = r.get(key) {
-                if !v.is_null() {
-                    payload.as_object_mut().unwrap().insert(key.to_string(), v.clone());
+    if let Some(idx) = rule_idx {
+        let (needs_update, rid) = {
+            let r = &existing_rules[idx];
+            for key in ["precedence", "description", "schedule", "device_posture"] {
+                if let Some(v) = r.get(key) {
+                    if !v.is_null() {
+                        payload.as_object_mut().unwrap().insert(key.to_string(), v.clone());
+                    }
                 }
             }
-        }
-        let old_settings = r.get("rule_settings").and_then(Value::as_object);
-        let settings_changed = old_settings.and_then(|s| s.get("block_page_enabled")).and_then(Value::as_bool) != Some(block_page)
-            || old_settings.and_then(|s| s.get("ip_categories")).and_then(Value::as_bool).unwrap_or(false) != ip_cat;
-        let existing_identity = r.get("identity").and_then(Value::as_str).unwrap_or("");
+            let old_settings = r.get("rule_settings").and_then(Value::as_object);
+            let settings_changed = old_settings.and_then(|s| s.get("block_page_enabled")).and_then(Value::as_bool) != Some(block_page)
+                || old_settings.and_then(|s| s.get("ip_categories")).and_then(Value::as_bool).unwrap_or(false) != ip_cat;
+            let existing_identity = r.get("identity").and_then(Value::as_str).unwrap_or("");
 
-        if r.get("traffic").and_then(Value::as_str) != Some(&traffic_expr)
-            || existing_identity != identity_expr
-            || r.get("enabled").and_then(Value::as_bool) != Some(rule_enabled)
-            || r.get("action").and_then(Value::as_str) != Some(action)
-            || settings_changed
-        {
-            let rid = r.get("id").and_then(Value::as_str).unwrap_or("");
-            cf.update_rule(rid, &payload)?;
+            let changed = r.get("traffic").and_then(Value::as_str) != Some(&traffic_expr)
+                || existing_identity != identity_expr
+                || r.get("enabled").and_then(Value::as_bool) != Some(rule_enabled)
+                || r.get("action").and_then(Value::as_str) != Some(action)
+                || settings_changed;
+            let id_str = r.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+            (changed, id_str)
+        };
+
+        if needs_update {
+            let resp = cf.update_rule(&rid, &payload)?;
+            if let Some(updated) = resp.get("result").cloned() {
+                existing_rules[idx] = updated;
+            } else {
+                existing_rules[idx].as_object_mut().unwrap().insert("traffic".to_string(), json!(traffic_expr));
+                existing_rules[idx].as_object_mut().unwrap().insert("enabled".to_string(), json!(rule_enabled));
+            }
             log_info!("Updated firewall rule: {} (enabled={}, block_page={}, ip_categories={})", policy_name, rule_enabled, block_page, ip_cat);
         }
     } else {
-        cf.create_rule(&payload)?;
+        let resp = cf.create_rule(&payload)?;
+        if let Some(created) = resp.get("result").cloned() {
+            existing_rules.push(created);
+        }
         log_info!("Created firewall rule: {} (enabled={}, block_page={}, ip_categories={})", policy_name, rule_enabled, block_page, ip_cat);
     }
 
@@ -1438,7 +1451,7 @@ fn main() -> Result<()> {
 
     let run_sync = |compiled_sets: &[(Value, Vec<String>)],
                     elists: &[Value],
-                    erules: &[Value],
+                    erules: &mut Vec<Value>,
                     act_ids: &mut Vec<String>,
                     sur_ids: &mut Vec<String>,
                     act_rules: &mut Vec<String>|
@@ -1458,7 +1471,7 @@ fn main() -> Result<()> {
         Ok(())
     };
 
-    if let Err(e) = run_sync(&compiled, &existing_lists, &existing_rules, &mut all_active_ids, &mut all_surplus_ids, &mut all_active_rules) {
+    if let Err(e) = run_sync(&compiled, &existing_lists, &mut existing_rules, &mut all_active_ids, &mut all_surplus_ids, &mut all_active_rules) {
         let err_str = e.to_string();
         if err_str.contains("Maximum number of lists reached") || err_str.contains("2017") {
             log_err!("Cloudflare list limit (300) hit during sync! Forcing emergency OISD NSFW & TIF purge and list reclamation...");
@@ -1497,7 +1510,7 @@ fn main() -> Result<()> {
 
                 all_active_ids.clear();
                 all_surplus_ids.clear();
-                run_sync(&compiled, &existing_lists, &existing_rules, &mut all_active_ids, &mut all_surplus_ids, &mut all_active_rules)
+                run_sync(&compiled, &existing_lists, &mut existing_rules, &mut all_active_ids, &mut all_surplus_ids, &mut all_active_rules)
             })();
 
             if let Err(rec_err) = recovery_result {
