@@ -27,6 +27,12 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "Restrict YouTube"  = true
 "YouTube Nighttime" = true
 "Scam/Spam Block"   = true
+"Porn Block"        = true
+"Block: Malicious Resolved IPs" = true
+"Piracy Block"      = true
+"Bypass Prevention" = true
+"Social Block Isaac" = true
+"AdBlock HaGeZi Normal" = true
 
 [sources]
 # Large feeds (relevance = true by default to fit 300k quota)
