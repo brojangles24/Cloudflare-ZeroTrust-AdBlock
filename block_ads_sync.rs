@@ -811,13 +811,14 @@ fn build_rule_update_payload(rule: &Value, enabled: bool, traffic: &str) -> Valu
 fn detach_lists_from_rules(
     cf: &CloudflareAPI,
     list_ids: &[String],
-    existing_rules: &mut [Value],
+    existing_rules: &mut Vec<Value>,
 ) -> Result<Vec<Value>> {
     if list_ids.is_empty() {
         return Ok(Vec::new());
     }
     let mut snapshots = Vec::new();
     let mut detached_any = false;
+    let mut missing_rule_ids = HashSet::new();
 
     for rule in existing_rules.iter_mut() {
         let traffic = rule.get("traffic").and_then(Value::as_str).unwrap_or("");
@@ -825,20 +826,36 @@ fn detach_lists_from_rules(
             continue;
         }
         let rname = rule.get("name").and_then(Value::as_str).unwrap_or("");
-        let rid = rule.get("id").and_then(Value::as_str).unwrap_or("");
+        let rid = rule.get("id").and_then(Value::as_str).unwrap_or("").to_string();
         log_info!("Detaching lists from policy rule '{}'...", rname);
-
-        snapshots.push(rule.clone());
 
         let dummy_traffic = r#"any(dns.domains[*] in {"invalid.local.blocklist.temp"})"#;
         let payload = build_rule_update_payload(rule, false, dummy_traffic);
 
-        cf.update_rule(rid, &payload)
-            .with_context(|| format!("Failed to detach lists from rule {}", rname))?;
-        rule.as_object_mut().unwrap().insert("traffic".to_string(), json!(dummy_traffic));
-        rule.as_object_mut().unwrap().insert("enabled".to_string(), json!(false));
-        detached_any = true;
+        match cf.update_rule(&rid, &payload) {
+            Ok(_) => {
+                snapshots.push(rule.clone());
+                rule.as_object_mut().unwrap().insert("traffic".to_string(), json!(dummy_traffic));
+                rule.as_object_mut().unwrap().insert("enabled".to_string(), json!(false));
+                detached_any = true;
+            }
+            Err(e) if e.to_string().contains("404") || e.to_string().contains("1102") => {
+                log_warn!("Rule '{}' ({}) no longer exists on Cloudflare; skipping detach.", rname, rid);
+                missing_rule_ids.insert(rid);
+            }
+            Err(e) => {
+                return Err(e).with_context(|| format!("Failed to detach lists from rule {}", rname));
+            }
+        }
     }
+
+    if !missing_rule_ids.is_empty() {
+        existing_rules.retain(|r| {
+            let rid = r.get("id").and_then(Value::as_str).unwrap_or("");
+            !missing_rule_ids.contains(rid)
+        });
+    }
+
     if detached_any {
         thread::sleep(Duration::from_secs(2));
     }
@@ -867,7 +884,7 @@ fn restore_detached_rules(cf: &CloudflareAPI, snapshots: &[Value]) {
 fn safe_delete_list_with_rule_disabling(
     cf: &CloudflareAPI,
     list_item: &Value,
-    existing_rules: &mut [Value],
+    existing_rules: &mut Vec<Value>,
 ) -> Result<()> {
     let list_name = list_item.get("name").and_then(Value::as_str).unwrap_or("");
     let list_id = list_item.get("id").and_then(Value::as_str).unwrap_or("");
@@ -1162,11 +1179,120 @@ fn sync_standalone_policies(cf: &CloudflareAPI, cfg: &AppConfig, existing_rules:
     synced
 }
 
+fn policy_has_active_rule(policy: &Value, entries: &[String], tld_expr: &str) -> bool {
+    !entries.is_empty()
+        || (!tld_expr.is_empty() && policy.get("use_spam_tld").and_then(Value::as_bool).unwrap_or(false))
+        || !compile_category_expression(policy).is_empty()
+}
+
+fn reclaim_stale_resources(
+    cf: &CloudflareAPI,
+    cfg: &AppConfig,
+    compiled: &[(Value, Vec<String>)],
+    tld_expr: &str,
+    existing_lists: &mut Vec<Value>,
+    existing_rules: &mut Vec<Value>,
+) -> Result<()> {
+    let mut protected_rules: HashSet<String> = [
+        "IoT Bypass", "Custom", "Keywords", "SafeSearch",
+        "Global Blocklist", "Global Bypass", "Block IoT Network", "YouTube Restricted",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+
+    if let Some(gp) = cfg.raw.get("gateway_policies").and_then(Value::as_object) {
+        protected_rules.extend(gp.keys().cloned());
+    }
+
+    let mut expected_rules: HashSet<String> = HashSet::new();
+    let mut expected_chunks_by_prefix: HashMap<String, usize> = HashMap::new();
+
+    for (policy, entries) in compiled {
+        let prefix = policy.get("prefix").and_then(Value::as_str).unwrap_or("").to_string();
+        let name = policy.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+        let chunks = if entries.is_empty() { 0 } else { entries.len().div_ceil(cfg.max_list_size) };
+        expected_chunks_by_prefix.insert(prefix, chunks);
+
+        if policy_has_active_rule(policy, entries, tld_expr) {
+            expected_rules.insert(name);
+        }
+    }
+
+    // 1. Delete orphaned rules first and prune them from existing_rules
+    let mut deleted_rule_ids = HashSet::new();
+    for r in existing_rules.iter() {
+        let rname = r.get("name").and_then(Value::as_str).unwrap_or("");
+        if protected_rules.contains(rname) || protected_rules.iter().any(|k| rname.contains(k)) {
+            continue;
+        }
+        if !expected_rules.contains(rname) && cfg.scrub_targets.iter().any(|t| rname.contains(t)) {
+            let rid = r.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+            match cf.delete_rule(&rid) {
+                Ok(_) => {
+                    log_info!("Removed orphaned rule: {}", rname);
+                    deleted_rule_ids.insert(rid);
+                }
+                Err(e) => log_err!("Rule cleanup error ({}): {}", rname, e),
+            }
+        }
+    }
+    if !deleted_rule_ids.is_empty() {
+        existing_rules.retain(|r| !deleted_rule_ids.contains(r.get("id").and_then(Value::as_str).unwrap_or("")));
+        thread::sleep(Duration::from_secs(2));
+    }
+
+    // 2. Identify surplus chunks for shrinking policies + lists from removed policies
+    let mut keep_ids: HashSet<String> = HashSet::new();
+    for (prefix, needed) in &expected_chunks_by_prefix {
+        let mut matched: Vec<&Value> = existing_lists
+            .iter()
+            .filter(|l| l.get("name").and_then(Value::as_str).unwrap_or("").starts_with(&format!("{} ", prefix)))
+            .collect();
+        matched.sort_by_key(|l| l.get("name").and_then(Value::as_str).unwrap_or(""));
+        for l in matched.into_iter().take(*needed) {
+            if let Some(id) = l.get("id").and_then(Value::as_str) {
+                keep_ids.insert(id.to_string());
+            }
+        }
+    }
+
+    let stale_lists: Vec<Value> = existing_lists
+        .iter()
+        .filter(|l| {
+            let lid = l.get("id").and_then(Value::as_str).unwrap_or("");
+            let lname = l.get("name").and_then(Value::as_str).unwrap_or("");
+            let is_managed = cfg.scrub_targets.iter().any(|t| lname.contains(t)) && !lname.contains("IoT Bypass");
+            is_managed && !keep_ids.contains(lid)
+        })
+        .cloned()
+        .collect();
+
+    if stale_lists.is_empty() {
+        return Ok(());
+    }
+
+    log_info!("Pre-reclaiming {} stale/surplus list(s) before sync...", stale_lists.len());
+    let stale_ids: Vec<String> = stale_lists
+        .iter()
+        .filter_map(|l| l.get("id").and_then(Value::as_str).map(String::from))
+        .collect();
+
+    detach_lists_from_rules(cf, &stale_ids, existing_rules)?;
+    for l in &stale_lists {
+        safe_delete_list_with_rule_disabling(cf, l, existing_rules)?;
+    }
+
+    let deleted_list_set: HashSet<&str> = stale_ids.iter().map(String::as_str).collect();
+    existing_lists.retain(|l| !deleted_list_set.contains(l.get("id").and_then(Value::as_str).unwrap_or("")));
+    Ok(())
+}
+
 fn cleanup_orphans(
     cf: &CloudflareAPI,
     cfg: &AppConfig,
     existing_lists: &[Value],
-    existing_rules: &mut [Value],
+    existing_rules: &mut Vec<Value>,
     active_ids: &[String],
     surplus_ids: &[String],
     active_rules: &[String],
@@ -1184,7 +1310,7 @@ fn cleanup_orphans(
     }
 
     let active_rules_set: HashSet<&str> = active_rules.iter().map(String::as_str).collect();
-    let mut deleted_any_rule = false;
+    let mut deleted_rule_ids = HashSet::new();
 
     for r in existing_rules.iter() {
         let rname = r.get("name").and_then(Value::as_str).unwrap_or("");
@@ -1192,15 +1318,20 @@ fn cleanup_orphans(
             continue;
         }
         if !active_rules_set.contains(rname) && cfg.scrub_targets.iter().any(|t| rname.contains(t)) {
-            let rid = r.get("id").and_then(Value::as_str).unwrap_or("");
-            match cf.delete_rule(rid) {
+            let rid = r.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+            match cf.delete_rule(&rid) {
                 Ok(_) => {
-                    deleted_any_rule = true;
+                    deleted_rule_ids.insert(rid);
                     log_info!("Removed orphaned rule: {}", rname);
                 }
                 Err(e) => log_err!("Rule cleanup error ({}): {}", rname, e),
             }
         }
+    }
+
+    let deleted_any_rule = !deleted_rule_ids.is_empty();
+    if deleted_any_rule {
+        existing_rules.retain(|r| !deleted_rule_ids.contains(r.get("id").and_then(Value::as_str).unwrap_or("")));
     }
 
     if deleted_any_rule || !surplus_ids.is_empty() {
@@ -1444,6 +1575,8 @@ fn main() -> Result<()> {
     );
 
     let standalone_rules = sync_standalone_policies(&cf, &cfg, &mut existing_rules);
+
+    reclaim_stale_resources(&cf, &cfg, &compiled, &tld_expr, &mut existing_lists, &mut existing_rules)?;
 
     let mut all_active_ids = Vec::new();
     let mut all_surplus_ids = Vec::new();
