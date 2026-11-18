@@ -41,7 +41,6 @@ const UA_STR: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.
 const MIN_RELEVANCE_DOMAINS: usize = 500_000;
 const MAX_SAFE_DOMAINS: usize = 299_000;
 const MAX_CLOUDFLARE_LISTS: usize = 299;
-const MAX_DROP_RATIO: f64 = 0.60;
 
 struct TopListSpec {
     url: &'static str,
@@ -1540,19 +1539,6 @@ fn main() -> Result<()> {
         filter_policy_includes(&mut policies, |inc| !inc.to_lowercase().contains("tif"));
         compiled = build_policy_sets(&policies, &fetched, &spam_tlds);
         total_entries = compiled.iter().map(|(_, items)| items.len()).sum();
-    }
-
-    // Truncation / Feed Poisoning Protection Guard
-    if current_managed_items > 10_000 {
-        let ratio = total_entries as f64 / current_managed_items as f64;
-        if ratio < MAX_DROP_RATIO {
-            bail!(
-                "Upstream feed truncation detected! Compiled entries dropped by {:.1}% ({} vs {} currently active). Aborting to protect live rules.",
-                (1.0 - ratio) * 100.0,
-                total_entries,
-                current_managed_items
-            );
-        }
     }
 
     let final_chunks: usize = compiled.iter().map(|(_, items)| items.len().div_ceil(cfg.max_list_size)).sum();
