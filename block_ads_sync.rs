@@ -54,7 +54,7 @@ const DEFAULT_TOP_LISTS: &[TopListSpec] = &[
     TopListSpec { url: "https://tranco-list.eu/top-1m.csv.zip", col: 1, skip_header: false, compression: "zip" },
     TopListSpec { url: "https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz", col: 0, skip_header: true, compression: "gzip" },
     TopListSpec { url: "https://downloads.majestic.com/majestic_million.csv", col: 2, skip_header: true, compression: "raw" },
-    //TopListSpec { url: "https://openpagerank.keywordseverywhere.com/downloads/top10milliondomains.csv.zip", col: 1, skip_header: true, compression: "zip" },
+    TopListSpec { url: "https://openpagerank.keywordseverywhere.com/downloads/top10milliondomains.csv.zip", col: 1, skip_header: true, compression: "zip" },
     TopListSpec { url: "https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip", col: 1, skip_header: false, compression: "zip" },
 ];
 
