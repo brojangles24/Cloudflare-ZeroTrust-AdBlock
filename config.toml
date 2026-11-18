@@ -37,7 +37,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 [sources]
 # Large feeds (relevance = true by default to fit 300k quota)
 "HaGeZi Normal"      = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
-"HaGeZi Pro++"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
+#"HaGeZi Pro++"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
 "HaGeZi TIF Full"    = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
 "Hagezi NSFW"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt"
 "HaGeZi Anti Piracy" = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt"
@@ -48,12 +48,12 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "HaGeZi Social"            = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt"
 
 # Inactive sources
-#"HaGeZi Pro"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
+"HaGeZi Pro"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
 #"HaGeZi Ultimate"  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
 "HaGeZi Fake"      = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
 "HaGeZi DynDNS"    = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
 #"NoAI"             = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
-"OISD NSFW"        = "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw_small.txt"
+#"OISD NSFW"        = "https://raw.githubusercontent.com/sjhgvr/oisd/refs/heads/main/domainswild2_nsfw_small.txt"
 "HaGeZi Badware"   = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"
 
 [ip_sources]
@@ -88,12 +88,12 @@ domains             = []
 
 [policies.restrictive]
 prefix              = "L_Restrictive"
-name                = "Adblock HaGeZi Pro++"
+name                = "Adblock HaGeZi Pro"
 action              = "block"
 type                = "DOMAIN"
 restrict_users      = true
 use_spam_tld        = false
-include             = ["HaGeZi Pro++"]
+include             = ["HaGeZi Pro"]
 exclude             = []
 security_categories = []
 content_categories  = []
