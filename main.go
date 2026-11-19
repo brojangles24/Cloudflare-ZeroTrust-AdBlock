@@ -47,6 +47,7 @@ const (
 	cacheMagicV1           = "RELCAC01"
 	cacheMagicV2           = "RELCAC02"
 	cacheMagicV3           = "RELCAC03"
+	spamAllowRuleName      = "Allow: Spam Exceptions"
 	dummyTrafficExpression = `any(dns.domains[*] in {"invalid.local.blocklist.temp"})`
 )
 
@@ -222,7 +223,7 @@ func (p policyConfig) isScoped(cfg *appConfig) bool {
 	return p.effectiveIdentity(cfg) != ""
 }
 
-// isTrimmable defaults to true ONLY for dynamic bulk Porn/NSFW and Malware/TIF policies.
+// isTrimmable defaults to true ONLY for dynamic bulk Porn/NSFW and Malware/Badware/TIF policies.
 // Static safety policies (Bypass, AdBlock, Social, Piracy, IP lists, Allow lists) are
 // protected from rank trimming unless explicitly opted in via `trimmable = true`.
 func (p policyConfig) isTrimmable() bool {
@@ -252,7 +253,7 @@ func (p policyConfig) isTrimmable() bool {
 
 // resolvedPriority assigns lower numbers (higher priority) to static safety lists
 // (Bypass -> AdBlock -> Social -> Piracy -> IPs -> Other) and higher numbers to
-// trimmable bulk lists (Malware=80, Porn=90) so Porn trims first, then Malware.
+// trimmable bulk lists (Malware=80, Badware=85, Porn=90).
 func (p policyConfig) resolvedPriority(cfg *appConfig) int {
 	if p.Priority != nil {
 		return *p.Priority
@@ -269,17 +270,19 @@ func (p policyConfig) resolvedPriority(cfg *appConfig) int {
 	case strings.Contains(key, "bypass"):
 		return 10
 	case strings.Contains(key, "normal") || strings.Contains(key, "relaxed") ||
-		strings.Contains(key, "adblock") || strings.Contains(key, "base") ||
-		slices.Contains(p.Include, cfg.BaseFeed):
+		strings.Contains(key, "base") || slices.Contains(p.Include, cfg.BaseFeed):
 		return 20
+	case strings.Contains(key, "restrictive") || strings.Contains(key, "pro") || strings.Contains(key, "adblock"):
+		return 25
 	case strings.Contains(key, "social") || strings.Contains(key, "ai"):
 		return 30
 	case strings.Contains(key, "piracy"):
 		return 40
 	case strings.Contains(key, "malware") || strings.Contains(key, "tif") ||
-		strings.Contains(key, "threat") || strings.Contains(key, "badware") ||
-		strings.Contains(key, "phish"):
+		strings.Contains(key, "threat") || strings.Contains(key, "phish"):
 		return 80
+	case strings.Contains(key, "badware"):
+		return 85
 	case strings.Contains(key, "porn") || strings.Contains(key, "nsfw") || strings.Contains(key, "adult"):
 		return 90
 	default:
@@ -568,6 +571,10 @@ type gatewayRule struct {
 	Description   json.RawMessage `json:"description"`
 }
 
+func (r gatewayRule) isDNSRule() bool {
+	return len(r.Filters) == 0 || slices.Contains(r.Filters, "dns")
+}
+
 func (r gatewayRule) clone() gatewayRule {
 	cp := r
 	cp.Filters = slices.Clone(r.Filters)
@@ -592,6 +599,21 @@ type cfEnvelope struct {
 func isNonNullRaw(raw json.RawMessage) bool {
 	trimmed := bytes.TrimSpace(raw)
 	return len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null"))
+}
+
+func parseRulePrecedence(raw json.RawMessage) (int64, bool) {
+	if !isNonNullRaw(raw) {
+		return 0, false
+	}
+	var n int64
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n, true
+	}
+	var f float64
+	if err := json.Unmarshal(raw, &f); err == nil {
+		return int64(f), true
+	}
+	return 0, false
 }
 
 func newHTTPClient(timeout time.Duration) *http.Client {
@@ -1147,9 +1169,6 @@ type rankedHash struct {
 	rank uint32
 }
 
-// relevanceSet stores sorted, unique xxh3_64 hashes in a flat []uint64 slice alongside
-// their best (lowest) popularity rank in a parallel []uint32 slice. Both slices contain
-// zero pointers so Go's GC never scans them (~120 MB flat for 10M domains).
 type relevanceSet struct {
 	hashes []uint64
 	ranks  []uint32
@@ -2035,7 +2054,6 @@ func buildPolicySets(
 	spamTLDs map[string]struct{},
 	hasActiveSpamTLD bool,
 ) ([]compiledPolicy, []string) {
-	// Step 1: Build each policy's own domain/IP set in parallel
 	type rawPolicySet struct {
 		policy       policyConfig
 		priority     int
@@ -2132,7 +2150,6 @@ func buildPolicySets(
 				}
 			}
 
-			// Prune redundant subdomains within this policy itself
 			for d := range pSet {
 				if hasParentDomain(d, pSet) {
 					delete(pSet, d)
@@ -2161,9 +2178,9 @@ func buildPolicySets(
 		logWarn("Safety floor stripped %d protected root domain(s): %s", len(guardWarnings), strings.Join(guardWarnings, ", "))
 	}
 
-	// Step 2: Priority-ordered cross-policy deduplication for DOMAIN block policies.
-	// Protected (non-trimmable) policies NEVER dedup against trimmable policies so
-	// rank trimming Porn/Malware can never accidentally unblock a domain from a static list.
+	// Step 2: Priority-ordered cross-policy deduplication.
+	// Protected policies NEVER dedup against trimmable policies so rank trimming
+	// Porn/Badware/Malware can never accidentally unblock a static safety domain.
 	order := make([]int, len(rawSets))
 	for i := range order {
 		order[i] = i
@@ -2307,7 +2324,7 @@ func sumMinCapacity(compiled []compiledPolicy, maxListSize int) (int, int) {
 }
 
 // trimByRank removes the least-popular (highest rank number) domains ONLY from
-// trimmable policies (Porn first, then Malware) until entry and list limits are met.
+// trimmable policies (Porn -> Badware -> Malware) until entry and list limits are met.
 func trimByRank(compiled []compiledPolicy, activeQuota, maxActiveLists, maxListSize int) []string {
 	var warnings []string
 	totalEntries, minLists := sumMinCapacity(compiled, maxListSize)
@@ -2467,8 +2484,6 @@ func bucketEntries(entries []rankedEntry, numBuckets, maxListSize int) [][]strin
 	return nonEmpty
 }
 
-// assignHashBuckets chooses a sticky bucket count per policy (avoiding shift cascades),
-// tightens slack policies if approaching maxActiveLists, and materializes deterministic chunks.
 func assignHashBuckets(compiled []compiledPolicy, existingLists []gatewayList, maxListSize, maxActiveLists int) int {
 	existingCounts := make(map[string]int, len(compiled))
 	for _, cp := range compiled {
@@ -2517,7 +2532,6 @@ func assignHashBuckets(compiled []compiledPolicy, existingLists []gatewayList, m
 		totalBuckets += bucketCounts[i]
 	}
 
-	// If headroom pushes total lists above maxActiveLists, tighten only the slackest policies
 	for totalBuckets > maxActiveLists {
 		slackestIdx := -1
 		lowestFill := math.MaxFloat64
@@ -2695,6 +2709,142 @@ func buildRuleUpdatePayload(rule gatewayRule, enabled bool, traffic string) map[
 		payload["description"] = rule.Description
 	}
 	return payload
+}
+
+// ensureSpamAllowPrecedence verifies that "Allow: Spam Exceptions" executes immediately
+// before any spam-TLD block rule (lower numeric precedence in Cloudflare Gateway),
+// while staying below higher-priority block rules (Malware, Bypass, Social, AdBlock).
+func ensureSpamAllowPrecedence(
+	cf *cloudflareAPI,
+	spamTLDBlockNames map[string]struct{},
+	existingRules []gatewayRule,
+) []string {
+	if len(spamTLDBlockNames) == 0 {
+		return nil
+	}
+
+	allowIdx := slices.IndexFunc(existingRules, func(r gatewayRule) bool {
+		return r.Name == spamAllowRuleName
+	})
+	if allowIdx < 0 {
+		if cf.dryRun {
+			logInfo("[DRY-RUN] '%s' not yet created; precedence will be positioned directly above spam-TLD rule on live run.", spamAllowRuleName)
+		}
+		return nil
+	}
+
+	allowPrec, hasAllowPrec := parseRulePrecedence(existingRules[allowIdx].Precedence)
+	if !hasAllowPrec {
+		return nil
+	}
+
+	var spamBlockIndices []int
+	minSpamPrec := int64(math.MaxInt64)
+	for i, r := range existingRules {
+		if _, isSpamBlock := spamTLDBlockNames[r.Name]; isSpamBlock {
+			if p, ok := parseRulePrecedence(r.Precedence); ok {
+				spamBlockIndices = append(spamBlockIndices, i)
+				if p < minSpamPrec {
+					minSpamPrec = p
+				}
+			}
+		}
+	}
+	if len(spamBlockIndices) == 0 {
+		return nil
+	}
+
+	if allowPrec < minSpamPrec {
+		logInfo("Rule precedence verified: '%s' (%d) precedes spam-TLD block rule(s) (min %d).",
+			spamAllowRuleName, allowPrec, minSpamPrec)
+		return nil
+	}
+
+	// Find largest DNS precedence strictly below minSpamPrec and overall max DNS precedence
+	var prevPrec int64
+	var maxDNSPrec int64
+	usedPrecs := make(map[int64]struct{}, len(existingRules))
+	for i, r := range existingRules {
+		if !r.isDNSRule() {
+			continue
+		}
+		p, ok := parseRulePrecedence(r.Precedence)
+		if !ok {
+			continue
+		}
+		if p > maxDNSPrec {
+			maxDNSPrec = p
+		}
+		if i != allowIdx {
+			usedPrecs[p] = struct{}{}
+			if p < minSpamPrec && p > prevPrec {
+				prevPrec = p
+			}
+		}
+	}
+
+	updateRulePrec := func(idx int, newPrec int64) error {
+		r := &existingRules[idx]
+		payload := buildRuleUpdatePayload(*r, r.Enabled, r.Traffic)
+		payload["precedence"] = newPrec
+		updated, err := cf.updateRule(r.ID, payload)
+		if err != nil {
+			return err
+		}
+		if updated != nil {
+			existingRules[idx] = *updated
+		} else if raw, err := json.Marshal(newPrec); err == nil {
+			existingRules[idx].Precedence = raw
+		}
+		return nil
+	}
+
+	var notices []string
+
+	// Case 1: There is at least one free integer strictly between prevPrec and minSpamPrec
+	if prevPrec+1 < minSpamPrec {
+		targetPrec := prevPrec + (minSpamPrec-prevPrec)/2
+		if _, taken := usedPrecs[targetPrec]; taken {
+			for cand := minSpamPrec - 1; cand > prevPrec; cand-- {
+				if _, used := usedPrecs[cand]; !used {
+					targetPrec = cand
+					break
+				}
+			}
+		}
+		if err := updateRulePrec(allowIdx, targetPrec); err != nil {
+			logErr("Failed adjusting precedence of '%s' to %d: %v", spamAllowRuleName, targetPrec, err)
+			notices = append(notices, fmt.Sprintf("Failed to reorder '%s' above spam-TLD rule: %v", spamAllowRuleName, err))
+			return notices
+		}
+		msg := fmt.Sprintf("Adjusted rule precedence: moved '%s' from %d to %d (directly above spam-TLD rule at %d)",
+			spamAllowRuleName, allowPrec, targetPrec, minSpamPrec)
+		logInfo("%s", msg)
+		notices = append(notices, msg)
+		return notices
+	}
+
+	// Case 2: No integer gap above minSpamPrec; place Allow + Spam TLD cleanly at the bottom
+	allowTarget := maxDNSPrec + 50
+	if err := updateRulePrec(allowIdx, allowTarget); err != nil {
+		logErr("Failed relocating '%s' to precedence %d: %v", spamAllowRuleName, allowTarget, err)
+		notices = append(notices, fmt.Sprintf("Failed to relocate '%s' precedence: %v", spamAllowRuleName, err))
+		return notices
+	}
+	for offset, idx := range spamBlockIndices {
+		spamTarget := maxDNSPrec + 100 + int64(offset*10)
+		if err := updateRulePrec(idx, spamTarget); err != nil {
+			logErr("Failed relocating '%s' to precedence %d: %v", existingRules[idx].Name, spamTarget, err)
+			notices = append(notices, fmt.Sprintf("Failed to relocate '%s' precedence: %v", existingRules[idx].Name, err))
+			return notices
+		}
+	}
+
+	msg := fmt.Sprintf("Adjusted rule precedence: placed '%s' (%d) directly above spam-TLD rule(s) (%d+)",
+		spamAllowRuleName, allowTarget, maxDNSPrec+100)
+	logInfo("%s", msg)
+	notices = append(notices, msg)
+	return notices
 }
 
 func detachListsFromRules(cf *cloudflareAPI, listIDs []string, existingRules *[]gatewayRule) ([]gatewayRule, error) {
@@ -3245,7 +3395,6 @@ func reclaimStaleResources(
 		}
 	}
 
-	// 1. Delete orphaned rules first
 	deletedRuleIDs := make(map[string]struct{})
 	for _, r := range *existingRules {
 		if cfg.isProtectedRule(r.Name) {
@@ -3284,7 +3433,6 @@ func reclaimStaleResources(
 		}
 	}
 
-	// 2. Identify surplus chunks + removed policy lists
 	keepIDs := make(map[string]struct{}, len(preservedListIDs))
 	for k := range preservedListIDs {
 		keepIDs[k] = struct{}{}
@@ -3574,11 +3722,15 @@ func run() error {
 	slices.Sort(policyKeys)
 
 	allPolicies := make([]policyConfig, 0, len(policyKeys)+1)
+	spamTLDBlockNames := make(map[string]struct{})
 	useSpamTLDAny := false
 	for _, k := range policyKeys {
 		p := cfg.Raw.Policies[k]
 		if p.UseSpamTLD {
 			useSpamTLDAny = true
+			if p.resolvedAction() != "allow" && p.Name != "" {
+				spamTLDBlockNames[p.Name] = struct{}{}
+			}
 		}
 		allPolicies = append(allPolicies, p)
 	}
@@ -3590,7 +3742,7 @@ func run() error {
 		sa := cfg.Raw.SpamAllowSource
 		allPolicies = append(allPolicies, policyConfig{
 			Prefix:  "L_AllowSpam",
-			Name:    "Allow: Spam Exceptions",
+			Name:    spamAllowRuleName,
 			Type:    "DOMAIN",
 			Action:  "allow",
 			Include: []string{sa.Name},
@@ -3631,7 +3783,6 @@ func run() error {
 		}
 	}
 
-	// Fault-tolerant parallel feed fetching
 	type feedOutcome struct {
 		name string
 		feed fetchedFeed
@@ -3680,7 +3831,6 @@ func run() error {
 	}
 	wg.Wait()
 
-	// Release relevance slices immediately before compilation and API sync
 	relSet = nil
 	runtime.GC()
 
@@ -3793,7 +3943,7 @@ func run() error {
 				len(guardWarns), strings.Join(guardWarns, ", ")))
 		}
 
-		// Primary capacity strategy: surgical rank-aware trimming (Porn first, then Malware)
+		// Primary capacity strategy: surgical rank-aware trimming (Porn -> Badware -> Malware)
 		trimWarns := trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)
 		summaryWarnings = append(summaryWarnings, trimWarns...)
 		entries, minLists := sumMinCapacity(compiled, cfg.MaxListSize)
@@ -3976,6 +4126,10 @@ func run() error {
 	if err := cleanupOrphans(cf, cfg, existingLists, &existingRules, allActiveIDs, allSurplusIDs, allActiveRules); err != nil {
 		return err
 	}
+
+	// Ensure Allow: Spam Exceptions sits directly above HaGeZi Spam TLD
+	precNotices := ensureSpamAllowPrecedence(cf, spamTLDBlockNames, existingRules)
+	summaryWarnings = append(summaryWarnings, precNotices...)
 
 	policyStats = append(policyStats, preservedStats...)
 	slices.SortFunc(policyStats, func(a, b policySyncStats) int {
