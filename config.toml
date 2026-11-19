@@ -20,6 +20,11 @@ scrub_targets = [
 [tld]
 url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
+[spam_allow_source]
+name      = "HaGeZi Spam Allow"
+url       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
+relevance = false
+
 # Truly standalone Cloudflare Gateway Firewall Policies (managed policies belong only under [policies.*])
 [gateway_policies]
 "SafeSearch"        = true
@@ -36,6 +41,7 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 "HaGeZi Normal"      = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
 "HaGeZi Pro++"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
 "HaGeZi TIF Full"    = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif-onlydomains.txt"
+"HaGeZi Badware"     = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"
 "Hagezi NSFW"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/nsfw-onlydomains.txt"
 "HaGeZi Anti Piracy" = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/anti.piracy-onlydomains.txt"
 "HaGeZi Fake"        = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/fake-onlydomains.txt"
@@ -51,7 +57,6 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 #"HaGeZi Pro"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
 #"HaGeZi Ultimate"  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
 #"NoAI"             = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
-"HaGeZi Badware"   = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"
 
 [ip_sources]
 "Spamhaus DROP"   = "https://www.spamhaus.org/drop/drop.txt"
@@ -66,63 +71,15 @@ url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tl
 #"Binary Defense"        = "https://www.binarydefense.com/banlist.txt"
 #"CINS Army"             = "https://cinsscore.com/list/ci-badguys.txt"
 
-[spam_allow_source]
-name      = "HaGeZi Spam Allow"
-url       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
-relevance = false
-
-[policies.relaxed]
-prefix              = "L_Relaxed"
-name                = "AdBlock HaGeZi Normal"
-action              = "block"
-type                = "DOMAIN"
-use_spam_tld        = false
-include             = ["HaGeZi Normal", "HaGeZi No SafeSearch", "HaGeZi DynDNS", "HaGeZi Fake"]
-exclude             = []
-security_categories = []
-content_categories  = []
-domains             = []
-
-[policies.blocked_ips]
-prefix  = "L_Blocked_IPs"
-name    = "Block: Malicious Resolved IPs"
-action  = "block"
-type    = "IP"
-include = [
-    "Spamhaus DROP",
-    "Spamhaus DROPv6",
-    "HaGeZi TIF IPs",
-    "IPsum Level 3"
-]
-exclude = []
-
-[policies.pornblock]
-prefix              = "L_ExtraPorn"
-name                = "Porn Block"
-action              = "block"
-type                = "DOMAIN"
-use_spam_tld        = false
-include             = ["Hagezi NSFW", "OISD NSFW"]
-exclude             = []
-security_categories = []
-content_categories  = [2, 67, 125, 133]
-
-[policies.piracyblock]
-prefix              = "L_Piracy"
-name                = "Piracy Block"
-action              = "block"
-type                = "DOMAIN"
-use_spam_tld        = false
-include             = ["HaGeZi Anti Piracy"]
-exclude             = []
-security_categories = []
-content_categories  = [138]
+# ---------- Static / Protected Policies (Never Rank-Trimmed) ----------
 
 [policies.BypassPrevention]
 prefix              = "L_BypassPrevent"
 name                = "Bypass Prevention"
 action              = "block"
 type                = "DOMAIN"
+priority            = 10
+trimmable           = false
 restrict_users      = true
 use_spam_tld        = false
 include             = ["HaGeZi Bypass Prevention"]
@@ -130,38 +87,41 @@ exclude             = []
 security_categories = [68]
 content_categories  = []
 
-[policies.MalwareBlock]
-prefix              = "L_MalwareBlock"
-name                = "Malware Block"
+[policies.relaxed]
+prefix              = "L_Relaxed"
+name                = "AdBlock HaGeZi Normal"
 action              = "block"
 type                = "DOMAIN"
+priority            = 20
+trimmable           = false
 use_spam_tld        = false
-ip_categories       = true
-include             = ["HaGeZi TIF Full"]
+include             = ["HaGeZi Normal", "HaGeZi No SafeSearch", "HaGeZi DynDNS", "HaGeZi Fake"]
 exclude             = []
-# C2/Botnets (178), Malware (80), Spyware (187), Crypto (176), DNS Tunneling (175), DGA (117), Phishing (83), Private IP (153)
-security_categories = [178, 80, 187, 176, 175, 117, 83, 153]
+security_categories = []
 content_categories  = []
+domains             = []
 
-[policies.NewDomainBlock]
-prefix              = "L_NewDomainBlock"
-name                = "New Domain Block"
+[policies.restrictive]
+prefix              = "L_Restrictive"
+name                = "Adblock HaGeZi Pro++"
 action              = "block"
 type                = "DOMAIN"
+priority            = 25
+trimmable           = false
+restrict_users      = true
 use_spam_tld        = false
-ip_categories       = false
-include             = []
+include             = ["HaGeZi Pro++"]
 exclude             = []
-# Brand Embedding (131), Compromised Domains (134)
-#security_categories = [131, 134]
-# Domain age & grayware content categories:
-content_categories  = [32, 169, 177, 128]
+security_categories = []
+content_categories  = []
 
 [policies.social]
 prefix              = "L_Social"
 name                = "Social Block Isaac"
 action              = "block"
 type                = "DOMAIN"
+priority            = 30
+trimmable           = false
 restrict_users      = true
 use_spam_tld        = false
 include             = ["HaGeZi Social"]
@@ -173,3 +133,119 @@ app_ids             = [
     1853, 2678, 2680, 2826, 2831, 2844, 2845, 2848, 2852, 3097, 3098
 ]
 domains             = ["web.archive.org", "linkvertise.com", "rumble.com", "store.steampowered.com", "steamcommunity.com"]
+
+[policies.piracyblock]
+prefix              = "L_Piracy"
+name                = "Piracy Block"
+action              = "block"
+type                = "DOMAIN"
+priority            = 40
+trimmable           = false
+use_spam_tld        = false
+include             = ["HaGeZi Anti Piracy"]
+exclude             = []
+security_categories = []
+content_categories  = [138]
+
+[policies.blocked_ips]
+prefix    = "L_Blocked_IPs"
+name      = "Block: Malicious Resolved IPs"
+action    = "block"
+type      = "IP"
+priority  = 50
+trimmable = false
+include   = [
+    "Spamhaus DROP",
+    "Spamhaus DROPv6",
+    "HaGeZi TIF IPs",
+    "IPsum Level 3"
+]
+exclude   = []
+
+[policies.spamtld]
+prefix              = "L_SpamTLD"
+name                = "HaGeZi Spam TLD"
+action              = "block"
+type                = "DOMAIN"
+priority            = 55
+trimmable           = false
+use_spam_tld        = true
+include             = []
+exclude             = []
+security_categories = []
+content_categories  = []
+
+[policies.NewDomainBlock]
+prefix              = "L_NewDomainBlock"
+name                = "New Domain Block"
+action              = "block"
+type                = "DOMAIN"
+priority            = 60
+trimmable           = false
+use_spam_tld        = false
+ip_categories       = false
+include             = []
+exclude             = []
+# Brand Embedding (131), Compromised Domains (134)
+#security_categories = [131, 134]
+# Domain age & grayware content categories:
+content_categories  = [32, 169, 177, 128]
+
+# ---------- Dynamic Bulk Policies (Rank-Trimmed When Approaching 299k Quota) ----------
+
+[policies.MalwareBlock]
+prefix              = "L_MalwareBlock"
+name                = "Malware Block"
+action              = "block"
+type                = "DOMAIN"
+priority            = 80
+trimmable           = true
+use_spam_tld        = false
+ip_categories       = true
+include             = ["HaGeZi TIF Full"]
+exclude             = []
+# C2/Botnets (178), Malware (80), Spyware (187), Crypto (176), DNS Tunneling (175), DGA (117), Phishing (83), Private IP (153)
+security_categories = [178, 80, 187, 176, 175, 117, 83, 153]
+content_categories  = []
+
+[policies.badware]
+prefix              = "L_Badware"
+name                = "HaGeZi Badware"
+action              = "block"
+type                = "DOMAIN"
+priority            = 85
+trimmable           = true
+use_spam_tld        = false
+include             = ["HaGeZi Badware"]
+exclude             = []
+security_categories = []
+content_categories  = []
+
+[policies.pornblock]
+prefix              = "L_ExtraPorn"
+name                = "Porn Block"
+action              = "block"
+type                = "DOMAIN"
+priority            = 90
+trimmable           = true
+use_spam_tld        = false
+include             = ["Hagezi NSFW", "OISD NSFW"]
+exclude             = []
+security_categories = []
+content_categories  = [2, 67, 125, 133]
+
+# ---------- Inactive Policy Templates ----------
+
+#[policies.AIBlockIsaac]
+#prefix              = "L_AIBlockIsaac"
+#name                = "AI Block Isaac"
+#action              = "block"
+#type                = "DOMAIN"
+#priority            = 35
+#trimmable           = false
+#restrict_users      = true
+#use_spam_tld        = false
+#include             = ["NoAI"]
+#exclude             = []
+#security_categories = []
+#content_categories  = []
