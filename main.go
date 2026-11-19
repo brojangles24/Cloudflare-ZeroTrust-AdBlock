@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -14,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -40,8 +42,11 @@ const (
 	maxSafeDomains         = 299_000
 	maxCloudflareLists     = 299
 	maxLabelPurgeAttempts  = 10
+	unrankedRank           = uint32(math.MaxUint32)
+	coreRankProtectionCap  = 10_000
 	cacheMagicV1           = "RELCAC01"
 	cacheMagicV2           = "RELCAC02"
+	cacheMagicV3           = "RELCAC03"
 	dummyTrafficExpression = `any(dns.domains[*] in {"invalid.local.blocklist.temp"})`
 )
 
@@ -54,6 +59,32 @@ var defaultProtectedRules = []string{
 	"Global Bypass",
 	"Block IoT Network",
 	"YouTube Restricted",
+}
+
+// Exact root domains (and their www. variants) stripped from block policies
+// to prevent upstream feed poisoning from knocking out core infrastructure.
+// Subdomains (e.g., ads.google.com, telemetry.microsoft.com) are NOT exempted.
+var defaultNeverBlock = []string{
+	"cloudflare.com",
+	"cloudflare-dns.com",
+	"one.one.one.one",
+	"github.com",
+	"githubusercontent.com",
+	"raw.githubusercontent.com",
+	"cdn.jsdelivr.net",
+	"google.com",
+	"googleapis.com",
+	"gstatic.com",
+	"apple.com",
+	"icloud.com",
+	"microsoft.com",
+	"windowsupdate.com",
+	"live.com",
+	"tailscale.com",
+	"amazonaws.com",
+	"quad9.net",
+	"digicert.com",
+	"letsencrypt.org",
 }
 
 type topListSpec struct {
@@ -136,9 +167,10 @@ type settingsConfig struct {
 	AutoEnableRules          *bool    `toml:"auto_enable_rules"`
 	BlockPageEnabled         *bool    `toml:"block_page_enabled"`
 	BaseFeed                 string   `toml:"base_feed"`
-	BaseExemptPrefixes       []string `toml:"base_exempt_prefixes"`
 	ProtectedRules           []string `toml:"protected_rules"`
 	UnmanagedListKeywords    []string `toml:"unmanaged_list_keywords"`
+	NeverBlock               []string `toml:"never_block"`
+	DisableDefaultNeverBlock bool     `toml:"disable_default_never_block"`
 	RelevanceCacheDir        string   `toml:"relevance_cache_dir"`
 	RelevanceMinRefreshHours *int64   `toml:"relevance_min_refresh_hours"`
 	RelevanceTTLDays         *int64   `toml:"relevance_ttl_days"`
@@ -149,6 +181,8 @@ type policyConfig struct {
 	Name               string   `toml:"name"`
 	Type               string   `toml:"type"`
 	Action             string   `toml:"action"`
+	Priority           *int     `toml:"priority"`
+	Trimmable          *bool    `toml:"trimmable"`
 	Include            []string `toml:"include"`
 	Exclude            []string `toml:"exclude"`
 	UseSpamTLD         bool     `toml:"use_spam_tld"`
@@ -175,6 +209,82 @@ func (p policyConfig) resolvedAction() string {
 		return "block"
 	}
 	return p.Action
+}
+
+func (p policyConfig) effectiveIdentity(cfg *appConfig) string {
+	if p.RestrictUsers {
+		return cfg.TargetIdentity
+	}
+	return strings.TrimSpace(p.IdentityCondition)
+}
+
+func (p policyConfig) isScoped(cfg *appConfig) bool {
+	return p.effectiveIdentity(cfg) != ""
+}
+
+// isTrimmable defaults to true ONLY for dynamic bulk Porn/NSFW and Malware/TIF policies.
+// Static safety policies (Bypass, AdBlock, Social, Piracy, IP lists, Allow lists) are
+// protected from rank trimming unless explicitly opted in via `trimmable = true`.
+func (p policyConfig) isTrimmable() bool {
+	if p.resolvedAction() == "allow" || p.resolvedType() == "IP" {
+		return false
+	}
+	if p.Trimmable != nil {
+		return *p.Trimmable
+	}
+	var sb strings.Builder
+	sb.WriteString(strings.ToLower(p.Name))
+	sb.WriteByte(' ')
+	sb.WriteString(strings.ToLower(p.Prefix))
+	for _, inc := range p.Include {
+		sb.WriteByte(' ')
+		sb.WriteString(strings.ToLower(inc))
+	}
+	full := sb.String()
+	return strings.Contains(full, "porn") ||
+		strings.Contains(full, "nsfw") ||
+		strings.Contains(full, "adult") ||
+		strings.Contains(full, "malware") ||
+		strings.Contains(full, "tif") ||
+		strings.Contains(full, "threat") ||
+		strings.Contains(full, "badware")
+}
+
+// resolvedPriority assigns lower numbers (higher priority) to static safety lists
+// (Bypass -> AdBlock -> Social -> Piracy -> IPs -> Other) and higher numbers to
+// trimmable bulk lists (Malware=80, Porn=90) so Porn trims first, then Malware.
+func (p policyConfig) resolvedPriority(cfg *appConfig) int {
+	if p.Priority != nil {
+		return *p.Priority
+	}
+	if p.resolvedAction() == "allow" {
+		return 0
+	}
+	if p.resolvedType() == "IP" {
+		return 50
+	}
+
+	key := strings.ToLower(p.Name + " " + p.Prefix)
+	switch {
+	case strings.Contains(key, "bypass"):
+		return 10
+	case strings.Contains(key, "normal") || strings.Contains(key, "relaxed") ||
+		strings.Contains(key, "adblock") || strings.Contains(key, "base") ||
+		slices.Contains(p.Include, cfg.BaseFeed):
+		return 20
+	case strings.Contains(key, "social") || strings.Contains(key, "ai"):
+		return 30
+	case strings.Contains(key, "piracy"):
+		return 40
+	case strings.Contains(key, "malware") || strings.Contains(key, "tif") ||
+		strings.Contains(key, "threat") || strings.Contains(key, "badware") ||
+		strings.Contains(key, "phish"):
+		return 80
+	case strings.Contains(key, "porn") || strings.Contains(key, "nsfw") || strings.Contains(key, "adult"):
+		return 90
+	default:
+		return 60
+	}
 }
 
 func (p policyConfig) clone() policyConfig {
@@ -220,9 +330,9 @@ type appConfig struct {
 	AutoEnableRules         bool
 	BlockPageEnabled        bool
 	BaseFeed                string
-	BaseExemptPrefixes      map[string]struct{}
 	ProtectedRules          map[string]struct{}
 	UnmanagedListKeywords   []string
+	NeverBlock              map[string]struct{}
 	RelevanceCacheDir       string
 	RelevanceMinRefreshSecs int64
 	RelevanceTTLSecs        int64
@@ -257,6 +367,18 @@ func (c *appConfig) isProtectedRule(name string) bool {
 	}
 	for k := range c.ProtectedRules {
 		if strings.Contains(name, k) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *appConfig) isNeverBlocked(domain string) bool {
+	if _, ok := c.NeverBlock[domain]; ok {
+		return true
+	}
+	if trimmed, ok := strings.CutPrefix(domain, "www."); ok {
+		if _, ok := c.NeverBlock[trimmed]; ok {
 			return true
 		}
 	}
@@ -347,15 +469,6 @@ func loadConfig(configPath string, dryRun, forceRefresh, strict bool) (*appConfi
 		baseFeed = "HaGeZi Normal"
 	}
 
-	exemptList := s.BaseExemptPrefixes
-	if len(exemptList) == 0 {
-		exemptList = []string{"L_Normal", "L_Relaxed"}
-	}
-	baseExempt := make(map[string]struct{}, len(exemptList))
-	for _, p := range exemptList {
-		baseExempt[p] = struct{}{}
-	}
-
 	protList := s.ProtectedRules
 	if len(protList) == 0 {
 		protList = defaultProtectedRules
@@ -371,6 +484,18 @@ func loadConfig(configPath string, dryRun, forceRefresh, strict bool) (*appConfi
 	unmanagedKeywords := s.UnmanagedListKeywords
 	if len(unmanagedKeywords) == 0 {
 		unmanagedKeywords = []string{"IoT Bypass"}
+	}
+
+	neverBlock := make(map[string]struct{}, len(defaultNeverBlock)+len(s.NeverBlock))
+	if !s.DisableDefaultNeverBlock {
+		for _, d := range defaultNeverBlock {
+			neverBlock[strings.ToLower(strings.TrimSpace(d))] = struct{}{}
+		}
+	}
+	for _, d := range s.NeverBlock {
+		if clean, ok := normalizeDomain(d); ok {
+			neverBlock[clean] = struct{}{}
+		}
 	}
 
 	cacheDir := strings.TrimSpace(os.Getenv("RELEVANCE_CACHE_DIR"))
@@ -406,9 +531,9 @@ func loadConfig(configPath string, dryRun, forceRefresh, strict bool) (*appConfi
 		AutoEnableRules:         autoEnable,
 		BlockPageEnabled:        blockPage,
 		BaseFeed:                baseFeed,
-		BaseExemptPrefixes:      baseExempt,
 		ProtectedRules:          protected,
 		UnmanagedListKeywords:   unmanagedKeywords,
+		NeverBlock:              neverBlock,
 		RelevanceCacheDir:       cacheDir,
 		RelevanceMinRefreshSecs: minRefreshHours * 3600,
 		RelevanceTTLSecs:        ttlDays * 86400,
@@ -967,7 +1092,7 @@ func normalizeDomain(raw string) (string, bool) {
 	return d, true
 }
 
-func hasParentDomain(host string, lookup map[string]struct{}) bool {
+func hasParentDomain[V any](host string, lookup map[string]V) bool {
 	rest := host
 	for {
 		dot := strings.IndexByte(rest, '.')
@@ -985,7 +1110,7 @@ func hasParentDomain(host string, lookup map[string]struct{}) bool {
 	}
 }
 
-func hasSuffixDomain(host string, lookup map[string]struct{}) bool {
+func hasSuffixDomain[V any](host string, lookup map[string]V) bool {
 	if _, ok := lookup[host]; ok {
 		return true
 	}
@@ -1015,10 +1140,19 @@ func isNonRoutableIP(p netip.Prefix) bool {
 	return false
 }
 
-// ---------- Flat Sorted Relevance Set & Binary Cache ----------
+// ---------- Rank-Aware Flat Relevance Set & Binary Cache (RELCAC03) ----------
 
+type rankedHash struct {
+	hash uint64
+	rank uint32
+}
+
+// relevanceSet stores sorted, unique xxh3_64 hashes in a flat []uint64 slice alongside
+// their best (lowest) popularity rank in a parallel []uint32 slice. Both slices contain
+// zero pointers so Go's GC never scans them (~120 MB flat for 10M domains).
 type relevanceSet struct {
-	hashes []uint64 // sorted, deduplicated; zero GC pointer overhead
+	hashes []uint64
+	ranks  []uint32
 }
 
 func (rs *relevanceSet) len() int {
@@ -1028,30 +1162,36 @@ func (rs *relevanceSet) len() int {
 	return len(rs.hashes)
 }
 
-func (rs *relevanceSet) contains(h uint64) bool {
-	_, ok := slices.BinarySearch(rs.hashes, h)
-	return ok
-}
+func (rs *relevanceSet) bestRank(host string) (uint32, bool) {
+	if rs == nil || len(rs.hashes) == 0 {
+		return unrankedRank, false
+	}
+	best := unrankedRank
+	found := false
 
-func (rs *relevanceSet) matches(host string) bool {
-	if rs.contains(xxh3.HashString(host)) {
-		return true
+	if idx, ok := slices.BinarySearch(rs.hashes, xxh3.HashString(host)); ok {
+		best = rs.ranks[idx]
+		found = true
 	}
 	rest := host
 	for {
 		dot := strings.IndexByte(rest, '.')
 		if dot < 0 {
-			return false
+			break
 		}
 		parent := rest[dot+1:]
 		if !strings.ContainsRune(parent, '.') {
-			return false
+			break
 		}
-		if rs.contains(xxh3.HashString(parent)) {
-			return true
+		if idx, ok := slices.BinarySearch(rs.hashes, xxh3.HashString(parent)); ok {
+			if rs.ranks[idx] < best {
+				best = rs.ranks[idx]
+			}
+			found = true
 		}
 		rest = parent
 	}
+	return best, found
 }
 
 type relevanceMeta struct {
@@ -1135,22 +1275,36 @@ func saveRelevanceCache(cacheDir string, rs *relevanceSet, meta *relevanceMeta) 
 	hasher := xxh3.New()
 
 	var hdr [16]byte
-	copy(hdr[:8], cacheMagicV2)
+	copy(hdr[:8], cacheMagicV3)
 	binary.LittleEndian.PutUint64(hdr[8:16], uint64(len(rs.hashes)))
 	if _, err := bw.Write(hdr[:]); err != nil {
 		f.Close()
 		return err
 	}
 
-	chunkBuf := make([]byte, 8192*8)
+	hashBuf := make([]byte, 8192*8)
 	for i := 0; i < len(rs.hashes); i += 8192 {
 		end := min(i+8192, len(rs.hashes))
 		nBytes := (end - i) * 8
 		for j, h := range rs.hashes[i:end] {
-			binary.LittleEndian.PutUint64(chunkBuf[j*8:(j+1)*8], h)
+			binary.LittleEndian.PutUint64(hashBuf[j*8:(j+1)*8], h)
 		}
-		_, _ = hasher.Write(chunkBuf[:nBytes])
-		if _, err := bw.Write(chunkBuf[:nBytes]); err != nil {
+		_, _ = hasher.Write(hashBuf[:nBytes])
+		if _, err := bw.Write(hashBuf[:nBytes]); err != nil {
+			f.Close()
+			return err
+		}
+	}
+
+	rankBuf := make([]byte, 8192*4)
+	for i := 0; i < len(rs.ranks); i += 8192 {
+		end := min(i+8192, len(rs.ranks))
+		nBytes := (end - i) * 4
+		for j, r := range rs.ranks[i:end] {
+			binary.LittleEndian.PutUint32(rankBuf[j*4:(j+1)*4], r)
+		}
+		_, _ = hasher.Write(rankBuf[:nBytes])
+		if _, err := bw.Write(rankBuf[:nBytes]); err != nil {
 			f.Close()
 			return err
 		}
@@ -1184,7 +1338,7 @@ func saveRelevanceCache(cacheDir string, rs *relevanceSet, meta *relevanceMeta) 
 	return atomicRename(metaTmp, metaPath)
 }
 
-func loadRelevanceCache(cacheDir string) (*relevanceSet, error) {
+func loadRelevanceCache(cacheDir string, allowLegacy bool) (*relevanceSet, error) {
 	binPath := filepath.Join(cacheDir, "relevance.bin")
 	f, err := os.Open(binPath)
 	if err != nil {
@@ -1203,55 +1357,102 @@ func loadRelevanceCache(cacheDir string) (*relevanceSet, error) {
 		return nil, err
 	}
 	magic := string(hdr[:8])
-	if magic != cacheMagicV2 && magic != cacheMagicV1 {
-		return nil, fmt.Errorf("invalid relevance cache magic header: %q", magic)
-	}
-
 	count := binary.LittleEndian.Uint64(hdr[8:16])
 	if count < minRelevanceDomains {
 		return nil, fmt.Errorf("relevance cache count (%d) below minimum threshold", count)
 	}
-	expectedLen := int64(count)*8 + 24
-	if stat.Size() != expectedLen {
-		return nil, fmt.Errorf("relevance cache truncated (expected %d bytes, got %d)", expectedLen, stat.Size())
-	}
 
-	hashes := make([]uint64, count)
-	hasher := xxh3.New()
-	chunkBuf := make([]byte, 8192*8)
-	sorted := true
-	var prev uint64
+	switch magic {
+	case cacheMagicV3:
+		expectedLen := int64(count)*12 + 24
+		if stat.Size() != expectedLen {
+			return nil, fmt.Errorf("relevance v3 cache truncated (expected %d bytes, got %d)", expectedLen, stat.Size())
+		}
+		hashes := make([]uint64, count)
+		ranks := make([]uint32, count)
+		hasher := xxh3.New()
 
-	for i := 0; i < int(count); i += 8192 {
-		take := min(8192, int(count)-i)
-		nBytes := take * 8
-		if _, err := io.ReadFull(br, chunkBuf[:nBytes]); err != nil {
+		hashBuf := make([]byte, 8192*8)
+		var prev uint64
+		for i := 0; i < int(count); i += 8192 {
+			take := min(8192, int(count)-i)
+			nBytes := take * 8
+			if _, err := io.ReadFull(br, hashBuf[:nBytes]); err != nil {
+				return nil, err
+			}
+			_, _ = hasher.Write(hashBuf[:nBytes])
+			for j := 0; j < take; j++ {
+				v := binary.LittleEndian.Uint64(hashBuf[j*8 : (j+1)*8])
+				if i+j > 0 && v < prev {
+					return nil, errors.New("relevance v3 cache hashes are not sorted")
+				}
+				prev = v
+				hashes[i+j] = v
+			}
+		}
+
+		rankBuf := make([]byte, 8192*4)
+		for i := 0; i < int(count); i += 8192 {
+			take := min(8192, int(count)-i)
+			nBytes := take * 4
+			if _, err := io.ReadFull(br, rankBuf[:nBytes]); err != nil {
+				return nil, err
+			}
+			_, _ = hasher.Write(rankBuf[:nBytes])
+			for j := 0; j < take; j++ {
+				ranks[i+j] = binary.LittleEndian.Uint32(rankBuf[j*4 : (j+1)*4])
+			}
+		}
+
+		var trailer [8]byte
+		if _, err := io.ReadFull(br, trailer[:]); err != nil {
 			return nil, err
 		}
-		_, _ = hasher.Write(chunkBuf[:nBytes])
-		for j := 0; j < take; j++ {
-			v := binary.LittleEndian.Uint64(chunkBuf[j*8 : (j+1)*8])
-			if i+j > 0 && v < prev {
-				sorted = false
-			}
-			prev = v
-			hashes[i+j] = v
+		if binary.LittleEndian.Uint64(trailer[:]) != hasher.Sum64() {
+			return nil, errors.New("relevance v3 cache checksum mismatch (corrupted file)")
 		}
-	}
+		return &relevanceSet{hashes: hashes, ranks: ranks}, nil
 
-	var trailer [8]byte
-	if _, err := io.ReadFull(br, trailer[:]); err != nil {
-		return nil, err
-	}
-	if binary.LittleEndian.Uint64(trailer[:]) != hasher.Sum64() {
-		return nil, errors.New("relevance cache checksum mismatch (corrupted file)")
-	}
-
-	if !sorted {
+	case cacheMagicV2, cacheMagicV1:
+		if !allowLegacy {
+			return nil, fmt.Errorf("legacy cache format %s detected; upgrading to %s with popularity ranks", magic, cacheMagicV3)
+		}
+		expectedLen := int64(count)*8 + 24
+		if stat.Size() != expectedLen {
+			return nil, fmt.Errorf("legacy relevance cache truncated (expected %d bytes, got %d)", expectedLen, stat.Size())
+		}
+		hashes := make([]uint64, count)
+		hasher := xxh3.New()
+		buf := make([]byte, 8192*8)
+		for i := 0; i < int(count); i += 8192 {
+			take := min(8192, int(count)-i)
+			nBytes := take * 8
+			if _, err := io.ReadFull(br, buf[:nBytes]); err != nil {
+				return nil, err
+			}
+			_, _ = hasher.Write(buf[:nBytes])
+			for j := 0; j < take; j++ {
+				hashes[i+j] = binary.LittleEndian.Uint64(buf[j*8 : (j+1)*8])
+			}
+		}
+		var trailer [8]byte
+		if _, err := io.ReadFull(br, trailer[:]); err != nil {
+			return nil, err
+		}
+		if binary.LittleEndian.Uint64(trailer[:]) != hasher.Sum64() {
+			return nil, errors.New("legacy relevance cache checksum mismatch")
+		}
 		slices.Sort(hashes)
 		hashes = slices.Compact(hashes)
+		ranks := make([]uint32, len(hashes))
+		for i := range ranks {
+			ranks[i] = unrankedRank
+		}
+		return &relevanceSet{hashes: hashes, ranks: ranks}, nil
+
+	default:
+		return nil, fmt.Errorf("invalid relevance cache magic header: %q", magic)
 	}
-	return &relevanceSet{hashes: hashes}, nil
 }
 
 func loadRelevanceMeta(cacheDir string) *relevanceMeta {
@@ -1266,9 +1467,27 @@ func loadRelevanceMeta(cacheDir string) *relevanceMeta {
 	return &m
 }
 
-// ---------- Feed Fetching & Parsing ----------
+// ---------- Feed Fetching, HTML Guardrail, & Parsing ----------
 
-func fetchWithRetryMeta(client *http.Client, url string) ([]byte, string, error) {
+func looksLikeHTMLOrXML(contentType string, body []byte) bool {
+	ct := strings.ToLower(contentType)
+	if strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml") {
+		return true
+	}
+	sample := body
+	if len(sample) > 512 {
+		sample = sample[:512]
+	}
+	sample = bytes.TrimPrefix(sample, []byte{0xEF, 0xBB, 0xBF}) // UTF-8 BOM
+	trimmed := strings.ToLower(strings.TrimSpace(string(sample)))
+	return strings.HasPrefix(trimmed, "<!doctype") ||
+		strings.HasPrefix(trimmed, "<html") ||
+		strings.HasPrefix(trimmed, "<head") ||
+		strings.HasPrefix(trimmed, "<body") ||
+		strings.HasPrefix(trimmed, "<?xml")
+}
+
+func fetchWithRetryMeta(client *http.Client, url string, checkBodyHTML bool) ([]byte, string, error) {
 	for attempt := 0; attempt < 5; attempt++ {
 		req, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
@@ -1277,15 +1496,19 @@ func fetchWithRetryMeta(client *http.Client, url string) ([]byte, string, error)
 		req.Header.Set("User-Agent", uaStr)
 		resp, err := client.Do(req)
 		if err == nil {
+			ct := resp.Header.Get("Content-Type")
 			body, readErr := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			if readErr == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-				return body, extractHeaderFingerprint(resp.Header), nil
-			}
 			if readErr != nil {
 				err = readErr
-			} else {
+			} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 				err = fmt.Errorf("HTTP %d", resp.StatusCode)
+			} else if strings.Contains(strings.ToLower(ct), "text/html") || strings.Contains(strings.ToLower(ct), "application/xhtml") {
+				err = fmt.Errorf("HTML response rejected (Content-Type: %s)", ct)
+			} else if checkBodyHTML && looksLikeHTMLOrXML(ct, body) {
+				err = errors.New("HTML/XML error page detected in feed body")
+			} else {
+				return body, extractHeaderFingerprint(resp.Header), nil
 			}
 		}
 		if attempt < 4 {
@@ -1302,25 +1525,42 @@ func fetchWithRetryMeta(client *http.Client, url string) ([]byte, string, error)
 }
 
 func fetchWithRetry(client *http.Client, url string) ([]byte, error) {
-	b, _, err := fetchWithRetryMeta(client, url)
+	b, _, err := fetchWithRetryMeta(client, url, true)
 	return b, err
 }
 
-func parseCSVStream(r io.Reader, col int, skipHeader bool) []uint64 {
-	var hashes []uint64
+func sortAndCompactRanked(items []rankedHash) []rankedHash {
+	slices.SortFunc(items, func(a, b rankedHash) int {
+		if c := cmp.Compare(a.hash, b.hash); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.rank, b.rank)
+	})
+	return slices.CompactFunc(items, func(a, b rankedHash) bool {
+		return a.hash == b.hash
+	})
+}
+
+func parseCSVStream(r io.Reader, col int, skipHeader bool) []rankedHash {
+	var items []rankedHash
 	br := bufio.NewReaderSize(r, 64*1024)
-	idx := 0
+	rowIdx := 0
+	var rank uint32
 	for {
 		line, err := br.ReadString('\n')
 		if len(line) > 0 {
-			curIdx := idx
-			idx++
+			curIdx := rowIdx
+			rowIdx++
 			if !(skipHeader && curIdx == 0) {
+				rank++
 				if rawCol, ok := nthCSVCol(line, col); ok {
 					trimmed := strings.Trim(strings.TrimSpace(rawCol), `"`)
 					if trimmed != "" {
 						if clean, ok := normalizeDomain(trimmed); ok {
-							hashes = append(hashes, xxh3.HashString(clean))
+							items = append(items, rankedHash{
+								hash: xxh3.HashString(clean),
+								rank: rank,
+							})
 						}
 					}
 				}
@@ -1330,8 +1570,7 @@ func parseCSVStream(r io.Reader, col int, skipHeader bool) []uint64 {
 			break
 		}
 	}
-	slices.Sort(hashes)
-	return slices.Compact(hashes)
+	return sortAndCompactRanked(items)
 }
 
 func nthCSVCol(line string, col int) (string, bool) {
@@ -1353,11 +1592,11 @@ func nthCSVCol(line string, col int) (string, bool) {
 }
 
 func buildFreshRelevanceDataset(client *http.Client) (*relevanceSet, map[string]string, error) {
-	logInfo("Fetching fresh relevance datasets directly from sources...")
+	logInfo("Fetching fresh ranked relevance datasets directly from sources...")
 	type itemResult struct {
-		url    string
-		fp     string
-		hashes []uint64
+		url   string
+		fp    string
+		items []rankedHash
 	}
 	results := make([]itemResult, len(defaultTopLists))
 	var wg sync.WaitGroup
@@ -1366,14 +1605,14 @@ func buildFreshRelevanceDataset(client *http.Client) (*relevanceSet, map[string]
 		wg.Add(1)
 		go func(i int, spec topListSpec) {
 			defer wg.Done()
-			rawBytes, fp, err := fetchWithRetryMeta(client, spec.URL)
+			rawBytes, fp, err := fetchWithRetryMeta(client, spec.URL, spec.Compression == "raw")
 			if err != nil {
 				logWarn("Failed to fetch top list (%s): %v", spec.URL, err)
 				results[i] = itemResult{url: spec.URL}
 				return
 			}
 
-			var parsed []uint64
+			var parsed []rankedHash
 			switch spec.Compression {
 			case "zip":
 				zr, err := zip.NewReader(bytes.NewReader(rawBytes), int64(len(rawBytes)))
@@ -1408,8 +1647,8 @@ func buildFreshRelevanceDataset(client *http.Client) (*relevanceSet, map[string]
 				parsed = parseCSVStream(bytes.NewReader(rawBytes), spec.Col, spec.SkipHeader)
 			}
 
-			logInfo("Fetched & parsed %d domains from %s", len(parsed), spec.URL)
-			results[i] = itemResult{url: spec.URL, fp: fp, hashes: parsed}
+			logInfo("Fetched & parsed %d ranked domains from %s", len(parsed), spec.URL)
+			results[i] = itemResult{url: spec.URL, fp: fp, items: parsed}
 		}(i, spec)
 	}
 	wg.Wait()
@@ -1420,23 +1659,30 @@ func buildFreshRelevanceDataset(client *http.Client) (*relevanceSet, map[string]
 		if r.fp != "" {
 			headersMap[r.url] = r.fp
 		}
-		totalCap += len(r.hashes)
+		totalCap += len(r.items)
 	}
 
-	master := make([]uint64, 0, totalCap)
+	merged := make([]rankedHash, 0, totalCap)
 	for i := range results {
-		master = append(master, results[i].hashes...)
-		results[i].hashes = nil
+		merged = append(merged, results[i].items...)
+		results[i].items = nil
 	}
-	slices.Sort(master)
-	master = slices.Compact(master)
-	master = slices.Clip(master)
+	merged = sortAndCompactRanked(merged)
 
-	if len(master) < minRelevanceDomains {
-		return nil, nil, fmt.Errorf("relevance dataset critically low (%d domains)", len(master))
+	if len(merged) < minRelevanceDomains {
+		return nil, nil, fmt.Errorf("relevance dataset critically low (%d domains)", len(merged))
 	}
-	logInfo("Relevance dataset compiled: %d hashed root domains.", len(master))
-	return &relevanceSet{hashes: master}, headersMap, nil
+
+	hashes := make([]uint64, len(merged))
+	ranks := make([]uint32, len(merged))
+	for i, it := range merged {
+		hashes[i] = it.hash
+		ranks[i] = it.rank
+	}
+	merged = nil
+
+	logInfo("Ranked relevance dataset compiled: %d hashed root domains.", len(hashes))
+	return &relevanceSet{hashes: hashes, ranks: ranks}, headersMap, nil
 }
 
 func resolveRelevanceDataset(client *http.Client, cfg *appConfig) (*relevanceSet, string, error) {
@@ -1449,7 +1695,7 @@ func resolveRelevanceDataset(client *http.Client, cfg *appConfig) (*relevanceSet
 	}
 	now := time.Now().Unix()
 
-	if !cfg.ForceRefreshRelevance && cachedMeta != nil {
+	if !cfg.ForceRefreshRelevance && cachedMeta != nil && cachedMeta.Version >= 3 {
 		ageSecs := max(now-cachedMeta.CreatedAt, 0)
 		shouldUseCache := false
 
@@ -1480,19 +1726,21 @@ func resolveRelevanceDataset(client *http.Client, cfg *appConfig) (*relevanceSet
 		}
 
 		if shouldUseCache {
-			rs, err := loadRelevanceCache(cfg.RelevanceCacheDir)
+			rs, err := loadRelevanceCache(cfg.RelevanceCacheDir, false)
 			if err == nil {
-				logInfo("Loaded %d hashed root domains from relevance cache.", rs.len())
+				logInfo("Loaded %d ranked root domains from relevance cache.", rs.len())
 				return rs, "cache-hit", nil
 			}
 			logWarn("Cached relevance.bin unusable (%v); rebuilding from upstream.", err)
 		}
+	} else if binExists && cachedMeta != nil && cachedMeta.Version < 3 {
+		logInfo("Upgrading relevance cache from v%d to v3 (rank-aware format)...", cachedMeta.Version)
 	}
 
 	rs, sourceHeaders, err := buildFreshRelevanceDataset(client)
 	if err == nil {
 		meta := &relevanceMeta{
-			Version:       2,
+			Version:       3,
 			CreatedAt:     now,
 			DomainCount:   rs.len(),
 			SourceHeaders: sourceHeaders,
@@ -1500,15 +1748,15 @@ func resolveRelevanceDataset(client *http.Client, cfg *appConfig) (*relevanceSet
 		if saveErr := saveRelevanceCache(cfg.RelevanceCacheDir, rs, meta); saveErr != nil {
 			logWarn("Failed writing relevance cache to %s: %v (continuing sync)", cfg.RelevanceCacheDir, saveErr)
 		} else {
-			logInfo("Saved relevance cache to %s (%d hashes).", cfg.RelevanceCacheDir, rs.len())
+			logInfo("Saved ranked relevance cache to %s (%d entries).", cfg.RelevanceCacheDir, rs.len())
 		}
 		return rs, "refreshed", nil
 	}
 
 	if binExists {
 		logWarn("Fresh relevance fetch failed (%v). Attempting fallback to existing stale cache...", err)
-		if stale, loadErr := loadRelevanceCache(cfg.RelevanceCacheDir); loadErr == nil {
-			logWarn("Self-healed using stale relevance cache (%d hashes) to keep sync running.", stale.len())
+		if stale, loadErr := loadRelevanceCache(cfg.RelevanceCacheDir, true); loadErr == nil {
+			logWarn("Self-healed using stale relevance cache (%d entries) to keep sync running.", stale.len())
 			return stale, "stale-fallback", nil
 		}
 	}
@@ -1565,7 +1813,7 @@ func parseSources(table map[string]any, isIP bool) []sourceSpec {
 	return out
 }
 
-func ingestDomainToken(rawTok string, rel *relevanceSet, kept map[string]struct{}) {
+func ingestDomainToken(rawTok string, rel *relevanceSet, enforceRelevance bool, kept map[string]uint32) {
 	beforeMod := rawTok
 	if idx := strings.IndexByte(rawTok, '$'); idx >= 0 {
 		beforeMod = rawTok[:idx]
@@ -1587,17 +1835,23 @@ func ingestDomainToken(rawTok string, rel *relevanceSet, kept map[string]struct{
 	if _, exists := kept[clean]; exists {
 		return
 	}
+
+	rank := unrankedRank
 	if rel != nil {
 		checkDom := strings.TrimPrefix(clean, "www.")
-		if !rel.matches(checkDom) {
+		best, found := rel.bestRank(checkDom)
+		if enforceRelevance && !found {
 			return
 		}
+		if found {
+			rank = best
+		}
 	}
-	kept[clean] = struct{}{}
+	kept[clean] = rank
 }
 
-func fetchFeedSource(client *http.Client, spec sourceSpec, rel *relevanceSet) (map[string]struct{}, error) {
-	kept := make(map[string]struct{})
+func fetchFeedSource(client *http.Client, spec sourceSpec, rel *relevanceSet) (map[string]uint32, error) {
+	kept := make(map[string]uint32)
 	for _, u := range spec.URLs {
 		rawBytes, err := fetchWithRetry(client, u)
 		if err != nil {
@@ -1624,10 +1878,10 @@ func fetchFeedSource(client *http.Client, spec sourceSpec, rel *relevanceSet) (m
 						if len(fields) > 0 {
 							if _, ipErr := netip.ParseAddr(fields[0]); ipErr == nil {
 								for _, tok := range fields[1:] {
-									ingestDomainToken(tok, rel, kept)
+									ingestDomainToken(tok, rel, spec.EnableRelevance, kept)
 								}
 							} else {
-								ingestDomainToken(fields[len(fields)-1], rel, kept)
+								ingestDomainToken(fields[len(fields)-1], rel, spec.EnableRelevance, kept)
 							}
 						}
 					}
@@ -1638,7 +1892,7 @@ func fetchFeedSource(client *http.Client, spec sourceSpec, rel *relevanceSet) (m
 			}
 		}
 	}
-	logInfo("Fetched %s: %d kept", spec.Name, len(kept))
+	logInfo("Fetched %s: %d kept (relevance=%t)", spec.Name, len(kept), spec.EnableRelevance)
 	return kept, nil
 }
 
@@ -1749,17 +2003,29 @@ func fetchSpamTLDs(client *http.Client, url string) (string, map[string]struct{}
 	return expr, tldSet, nil
 }
 
-// ---------- Policy Compilation ----------
+// ---------- Policy Compilation, Cross-Policy Dedup, Rank Trimming, & Hash Bucketing ----------
 
 type fetchedFeed struct {
 	IsIP    bool
-	Domains map[string]struct{}
+	Domains map[string]uint32
 	IPs     map[netip.Prefix]struct{}
 }
 
+type rankedEntry struct {
+	Value string
+	Rank  uint32
+}
+
 type compiledPolicy struct {
-	Policy  policyConfig
-	Entries []string
+	Policy       policyConfig
+	Priority     int
+	Trimmable    bool
+	Entries      []rankedEntry
+	Chunks       [][]string
+	RawCount     int
+	DedupedCount int
+	TrimmedCount int
+	GuardedCount int
 }
 
 func buildPolicySets(
@@ -1768,13 +2034,20 @@ func buildPolicySets(
 	fetched map[string]fetchedFeed,
 	spamTLDs map[string]struct{},
 	hasActiveSpamTLD bool,
-) []compiledPolicy {
-	var baseSet map[string]struct{}
-	if feed, ok := fetched[cfg.BaseFeed]; ok && !feed.IsIP {
-		baseSet = feed.Domains
+) ([]compiledPolicy, []string) {
+	// Step 1: Build each policy's own domain/IP set in parallel
+	type rawPolicySet struct {
+		policy       policyConfig
+		priority     int
+		trimmable    bool
+		domains      map[string]uint32
+		ips          []string
+		rawCount     int
+		guardedCount int
+		guardedHits  []string
 	}
 
-	out := make([]compiledPolicy, len(policies))
+	rawSets := make([]rawPolicySet, len(policies))
 	sem := make(chan struct{}, cfg.MaxWorkers)
 	var wg sync.WaitGroup
 
@@ -1785,6 +2058,7 @@ func buildPolicySets(
 			defer wg.Done()
 			defer func() { <-sem }()
 
+			prio := p.resolvedPriority(cfg)
 			if p.resolvedType() == "IP" {
 				var builder netipx.IPSetBuilder
 				for _, inc := range p.Include {
@@ -1809,15 +2083,23 @@ func buildPolicySets(
 						collapsed[j] = pf.String()
 					}
 				}
-				out[i] = compiledPolicy{Policy: p.clone(), Entries: collapsed}
+				rawSets[i] = rawPolicySet{
+					policy:    p.clone(),
+					priority:  prio,
+					trimmable: false,
+					ips:       collapsed,
+					rawCount:  len(collapsed),
+				}
 				return
 			}
 
-			pSet := make(map[string]struct{})
+			pSet := make(map[string]uint32)
 			for _, inc := range p.Include {
 				if feed, ok := fetched[inc]; ok && !feed.IsIP {
-					for d := range feed.Domains {
-						pSet[d] = struct{}{}
+					for d, r := range feed.Domains {
+						if prev, exists := pSet[d]; !exists || r < prev {
+							pSet[d] = r
+						}
 					}
 				}
 			}
@@ -1829,17 +2111,9 @@ func buildPolicySets(
 				}
 			}
 
+			var guardedHits []string
+			guardedCount := 0
 			if p.resolvedAction() != "allow" {
-				if baseSet != nil {
-					_, exempt := cfg.BaseExemptPrefixes[p.Prefix]
-					if !exempt && !slices.Contains(p.Include, cfg.BaseFeed) {
-						for d := range pSet {
-							if hasSuffixDomain(d, baseSet) {
-								delete(pSet, d)
-							}
-						}
-					}
-				}
 				if len(spamTLDs) > 0 && (p.UseSpamTLD || hasActiveSpamTLD) {
 					for d := range pSet {
 						if dot := strings.LastIndexByte(d, '.'); dot >= 0 {
@@ -1849,20 +2123,427 @@ func buildPolicySets(
 						}
 					}
 				}
-			}
-
-			pruned := make([]string, 0, len(pSet))
-			for d := range pSet {
-				if !hasParentDomain(d, pSet) {
-					pruned = append(pruned, d)
+				for d := range pSet {
+					if cfg.isNeverBlocked(d) {
+						delete(pSet, d)
+						guardedCount++
+						guardedHits = append(guardedHits, fmt.Sprintf("%s (%s)", d, p.Name))
+					}
 				}
 			}
-			slices.Sort(pruned)
-			out[i] = compiledPolicy{Policy: p.clone(), Entries: pruned}
+
+			// Prune redundant subdomains within this policy itself
+			for d := range pSet {
+				if hasParentDomain(d, pSet) {
+					delete(pSet, d)
+				}
+			}
+
+			rawSets[i] = rawPolicySet{
+				policy:       p.clone(),
+				priority:     prio,
+				trimmable:    p.isTrimmable(),
+				domains:      pSet,
+				rawCount:     len(pSet),
+				guardedCount: guardedCount,
+				guardedHits:  guardedHits,
+			}
 		}(i, pol)
 	}
 	wg.Wait()
-	return out
+
+	var guardWarnings []string
+	for _, rs := range rawSets {
+		guardWarnings = append(guardWarnings, rs.guardedHits...)
+	}
+	if len(guardWarnings) > 0 {
+		slices.Sort(guardWarnings)
+		logWarn("Safety floor stripped %d protected root domain(s): %s", len(guardWarnings), strings.Join(guardWarnings, ", "))
+	}
+
+	// Step 2: Priority-ordered cross-policy deduplication for DOMAIN block policies.
+	// Protected (non-trimmable) policies NEVER dedup against trimmable policies so
+	// rank trimming Porn/Malware can never accidentally unblock a domain from a static list.
+	order := make([]int, len(rawSets))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortFunc(order, func(a, b int) int {
+		if c := cmp.Compare(rawSets[a].priority, rawSets[b].priority); c != 0 {
+			return c
+		}
+		return cmp.Compare(rawSets[a].policy.Name, rawSets[b].policy.Name)
+	})
+
+	globalStableBlocked := make(map[string]struct{})
+	globalAllBlocked := make(map[string]struct{})
+	scopedStableBlocked := make(map[string]map[string]struct{})
+	scopedAllBlocked := make(map[string]map[string]struct{})
+	dedupCounts := make([]int, len(rawSets))
+
+	// Pass 2a: Global domain block policies
+	for _, idx := range order {
+		rs := &rawSets[idx]
+		if rs.policy.resolvedType() != "DOMAIN" || rs.policy.resolvedAction() == "allow" || rs.policy.isScoped(cfg) {
+			continue
+		}
+		targetLookup := globalStableBlocked
+		if rs.trimmable {
+			targetLookup = globalAllBlocked
+		}
+		removed := 0
+		for d := range rs.domains {
+			if hasSuffixDomain(d, targetLookup) {
+				delete(rs.domains, d)
+				removed++
+			}
+		}
+		dedupCounts[idx] = removed
+		for d := range rs.domains {
+			globalAllBlocked[d] = struct{}{}
+			if !rs.trimmable {
+				globalStableBlocked[d] = struct{}{}
+			}
+		}
+		if removed > 0 {
+			logInfo("Cross-policy dedup removed %d duplicate domain(s) from '%s' (priority %d)",
+				removed, rs.policy.Name, rs.priority)
+		}
+	}
+
+	// Pass 2b: Scoped/restricted domain block policies
+	for _, idx := range order {
+		rs := &rawSets[idx]
+		if rs.policy.resolvedType() != "DOMAIN" || rs.policy.resolvedAction() == "allow" || !rs.policy.isScoped(cfg) {
+			continue
+		}
+		idKey := rs.policy.effectiveIdentity(cfg)
+		peerStable := scopedStableBlocked[idKey]
+		if peerStable == nil {
+			peerStable = make(map[string]struct{})
+			scopedStableBlocked[idKey] = peerStable
+		}
+		peerAll := scopedAllBlocked[idKey]
+		if peerAll == nil {
+			peerAll = make(map[string]struct{})
+			scopedAllBlocked[idKey] = peerAll
+		}
+
+		globalLookup := globalStableBlocked
+		peerLookup := peerStable
+		if rs.trimmable {
+			globalLookup = globalAllBlocked
+			peerLookup = peerAll
+		}
+
+		removed := 0
+		for d := range rs.domains {
+			if hasSuffixDomain(d, globalLookup) || hasSuffixDomain(d, peerLookup) {
+				delete(rs.domains, d)
+				removed++
+			}
+		}
+		dedupCounts[idx] = removed
+		for d := range rs.domains {
+			peerAll[d] = struct{}{}
+			if !rs.trimmable {
+				peerStable[d] = struct{}{}
+			}
+		}
+		if removed > 0 {
+			logInfo("Cross-policy dedup removed %d duplicate domain(s) from scoped policy '%s' (priority %d)",
+				removed, rs.policy.Name, rs.priority)
+		}
+	}
+
+	// Step 3: Materialize rankedEntry slices sorted by (Rank asc, Value asc)
+	out := make([]compiledPolicy, len(order))
+	for outIdx, idx := range order {
+		rs := rawSets[idx]
+		if rs.policy.resolvedType() == "IP" {
+			entries := make([]rankedEntry, len(rs.ips))
+			for j, cidr := range rs.ips {
+				entries[j] = rankedEntry{Value: cidr, Rank: 0}
+			}
+			out[outIdx] = compiledPolicy{
+				Policy:   rs.policy,
+				Priority: rs.priority,
+				Entries:  entries,
+				RawCount: rs.rawCount,
+			}
+			continue
+		}
+		entries := make([]rankedEntry, 0, len(rs.domains))
+		for d, r := range rs.domains {
+			entries = append(entries, rankedEntry{Value: d, Rank: r})
+		}
+		slices.SortFunc(entries, func(a, b rankedEntry) int {
+			if c := cmp.Compare(a.Rank, b.Rank); c != 0 {
+				return c
+			}
+			return cmp.Compare(a.Value, b.Value)
+		})
+		out[outIdx] = compiledPolicy{
+			Policy:       rs.policy,
+			Priority:     rs.priority,
+			Trimmable:    rs.trimmable,
+			Entries:      entries,
+			RawCount:     rs.rawCount,
+			DedupedCount: dedupCounts[idx],
+			GuardedCount: rs.guardedCount,
+		}
+	}
+
+	return out, guardWarnings
+}
+
+func sumMinCapacity(compiled []compiledPolicy, maxListSize int) (int, int) {
+	entries, minLists := 0, 0
+	for _, cp := range compiled {
+		entries += len(cp.Entries)
+		minLists += divCeil(len(cp.Entries), maxListSize)
+	}
+	return entries, minLists
+}
+
+// trimByRank removes the least-popular (highest rank number) domains ONLY from
+// trimmable policies (Porn first, then Malware) until entry and list limits are met.
+func trimByRank(compiled []compiledPolicy, activeQuota, maxActiveLists, maxListSize int) []string {
+	var warnings []string
+	totalEntries, minLists := sumMinCapacity(compiled, maxListSize)
+	if totalEntries <= activeQuota && minLists <= maxActiveLists {
+		return nil
+	}
+
+	revOrder := make([]int, 0, len(compiled))
+	for i := range compiled {
+		if compiled[i].Trimmable && len(compiled[i].Entries) > 0 {
+			revOrder = append(revOrder, i)
+		}
+	}
+	slices.SortFunc(revOrder, func(a, b int) int {
+		if c := cmp.Compare(compiled[b].Priority, compiled[a].Priority); c != 0 {
+			return c
+		}
+		return cmp.Compare(compiled[b].Policy.Name, compiled[a].Policy.Name)
+	})
+
+	// Pass 1: Trim excess entries while protecting each trimmable policy's top 10k domains
+	// Pass 2: If still over quota, allow trimming into the protected 10k core
+	for pass := 0; pass < 2 && totalEntries > activeQuota; pass++ {
+		for _, idx := range revOrder {
+			if totalEntries <= activeQuota {
+				break
+			}
+			cp := &compiled[idx]
+			floor := 0
+			if pass == 0 {
+				floor = min(len(cp.Entries), coreRankProtectionCap)
+			}
+			available := len(cp.Entries) - floor
+			if available <= 0 {
+				continue
+			}
+			toDrop := min(available, totalEntries-activeQuota)
+			cp.Entries = cp.Entries[:len(cp.Entries)-toDrop]
+			cp.TrimmedCount += toDrop
+			totalEntries -= toDrop
+		}
+	}
+
+	// Pass 3: If entries fit activeQuota but list rounding exceeds maxActiveLists,
+	// trim the smallest partial tail chunks from trimmable policies to reclaim whole lists.
+	_, minLists = sumMinCapacity(compiled, maxListSize)
+	for minLists > maxActiveLists {
+		bestIdx := -1
+		bestDrop := math.MaxInt
+		bestPrio := -1
+
+		for _, idx := range revOrder {
+			n := len(compiled[idx].Entries)
+			if n == 0 {
+				continue
+			}
+			tail := n % maxListSize
+			if tail == 0 {
+				tail = maxListSize
+			}
+			if tail < bestDrop || (tail == bestDrop && compiled[idx].Priority > bestPrio) {
+				bestDrop = tail
+				bestIdx = idx
+				bestPrio = compiled[idx].Priority
+			}
+		}
+		if bestIdx < 0 {
+			break
+		}
+		cp := &compiled[bestIdx]
+		cp.Entries = cp.Entries[:len(cp.Entries)-bestDrop]
+		cp.TrimmedCount += bestDrop
+		minLists--
+	}
+
+	for i := range compiled {
+		cp := &compiled[i]
+		if cp.TrimmedCount > 0 {
+			worstRankStr := "none"
+			if n := len(cp.Entries); n > 0 {
+				r := cp.Entries[n-1].Rank
+				if r == unrankedRank {
+					worstRankStr = "unranked"
+				} else {
+					worstRankStr = fmt.Sprintf("#%d", r)
+				}
+			}
+			msg := fmt.Sprintf("Rank-trimmed %d low-popularity domains from '%s' (kept %d, worst kept rank: %s)",
+				cp.TrimmedCount, cp.Policy.Name, len(cp.Entries), worstRankStr)
+			logWarn("%s", msg)
+			warnings = append(warnings, msg)
+		}
+	}
+	return warnings
+}
+
+func bucketEntries(entries []rankedEntry, numBuckets, maxListSize int) [][]string {
+	if len(entries) == 0 || numBuckets <= 0 {
+		return nil
+	}
+	if numBuckets == 1 {
+		out := make([]string, len(entries))
+		for i, e := range entries {
+			out[i] = e.Value
+		}
+		slices.Sort(out)
+		return [][]string{out}
+	}
+
+	buckets := make([][]string, numBuckets)
+	avg := len(entries)/numBuckets + 16
+	for i := range buckets {
+		buckets[i] = make([]string, 0, min(avg, maxListSize))
+	}
+
+	for _, e := range entries {
+		idx := int(xxh3.HashString(e.Value) % uint64(numBuckets))
+		buckets[idx] = append(buckets[idx], e.Value)
+	}
+
+	var overflow []string
+	for i := range buckets {
+		slices.Sort(buckets[i])
+		if len(buckets[i]) > maxListSize {
+			overflow = append(overflow, buckets[i][maxListSize:]...)
+			buckets[i] = buckets[i][:maxListSize]
+		}
+	}
+
+	if len(overflow) > 0 {
+		slices.Sort(overflow)
+		touched := make([]bool, numBuckets)
+		for _, item := range overflow {
+			start := int(xxh3.HashString(item) % uint64(numBuckets))
+			for step := 1; step <= numBuckets; step++ {
+				b := (start + step) % numBuckets
+				if len(buckets[b]) < maxListSize {
+					buckets[b] = append(buckets[b], item)
+					touched[b] = true
+					break
+				}
+			}
+		}
+		for i, wasTouched := range touched {
+			if wasTouched {
+				slices.Sort(buckets[i])
+			}
+		}
+	}
+
+	nonEmpty := buckets[:0]
+	for _, b := range buckets {
+		if len(b) > 0 {
+			nonEmpty = append(nonEmpty, b)
+		}
+	}
+	return nonEmpty
+}
+
+// assignHashBuckets chooses a sticky bucket count per policy (avoiding shift cascades),
+// tightens slack policies if approaching maxActiveLists, and materializes deterministic chunks.
+func assignHashBuckets(compiled []compiledPolicy, existingLists []gatewayList, maxListSize, maxActiveLists int) int {
+	existingCounts := make(map[string]int, len(compiled))
+	for _, cp := range compiled {
+		if cp.Policy.Prefix == "" {
+			continue
+		}
+		count := 0
+		for _, l := range existingLists {
+			if _, ok := parseChunkIndex(l.Name, cp.Policy.Prefix); ok {
+				count++
+			}
+		}
+		existingCounts[cp.Policy.Prefix] = count
+	}
+
+	targetSize := max((maxListSize*90)/100, 1)
+	minFillSize := max((maxListSize*75)/100, 1)
+
+	bucketCounts := make([]int, len(compiled))
+	minBuckets := make([]int, len(compiled))
+	totalBuckets := 0
+
+	for i, cp := range compiled {
+		n := len(cp.Entries)
+		if n == 0 {
+			continue
+		}
+		if n <= maxListSize {
+			bucketCounts[i] = 1
+			minBuckets[i] = 1
+			totalBuckets++
+			continue
+		}
+
+		minB := divCeil(n, maxListSize)
+		targetB := divCeil(n, targetSize)
+		maxStickyB := divCeil(n, minFillSize)
+		minBuckets[i] = minB
+
+		existingB := existingCounts[cp.Policy.Prefix]
+		if existingB >= minB && existingB <= maxStickyB {
+			bucketCounts[i] = existingB
+		} else {
+			bucketCounts[i] = targetB
+		}
+		totalBuckets += bucketCounts[i]
+	}
+
+	// If headroom pushes total lists above maxActiveLists, tighten only the slackest policies
+	for totalBuckets > maxActiveLists {
+		slackestIdx := -1
+		lowestFill := math.MaxFloat64
+		for i, cp := range compiled {
+			if bucketCounts[i] > minBuckets[i] {
+				fill := float64(len(cp.Entries)) / float64(bucketCounts[i])
+				if fill < lowestFill {
+					lowestFill = fill
+					slackestIdx = i
+				}
+			}
+		}
+		if slackestIdx < 0 {
+			break
+		}
+		saved := bucketCounts[slackestIdx] - minBuckets[slackestIdx]
+		bucketCounts[slackestIdx] = minBuckets[slackestIdx]
+		totalBuckets -= saved
+	}
+
+	actualTotal := 0
+	for i := range compiled {
+		compiled[i].Chunks = bucketEntries(compiled[i].Entries, bucketCounts[i], maxListSize)
+		actualTotal += len(compiled[i].Chunks)
+	}
+	return actualTotal
 }
 
 func compileCategoryExpression(p policyConfig) string {
@@ -2145,20 +2826,58 @@ func deleteListWithRetry(cf *cloudflareAPI, item gatewayList, existingRules *[]g
 	return fmt.Errorf("failed deleting list %s (%s) after 3 attempts", item.Name, item.ID)
 }
 
-// ---------- Sync Operations ----------
+// ---------- Sync Operations & Metrics ----------
+
+type policySyncStats struct {
+	Name         string
+	Prefix       string
+	Type         string
+	Priority     int
+	Trimmable    bool
+	Status       string // "synced", "preserved", "inactive"
+	Entries      int
+	Deduped      int
+	Trimmed      int
+	ListsTotal   int
+	ListsCreated int
+	ListsUpdated int
+	ListsSkipped int
+	RuleAction   string // "unchanged", "updated", "created", "deleted", "preserved"
+}
+
+type policySyncResult struct {
+	ActiveIDs  []string
+	SurplusIDs []string
+	RuleNames  []string
+	Stats      policySyncStats
+}
 
 func syncPolicyInPlace(
 	cf *cloudflareAPI,
 	cfg *appConfig,
 	existingLists []gatewayList,
 	existingRules *[]gatewayRule,
-	entries []string,
-	policy policyConfig,
+	cp compiledPolicy,
 	tldExpr string,
-) ([]string, []string, []string, error) {
+) (policySyncResult, error) {
+	policy := cp.Policy
+	stats := policySyncStats{
+		Name:       policy.Name,
+		Prefix:     policy.Prefix,
+		Type:       policy.resolvedType(),
+		Priority:   cp.Priority,
+		Trimmable:  cp.Trimmable,
+		Status:     "synced",
+		Entries:    len(cp.Entries),
+		Deduped:    cp.DedupedCount,
+		Trimmed:    cp.TrimmedCount,
+		RuleAction: "unchanged",
+	}
+
 	if policy.Prefix == "" || policy.Name == "" {
 		logWarn("Skipping malformed policy with empty prefix or name.")
-		return nil, nil, nil, nil
+		stats.Status = "inactive"
+		return policySyncResult{Stats: stats}, nil
 	}
 
 	policyType := policy.resolvedType()
@@ -2172,20 +2891,22 @@ func syncPolicyInPlace(
 			matched = append(matched, indexedList{idx: idx, list: l})
 		}
 	}
-	slices.SortFunc(matched, func(a, b indexedList) int { return a.idx - b.idx })
+	slices.SortFunc(matched, func(a, b indexedList) int { return cmp.Compare(a.idx, b.idx) })
 
-	var chunks [][]string
-	for i := 0; i < len(entries); i += cfg.MaxListSize {
-		end := min(i+cfg.MaxListSize, len(entries))
-		chunks = append(chunks, entries[i:end])
-	}
-
+	chunks := cp.Chunks
 	writeWorkers := min(cfg.MaxWorkers, 3)
 	sem := make(chan struct{}, writeWorkers)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	const (
+		chunkNone = iota
+		chunkSkipped
+		chunkUpdated
+		chunkCreated
+	)
 	chunkIDs := make([]string, len(chunks))
+	chunkOps := make([]int, len(chunks))
 	var firstErr error
 	var errMu sync.Mutex
 	var wg sync.WaitGroup
@@ -2208,6 +2929,7 @@ func syncPolicyInPlace(
 			hasTarget := idx < len(matched)
 			if hasTarget && chunkMatchesRemote(matched[idx].list, name, rawHash, len(chunk)) {
 				chunkIDs[idx] = matched[idx].list.ID
+				chunkOps[idx] = chunkSkipped
 				return
 			}
 
@@ -2223,14 +2945,17 @@ func syncPolicyInPlace(
 
 				var id string
 				var err error
+				var op int
 				if hasTarget {
 					id = matched[idx].list.ID
 					err = cf.updateList(ctx, id, name, currentChunk, desc)
+					op = chunkUpdated
 					if err == nil {
 						logInfo("Updated %s (%d %s items)", name, len(currentChunk), strings.ToLower(policyType))
 					}
 				} else {
 					id, err = cf.createList(ctx, name, currentChunk, policyType, desc)
+					op = chunkCreated
 					if err == nil {
 						logInfo("Created %s (%d %s items)", name, len(currentChunk), strings.ToLower(policyType))
 					}
@@ -2238,6 +2963,7 @@ func syncPolicyInPlace(
 
 				if err == nil {
 					chunkIDs[idx] = id
+					chunkOps[idx] = op
 					return
 				}
 
@@ -2276,15 +3002,24 @@ func syncPolicyInPlace(
 	wg.Wait()
 
 	if firstErr != nil {
-		return nil, nil, nil, firstErr
+		return policySyncResult{}, firstErr
 	}
 
 	activeIDs := make([]string, 0, len(chunkIDs))
-	for _, id := range chunkIDs {
+	for i, id := range chunkIDs {
 		if id != "" {
 			activeIDs = append(activeIDs, id)
 		}
+		switch chunkOps[i] {
+		case chunkSkipped:
+			stats.ListsSkipped++
+		case chunkUpdated:
+			stats.ListsUpdated++
+		case chunkCreated:
+			stats.ListsCreated++
+		}
 	}
+	stats.ListsTotal = len(activeIDs)
 
 	var surplusIDs []string
 	if len(matched) > len(chunks) {
@@ -2315,6 +3050,7 @@ func syncPolicyInPlace(
 
 	if len(listItems) == 0 {
 		logWarn("Policy '%s' has no active list items, categories, or expressions.", policy.Name)
+		stats.Status = "inactive"
 		if ruleIdx >= 0 {
 			rid := rules[ruleIdx].ID
 			if err := cf.deleteRule(rid); err != nil {
@@ -2322,16 +3058,13 @@ func syncPolicyInPlace(
 			} else {
 				logInfo("Removed inactive firewall rule: %s", policy.Name)
 				*existingRules = slices.Delete(rules, ruleIdx, ruleIdx+1)
+				stats.RuleAction = "deleted"
 			}
 		}
-		return activeIDs, surplusIDs, nil, nil
+		return policySyncResult{ActiveIDs: activeIDs, SurplusIDs: surplusIDs, Stats: stats}, nil
 	}
 
-	cond := policy.IdentityCondition
-	if policy.RestrictUsers {
-		cond = cfg.TargetIdentity
-	}
-
+	cond := policy.effectiveIdentity(cfg)
 	var trafficExpr, identityExpr string
 	if cond != "" {
 		if !strings.Contains(cond, "dns.") {
@@ -2415,7 +3148,7 @@ func syncPolicyInPlace(
 		if changed {
 			updated, err := cf.updateRule(r.ID, payload)
 			if err != nil {
-				return nil, nil, nil, err
+				return policySyncResult{}, err
 			}
 			if updated != nil {
 				rules[ruleIdx] = *updated
@@ -2426,22 +3159,29 @@ func syncPolicyInPlace(
 				rules[ruleIdx].Action = action
 				rules[ruleIdx].RuleSettings = settings
 			}
+			stats.RuleAction = "updated"
 			logInfo("Updated firewall rule: %s (enabled=%t, block_page=%t, ip_categories=%t)",
 				policy.Name, ruleEnabled, blockPage, ipCat)
 		}
 	} else {
 		created, err := cf.createRule(payload)
 		if err != nil {
-			return nil, nil, nil, err
+			return policySyncResult{}, err
 		}
 		if created != nil {
 			*existingRules = append(rules, *created)
 		}
+		stats.RuleAction = "created"
 		logInfo("Created firewall rule: %s (enabled=%t, block_page=%t, ip_categories=%t)",
 			policy.Name, ruleEnabled, blockPage, ipCat)
 	}
 
-	return activeIDs, surplusIDs, []string{policy.Name}, nil
+	return policySyncResult{
+		ActiveIDs:  activeIDs,
+		SurplusIDs: surplusIDs,
+		RuleNames:  []string{policy.Name},
+		Stats:      stats,
+	}, nil
 }
 
 func syncStandalonePolicies(cf *cloudflareAPI, cfg *appConfig, existingRules []gatewayRule) []string {
@@ -2479,8 +3219,8 @@ func syncStandalonePolicies(cf *cloudflareAPI, cfg *appConfig, existingRules []g
 	return synced
 }
 
-func policyHasActiveRule(p policyConfig, entries []string, tldExpr string) bool {
-	return len(entries) > 0 || (tldExpr != "" && p.UseSpamTLD) || compileCategoryExpression(p) != ""
+func policyHasActiveRule(cp compiledPolicy, tldExpr string) bool {
+	return len(cp.Chunks) > 0 || (tldExpr != "" && cp.Policy.UseSpamTLD) || compileCategoryExpression(cp.Policy) != ""
 }
 
 func reclaimStaleResources(
@@ -2499,8 +3239,8 @@ func reclaimStaleResources(
 	}
 	expectedChunks := make(map[string]int, len(compiled))
 	for _, cp := range compiled {
-		expectedChunks[cp.Policy.Prefix] = divCeil(len(cp.Entries), cfg.MaxListSize)
-		if policyHasActiveRule(cp.Policy, cp.Entries, tldExpr) {
+		expectedChunks[cp.Policy.Prefix] = len(cp.Chunks)
+		if policyHasActiveRule(cp, tldExpr) {
 			expectedRules[cp.Policy.Name] = struct{}{}
 		}
 	}
@@ -2560,7 +3300,7 @@ func reclaimStaleResources(
 				matched = append(matched, indexedList{idx: idx, id: l.ID})
 			}
 		}
-		slices.SortFunc(matched, func(a, b indexedList) int { return a.idx - b.idx })
+		slices.SortFunc(matched, func(a, b indexedList) int { return cmp.Compare(a.idx, b.idx) })
 		for _, m := range matched[:min(needed, len(matched))] {
 			keepIDs[m.id] = struct{}{}
 		}
@@ -2717,14 +3457,100 @@ func filterPolicyIncludes(policies []policyConfig, keep func(string) bool) {
 	}
 }
 
-func sumStats(compiled []compiledPolicy, maxListSize int) (int, int) {
-	entries, chunks := 0, 0
-	for _, cp := range compiled {
-		entries += len(cp.Entries)
-		chunks += divCeil(len(cp.Entries), maxListSize)
-	}
-	return entries, chunks
+// ---------- GitHub Actions Step Summary ----------
+
+type syncSummaryData struct {
+	DryRun          bool
+	Duration        time.Duration
+	RelevanceStatus string
+	RelevanceCount  int
+	FeedsOK         int
+	FailedFeeds     []string
+	TotalItems      int
+	TotalQuota      int
+	ManagedLists    int
+	UnmanagedLists  int
+	PolicyStats     []policySyncStats
+	Warnings        []string
 }
+
+func writeStepSummary(data syncSummaryData) {
+	summaryPath := strings.TrimSpace(os.Getenv("GITHUB_STEP_SUMMARY"))
+	if summaryPath == "" {
+		return
+	}
+
+	totalCreated, totalUpdated, totalSkipped := 0, 0, 0
+	for _, ps := range data.PolicyStats {
+		totalCreated += ps.ListsCreated
+		totalUpdated += ps.ListsUpdated
+		totalSkipped += ps.ListsSkipped
+	}
+	totalListOps := totalCreated + totalUpdated + totalSkipped
+	cacheHitPct := 100.0
+	if totalListOps > 0 {
+		cacheHitPct = float64(totalSkipped) * 100.0 / float64(totalListOps)
+	}
+	itemPct := float64(data.TotalItems) * 100.0 / float64(max(data.TotalQuota, 1))
+	usedLists := data.ManagedLists + data.UnmanagedLists
+	listPct := float64(usedLists) * 100.0 / float64(maxCloudflareLists)
+
+	var sb strings.Builder
+	title := "Cloudflare Gateway Sync Summary"
+	if data.DryRun {
+		title += " (DRY-RUN)"
+	}
+	fmt.Fprintf(&sb, "## %s\n\n", title)
+	fmt.Fprintf(&sb, "| Metric | Value |\n| :--- | :--- |\n")
+	fmt.Fprintf(&sb, "| **Duration** | `%.2fs` |\n", data.Duration.Seconds())
+	fmt.Fprintf(&sb, "| **Relevance Cache** | `%s` (%d root domains) |\n", data.RelevanceStatus, data.RelevanceCount)
+	fmt.Fprintf(&sb, "| **Item Quota** | `%d / %d` (%.1f%%) |\n", data.TotalItems, data.TotalQuota, itemPct)
+	fmt.Fprintf(&sb, "| **List Quota** | `%d / %d` (%.1f%% — %d managed, %d unmanaged) |\n",
+		usedLists, maxCloudflareLists, listPct, data.ManagedLists, data.UnmanagedLists)
+	fmt.Fprintf(&sb, "| **List Writes** | `%d` created, `%d` updated, `%d` unchanged (%.1f%% skipped) |\n",
+		totalCreated, totalUpdated, totalSkipped, cacheHitPct)
+	fmt.Fprintf(&sb, "| **Upstream Feeds** | `%d` ok, `%d` failed |\n\n", data.FeedsOK, len(data.FailedFeeds))
+
+	fmt.Fprintf(&sb, "### Policies\n\n")
+	fmt.Fprintf(&sb, "| Policy | Prio | Type | Mode | Status | Entries | Deduped | Trimmed | Lists (C/U/S) | Rule |\n")
+	fmt.Fprintf(&sb, "| :--- | :---: | :---: | :---: | :---: | ---: | ---: | ---: | :---: | :---: |\n")
+	for _, ps := range data.PolicyStats {
+		mode := "protected"
+		if ps.Trimmable {
+			mode = "trimmable"
+		}
+		fmt.Fprintf(&sb, "| %s | %d | %s | `%s` | `%s` | %d | %d | %d | %d (%d/%d/%d) | `%s` |\n",
+			ps.Name, ps.Priority, ps.Type, mode, ps.Status,
+			ps.Entries, ps.Deduped, ps.Trimmed,
+			ps.ListsTotal, ps.ListsCreated, ps.ListsUpdated, ps.ListsSkipped,
+			ps.RuleAction,
+		)
+	}
+	sb.WriteString("\n")
+
+	if len(data.FailedFeeds) > 0 || len(data.Warnings) > 0 {
+		sb.WriteString("### Warnings & Notices\n\n")
+		for _, f := range data.FailedFeeds {
+			fmt.Fprintf(&sb, "- **Upstream feed failed (preserved live state):** `%s`\n", f)
+		}
+		for _, w := range data.Warnings {
+			fmt.Fprintf(&sb, "- %s\n", w)
+		}
+		sb.WriteString("\n")
+	}
+
+	f, err := os.OpenFile(summaryPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		logWarn("Could not write GITHUB_STEP_SUMMARY (%s): %v", summaryPath, err)
+		return
+	}
+	defer f.Close()
+	if _, err := f.WriteString(sb.String()); err != nil {
+		logWarn("Failed writing GITHUB_STEP_SUMMARY: %v", err)
+	}
+}
+
+// ---------- Main Orchestration ----------
 
 func run() error {
 	start := time.Now()
@@ -2785,11 +3611,13 @@ func run() error {
 	needsRelevance := slices.ContainsFunc(domainSources, func(s sourceSpec) bool { return s.EnableRelevance })
 	var relSet *relevanceSet
 	relevanceStatus := "unused"
+	relevanceCount := 0
 	if needsRelevance {
 		relSet, relevanceStatus, err = resolveRelevanceDataset(feedClient, cfg)
 		if err != nil {
 			return err
 		}
+		relevanceCount = relSet.len()
 	}
 
 	tldExpr := ""
@@ -2820,15 +3648,15 @@ func run() error {
 		go func(i int, spec sourceSpec) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			var rel *relevanceSet
-			if spec.EnableRelevance {
-				rel = relSet
-			}
-			kept, err := fetchFeedSource(feedClient, spec, rel)
+			kept, err := fetchFeedSource(feedClient, spec, relSet)
 			if err == nil && len(kept) == 0 {
 				err = fmt.Errorf("feed '%s' returned 0 valid domains", spec.Name)
 			}
-			outcomes[i] = feedOutcome{name: spec.Name, feed: fetchedFeed{Domains: kept}, err: err}
+			outcomes[i] = feedOutcome{
+				name: spec.Name,
+				feed: fetchedFeed{Domains: kept},
+				err:  err,
+			}
 		}(i, spec)
 	}
 
@@ -2843,24 +3671,33 @@ func run() error {
 			if err == nil && len(nets) == 0 {
 				err = fmt.Errorf("IP feed '%s' returned 0 valid subnets", spec.Name)
 			}
-			outcomes[idx] = feedOutcome{name: spec.Name, feed: fetchedFeed{IsIP: true, IPs: nets}, err: err}
+			outcomes[idx] = feedOutcome{
+				name: spec.Name,
+				feed: fetchedFeed{IsIP: true, IPs: nets},
+				err:  err,
+			}
 		}(idx, spec)
 	}
 	wg.Wait()
 
-	// Release relevance slice RAM immediately before Cloudflare API sync
+	// Release relevance slices immediately before compilation and API sync
 	relSet = nil
 	runtime.GC()
 
 	fetched := make(map[string]fetchedFeed, totalSources)
 	failedFeeds := make(map[string]struct{})
+	var failedFeedList []string
 	for _, o := range outcomes {
 		if o.err != nil {
 			logErr("Upstream feed '%s' failed: %v. Policies using it will be preserved as-is.", o.name, o.err)
 			failedFeeds[o.name] = struct{}{}
+			failedFeedList = append(failedFeedList, fmt.Sprintf("%s (%v)", o.name, o.err))
 		} else {
 			fetched[o.name] = o.feed
 		}
+	}
+	if tldFailed {
+		failedFeedList = append(failedFeedList, "Spam TLD Feed")
 	}
 
 	if totalSources > 0 && len(fetched) == 0 {
@@ -2904,16 +3741,31 @@ func run() error {
 	preservedListIDs := make(map[string]struct{})
 	preservedRuleNames := make(map[string]struct{})
 	preservedItemsCount := 0
+	preservedStats := make([]policySyncStats, 0, len(preservedPolicies))
 	for _, p := range preservedPolicies {
 		preservedRuleNames[p.Name] = struct{}{}
+		pLists, pItems := 0, 0
 		for _, l := range existingLists {
 			if _, ok := parseChunkIndex(l.Name, p.Prefix); ok {
 				preservedListIDs[l.ID] = struct{}{}
+				pLists++
 				if l.Count != nil {
-					preservedItemsCount += int(*l.Count)
+					pItems += int(*l.Count)
 				}
 			}
 		}
+		preservedItemsCount += pItems
+		preservedStats = append(preservedStats, policySyncStats{
+			Name:       p.Name,
+			Prefix:     p.Prefix,
+			Type:       p.resolvedType(),
+			Priority:   p.resolvedPriority(cfg),
+			Trimmable:  p.isTrimmable(),
+			Status:     "preserved",
+			Entries:    pItems,
+			ListsTotal: pLists,
+			RuleAction: "preserved",
+		})
 	}
 
 	unmanagedListsCount := 0
@@ -2932,51 +3784,78 @@ func run() error {
 	activeQuota := max(cfg.TotalQuota-preservedItemsCount, 0)
 	hasActiveSpamTLD := useSpamTLDAny && !tldFailed
 
-	compiled := buildPolicySets(cfg, activePolicies, fetched, spamTLDs, hasActiveSpamTLD)
-	activeEntries, estimatedChunks := sumStats(compiled, cfg.MaxListSize)
+	var summaryWarnings []string
 
-	// Fallback Tier 1: Shed OISD NSFW
-	if activeEntries > activeQuota || estimatedChunks > maxActiveLists {
-		logWarn("Capacity constraint reached (Entries: %d/%d, Estimated Lists: %d/%d). Shedding OISD NSFW...",
-			activeEntries, activeQuota, estimatedChunks, maxActiveLists)
-		filterPolicyIncludes(activePolicies, func(inc string) bool {
-			l := strings.ToLower(inc)
-			return !(strings.Contains(l, "oisd") && strings.Contains(l, "nsfw"))
-		})
-		compiled = buildPolicySets(cfg, activePolicies, fetched, spamTLDs, hasActiveSpamTLD)
-		activeEntries, estimatedChunks = sumStats(compiled, cfg.MaxListSize)
+	compileAndFit := func(pols []policyConfig, elists []gatewayList) ([]compiledPolicy, int, int, error) {
+		compiled, guardWarns := buildPolicySets(cfg, pols, fetched, spamTLDs, hasActiveSpamTLD)
+		if len(guardWarns) > 0 {
+			summaryWarnings = append(summaryWarnings, fmt.Sprintf("Safety floor protected %d root domain(s): %s",
+				len(guardWarns), strings.Join(guardWarns, ", ")))
+		}
+
+		// Primary capacity strategy: surgical rank-aware trimming (Porn first, then Malware)
+		trimWarns := trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)
+		summaryWarnings = append(summaryWarnings, trimWarns...)
+		entries, minLists := sumMinCapacity(compiled, cfg.MaxListSize)
+
+		// Emergency fallback tiers only shed Porn/TIF feeds; static safety lists are never touched
+		if entries > activeQuota || minLists > maxActiveLists {
+			msg := fmt.Sprintf("Capacity still exceeded after rank trimming (%d/%d entries, %d/%d min lists); shedding OISD NSFW...",
+				entries, activeQuota, minLists, maxActiveLists)
+			logWarn("%s", msg)
+			summaryWarnings = append(summaryWarnings, msg)
+			filterPolicyIncludes(pols, func(inc string) bool {
+				l := strings.ToLower(inc)
+				return !(strings.Contains(l, "oisd") && strings.Contains(l, "nsfw"))
+			})
+			compiled, _ = buildPolicySets(cfg, pols, fetched, spamTLDs, hasActiveSpamTLD)
+			trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)
+			entries, minLists = sumMinCapacity(compiled, cfg.MaxListSize)
+		}
+
+		if entries > activeQuota || minLists > maxActiveLists {
+			msg := fmt.Sprintf("Capacity still exceeded (%d/%d entries, %d/%d min lists); shedding TIF IPs...",
+				entries, activeQuota, minLists, maxActiveLists)
+			logWarn("%s", msg)
+			summaryWarnings = append(summaryWarnings, msg)
+			filterPolicyIncludes(pols, func(inc string) bool {
+				l := strings.ToLower(inc)
+				return !(strings.Contains(l, "tif") && strings.Contains(l, "ip"))
+			})
+			compiled, _ = buildPolicySets(cfg, pols, fetched, spamTLDs, hasActiveSpamTLD)
+			trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)
+			entries, minLists = sumMinCapacity(compiled, cfg.MaxListSize)
+		}
+
+		if entries > activeQuota || minLists > maxActiveLists {
+			msg := fmt.Sprintf("Capacity still exceeded (%d/%d entries, %d/%d min lists); shedding TIF domain feeds...",
+				entries, activeQuota, minLists, maxActiveLists)
+			logWarn("%s", msg)
+			summaryWarnings = append(summaryWarnings, msg)
+			filterPolicyIncludes(pols, func(inc string) bool {
+				return !strings.Contains(strings.ToLower(inc), "tif")
+			})
+			compiled, _ = buildPolicySets(cfg, pols, fetched, spamTLDs, hasActiveSpamTLD)
+			trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)
+			entries, minLists = sumMinCapacity(compiled, cfg.MaxListSize)
+		}
+
+		if entries > activeQuota || minLists > maxActiveLists {
+			return nil, 0, 0, fmt.Errorf("capacity exceeded after all trimming and fallback tiers (Active Entries: %d/%d, Min Lists: %d/%d)",
+				entries, activeQuota, minLists, maxActiveLists)
+		}
+
+		totalChunks := assignHashBuckets(compiled, elists, cfg.MaxListSize, maxActiveLists)
+		return compiled, entries, totalChunks, nil
 	}
 
-	// Fallback Tier 2: Shed HaGeZi TIF IPs
-	if activeEntries > activeQuota || estimatedChunks > maxActiveLists {
-		logWarn("Capacity still exceeded (Entries: %d/%d, Estimated Lists: %d/%d). Shedding HaGeZi TIF IPs...",
-			activeEntries, activeQuota, estimatedChunks, maxActiveLists)
-		filterPolicyIncludes(activePolicies, func(inc string) bool {
-			l := strings.ToLower(inc)
-			return !(strings.Contains(l, "tif") && strings.Contains(l, "ip"))
-		})
-		compiled = buildPolicySets(cfg, activePolicies, fetched, spamTLDs, hasActiveSpamTLD)
-		activeEntries, estimatedChunks = sumStats(compiled, cfg.MaxListSize)
+	compiled, activeEntries, totalChunks, err := compileAndFit(activePolicies, existingLists)
+	if err != nil {
+		return err
 	}
 
-	// Fallback Tier 3: Shed HaGeZi TIF domains
-	if activeEntries > activeQuota || estimatedChunks > maxActiveLists {
-		logWarn("Capacity still exceeded (Entries: %d/%d, Estimated Lists: %d/%d). Shedding HaGeZi TIF domain feeds...",
-			activeEntries, activeQuota, estimatedChunks, maxActiveLists)
-		filterPolicyIncludes(activePolicies, func(inc string) bool {
-			return !strings.Contains(strings.ToLower(inc), "tif")
-		})
-		compiled = buildPolicySets(cfg, activePolicies, fetched, spamTLDs, hasActiveSpamTLD)
-		activeEntries, estimatedChunks = sumStats(compiled, cfg.MaxListSize)
-	}
-
-	if activeEntries > activeQuota || estimatedChunks > maxActiveLists {
-		return fmt.Errorf("capacity exceeded after all fallback tiers (Active Entries: %d/%d, Active Lists: %d/%d)",
-			activeEntries, activeQuota, estimatedChunks, maxActiveLists)
-	}
-
-	logInfo("Cloudflare lists: %d total (%d unmanaged, %d preserved, %d live items). Syncing %d list(s) in place...",
-		len(existingLists), unmanagedListsCount, len(preservedListIDs), currentManagedItems, estimatedChunks)
+	logInfo("Cloudflare lists: %d total (%d unmanaged, %d preserved, %d live items). Syncing %d hash-bucketed list(s)...",
+		len(existingLists), unmanagedListsCount, len(preservedListIDs), currentManagedItems, totalChunks)
 
 	standaloneRules := syncStandalonePolicies(cf, cfg, existingRules)
 
@@ -2987,8 +3866,8 @@ func run() error {
 		return err
 	}
 
-	initTracking := func() ([]string, []string, []string) {
-		actIDs := make([]string, 0, len(preservedListIDs)+estimatedChunks)
+	initTracking := func() ([]string, []string, []string, []policySyncStats) {
+		actIDs := make([]string, 0, len(preservedListIDs)+totalChunks)
 		for id := range preservedListIDs {
 			actIDs = append(actIDs, id)
 		}
@@ -2997,10 +3876,11 @@ func run() error {
 		for name := range preservedRuleNames {
 			actRules = append(actRules, name)
 		}
-		return actIDs, nil, actRules
+		stats := make([]policySyncStats, 0, len(compiled)+len(preservedStats))
+		return actIDs, nil, actRules, stats
 	}
 
-	allActiveIDs, allSurplusIDs, allActiveRules := initTracking()
+	allActiveIDs, allSurplusIDs, allActiveRules, policyStats := initTracking()
 
 	runSync := func(sets []compiledPolicy, elists []gatewayList, erules *[]gatewayRule) error {
 		for _, cp := range sets {
@@ -3008,13 +3888,14 @@ func run() error {
 			if cp.Policy.UseSpamTLD {
 				expr = tldExpr
 			}
-			aIDs, sIDs, rNames, syncErr := syncPolicyInPlace(cf, cfg, elists, erules, cp.Entries, cp.Policy, expr)
+			res, syncErr := syncPolicyInPlace(cf, cfg, elists, erules, cp, expr)
 			if syncErr != nil {
 				return syncErr
 			}
-			allActiveIDs = append(allActiveIDs, aIDs...)
-			allSurplusIDs = append(allSurplusIDs, sIDs...)
-			allActiveRules = append(allActiveRules, rNames...)
+			allActiveIDs = append(allActiveIDs, res.ActiveIDs...)
+			allSurplusIDs = append(allSurplusIDs, res.SurplusIDs...)
+			allActiveRules = append(allActiveRules, res.RuleNames...)
+			policyStats = append(policyStats, res.Stats)
 		}
 		return nil
 	}
@@ -3022,7 +3903,9 @@ func run() error {
 	if syncErr := runSync(compiled, existingLists, &existingRules); syncErr != nil {
 		errStr := syncErr.Error()
 		if strings.Contains(errStr, "Maximum number of lists reached") || strings.Contains(errStr, "2017") {
-			logErr("Cloudflare list limit (300) hit during sync! Forcing emergency OISD NSFW & TIF purge and list reclamation...")
+			logErr("Cloudflare list limit (300) hit during sync! Forcing emergency list reclamation and rebuild...")
+			summaryWarnings = append(summaryWarnings, "Emergency 300-list limit recovery triggered during sync.")
+
 			existingLists, err = cf.getLists()
 			if err != nil {
 				return err
@@ -3062,9 +3945,6 @@ func run() error {
 					l := strings.ToLower(inc)
 					return !(strings.Contains(l, "oisd") && strings.Contains(l, "nsfw")) && !strings.Contains(l, "tif")
 				})
-				compiled = buildPolicySets(cfg, activePolicies, fetched, spamTLDs, hasActiveSpamTLD)
-				activeEntries, _ = sumStats(compiled, cfg.MaxListSize)
-
 				existingLists, err = cf.getLists()
 				if err != nil {
 					return err
@@ -3074,7 +3954,12 @@ func run() error {
 					return err
 				}
 
-				allActiveIDs, allSurplusIDs, allActiveRules = initTracking()
+				compiled, activeEntries, totalChunks, err = compileAndFit(activePolicies, existingLists)
+				if err != nil {
+					return err
+				}
+
+				allActiveIDs, allSurplusIDs, allActiveRules, policyStats = initTracking()
 				return runSync(compiled, existingLists, &existingRules)
 			}()
 
@@ -3092,23 +3977,53 @@ func run() error {
 		return err
 	}
 
-	failedTotal := len(failedFeeds)
-	if tldFailed {
-		failedTotal++
+	policyStats = append(policyStats, preservedStats...)
+	slices.SortFunc(policyStats, func(a, b policySyncStats) int {
+		if c := cmp.Compare(a.Priority, b.Priority); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Name, b.Name)
+	})
+
+	totalCreated, totalUpdated, totalSkipped := 0, 0, 0
+	for _, ps := range policyStats {
+		totalCreated += ps.ListsCreated
+		totalUpdated += ps.ListsUpdated
+		totalSkipped += ps.ListsSkipped
 	}
-	logInfo("Sync finished in %.2fs | relevance=%s | policies_synced=%d preserved=%d | feeds_ok=%d failed=%d | items=%d lists=%d",
-		time.Since(start).Seconds(),
+
+	elapsed := time.Since(start)
+	totalLiveEntries := activeEntries + preservedItemsCount
+	logInfo("Sync finished in %.2fs | relevance=%s | lists=%d (C:%d U:%d S:%d) | items=%d/%d | feeds_ok=%d failed=%d",
+		elapsed.Seconds(),
 		relevanceStatus,
-		len(compiled),
-		len(preservedPolicies),
-		len(fetched),
-		failedTotal,
-		activeEntries+preservedItemsCount,
 		len(allActiveIDs),
+		totalCreated,
+		totalUpdated,
+		totalSkipped,
+		totalLiveEntries,
+		cfg.TotalQuota,
+		len(fetched),
+		len(failedFeedList),
 	)
 
-	if cfg.StrictFeeds && failedTotal > 0 {
-		return fmt.Errorf("--strict enabled and %d upstream feed(s) failed", failedTotal)
+	writeStepSummary(syncSummaryData{
+		DryRun:          cfg.DryRun,
+		Duration:        elapsed,
+		RelevanceStatus: relevanceStatus,
+		RelevanceCount:  relevanceCount,
+		FeedsOK:         len(fetched),
+		FailedFeeds:     failedFeedList,
+		TotalItems:      totalLiveEntries,
+		TotalQuota:      cfg.TotalQuota,
+		ManagedLists:    len(allActiveIDs),
+		UnmanagedLists:  unmanagedListsCount,
+		PolicyStats:     policyStats,
+		Warnings:        summaryWarnings,
+	})
+
+	if cfg.StrictFeeds && len(failedFeedList) > 0 {
+		return fmt.Errorf("--strict enabled and %d upstream feed(s) failed", len(failedFeedList))
 	}
 	return nil
 }
