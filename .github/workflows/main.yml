@@ -34,6 +34,7 @@ jobs:
         with:
           go-version: '1.23'
           cache: true
+          cache-dependency-path: go.mod
 
       - name: Restore relevance cache
         uses: actions/cache/restore@v4
@@ -60,6 +61,7 @@ jobs:
           TERTIARY_EMAIL: ${{ secrets.TERTIARY_EMAIL }}
           EXCLUDED_EMAILS: ${{ secrets.EXCLUDED_EMAILS }}
         run: |
+          go mod tidy
           go build -o cf-gateway-sync .
           ARGS=()
           if [ "${{ inputs.dry_run }}" = "true" ]; then
