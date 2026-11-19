@@ -2,8 +2,17 @@ name: Cloudflare Gateway Sync
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 */4 * * *'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview changes without mutating Cloudflare'
+        type: boolean
+        default: false
+      force_refresh_relevance:
+        description: 'Force rebuild of the relevance dataset cache'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -15,32 +24,70 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Rust Nightly
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Cache Rust build artifacts
-        uses: actions/cache@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            ~/.cargo/target/
-          key: rust-script-${{ runner.os }}-${{ hashFiles('block_ads_sync.rs') }}
-          restore-keys: |
-            rust-script-${{ runner.os }}-
+          go-version: '1.23'
+          cache: true
 
-      - name: Execute Sync Script
+      - name: Restore relevance cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/relevance
+          key: relevance-v2-exact-miss
+          restore-keys: |
+            relevance-v2-
+
+      - name: Snapshot pre-run cache hash
+        id: pre_hash
+        run: |
+          if [ -f .cache/relevance/relevance.meta.json ]; then
+            echo "hash=$(sha256sum .cache/relevance/relevance.meta.json | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          else
+            echo "hash=none" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and Execute Sync
         env:
           API_TOKEN: ${{ secrets.API_TOKEN }}
           ACCOUNT_ID: ${{ secrets.ACCOUNT_ID }}
-          PRIMARY_EMAIL: ${{ secrets.PRIMARY_EMAIL }}
           SECONDARY_EMAIL: ${{ secrets.SECONDARY_EMAIL }}
           TERTIARY_EMAIL: ${{ secrets.TERTIARY_EMAIL }}
           EXCLUDED_EMAILS: ${{ secrets.EXCLUDED_EMAILS }}
-        run: cargo +nightly -Zscript block_ads_sync.rs
+        run: |
+          go build -o cf-gateway-sync .
+          ARGS=()
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS+=("--dry-run")
+          fi
+          if [ "${{ inputs.force_refresh_relevance }}" = "true" ]; then
+            ARGS+=("--force-refresh-relevance")
+          fi
+          ./cf-gateway-sync "${ARGS[@]}"
+
+      - name: Check if relevance cache updated
+        id: post_hash
+        run: |
+          if [ -f .cache/relevance/relevance.meta.json ]; then
+            NEW_HASH=$(sha256sum .cache/relevance/relevance.meta.json | awk '{print $1}')
+            echo "hash=$NEW_HASH" >> "$GITHUB_OUTPUT"
+            if [ "$NEW_HASH" != "${{ steps.pre_hash.outputs.hash }}" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save updated relevance cache
+        if: steps.post_hash.outputs.changed == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/relevance
+          key: relevance-v2-${{ steps.post_hash.outputs.hash }}
