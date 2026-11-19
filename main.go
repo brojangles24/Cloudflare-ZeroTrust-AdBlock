@@ -62,32 +62,6 @@ var defaultProtectedRules = []string{
 	"YouTube Restricted",
 }
 
-// Exact root domains (and their www. variants) stripped from block policies
-// to prevent upstream feed poisoning from knocking out core infrastructure.
-// Subdomains (e.g., ads.google.com, telemetry.microsoft.com) are NOT exempted.
-var defaultNeverBlock = []string{
-	"cloudflare.com",
-	"cloudflare-dns.com",
-	"one.one.one.one",
-	"github.com",
-	"githubusercontent.com",
-	"raw.githubusercontent.com",
-	"cdn.jsdelivr.net",
-	"google.com",
-	"googleapis.com",
-	"gstatic.com",
-	"apple.com",
-	"icloud.com",
-	"microsoft.com",
-	"windowsupdate.com",
-	"live.com",
-	"tailscale.com",
-	"amazonaws.com",
-	"quad9.net",
-	"digicert.com",
-	"letsencrypt.org",
-}
-
 type topListSpec struct {
 	URL         string
 	Col         int
@@ -171,7 +145,6 @@ type settingsConfig struct {
 	ProtectedRules           []string `toml:"protected_rules"`
 	UnmanagedListKeywords    []string `toml:"unmanaged_list_keywords"`
 	NeverBlock               []string `toml:"never_block"`
-	DisableDefaultNeverBlock bool     `toml:"disable_default_never_block"`
 	RelevanceCacheDir        string   `toml:"relevance_cache_dir"`
 	RelevanceMinRefreshHours *int64   `toml:"relevance_min_refresh_hours"`
 	RelevanceTTLDays         *int64   `toml:"relevance_ttl_days"`
@@ -377,6 +350,9 @@ func (c *appConfig) isProtectedRule(name string) bool {
 }
 
 func (c *appConfig) isNeverBlocked(domain string) bool {
+	if len(c.NeverBlock) == 0 {
+		return false
+	}
 	if _, ok := c.NeverBlock[domain]; ok {
 		return true
 	}
@@ -489,12 +465,7 @@ func loadConfig(configPath string, dryRun, forceRefresh, strict bool) (*appConfi
 		unmanagedKeywords = []string{"IoT Bypass"}
 	}
 
-	neverBlock := make(map[string]struct{}, len(defaultNeverBlock)+len(s.NeverBlock))
-	if !s.DisableDefaultNeverBlock {
-		for _, d := range defaultNeverBlock {
-			neverBlock[strings.ToLower(strings.TrimSpace(d))] = struct{}{}
-		}
-	}
+	neverBlock := make(map[string]struct{}, len(s.NeverBlock))
 	for _, d := range s.NeverBlock {
 		if clean, ok := normalizeDomain(d); ok {
 			neverBlock[clean] = struct{}{}
@@ -2141,11 +2112,13 @@ func buildPolicySets(
 						}
 					}
 				}
-				for d := range pSet {
-					if cfg.isNeverBlocked(d) {
-						delete(pSet, d)
-						guardedCount++
-						guardedHits = append(guardedHits, fmt.Sprintf("%s (%s)", d, p.Name))
+				if len(cfg.NeverBlock) > 0 {
+					for d := range pSet {
+						if cfg.isNeverBlocked(d) {
+							delete(pSet, d)
+							guardedCount++
+							guardedHits = append(guardedHits, fmt.Sprintf("%s (%s)", d, p.Name))
+						}
 					}
 				}
 			}
@@ -2175,7 +2148,7 @@ func buildPolicySets(
 	}
 	if len(guardWarnings) > 0 {
 		slices.Sort(guardWarnings)
-		logWarn("Safety floor stripped %d protected root domain(s): %s", len(guardWarnings), strings.Join(guardWarnings, ", "))
+		logWarn("Config never_block stripped %d domain(s): %s", len(guardWarnings), strings.Join(guardWarnings, ", "))
 	}
 
 	// Step 2: Priority-ordered cross-policy deduplication.
@@ -2760,7 +2733,6 @@ func ensureSpamAllowPrecedence(
 		return nil
 	}
 
-	// Find largest DNS precedence strictly below minSpamPrec and overall max DNS precedence
 	var prevPrec int64
 	var maxDNSPrec int64
 	usedPrecs := make(map[int64]struct{}, len(existingRules))
@@ -2801,7 +2773,6 @@ func ensureSpamAllowPrecedence(
 
 	var notices []string
 
-	// Case 1: There is at least one free integer strictly between prevPrec and minSpamPrec
 	if prevPrec+1 < minSpamPrec {
 		targetPrec := prevPrec + (minSpamPrec-prevPrec)/2
 		if _, taken := usedPrecs[targetPrec]; taken {
@@ -2824,7 +2795,6 @@ func ensureSpamAllowPrecedence(
 		return notices
 	}
 
-	// Case 2: No integer gap above minSpamPrec; place Allow + Spam TLD cleanly at the bottom
 	allowTarget := maxDNSPrec + 50
 	if err := updateRulePrec(allowIdx, allowTarget); err != nil {
 		logErr("Failed relocating '%s' to precedence %d: %v", spamAllowRuleName, allowTarget, err)
@@ -3285,9 +3255,10 @@ func syncPolicyInPlace(
 			payload["device_posture"] = r.DevicePosture
 		}
 
-		oldBP, hasOldBP := r.RuleSettings["block_page_enabled"].(bool)
+		// Cloudflare omits false booleans in rule_settings on GET; treat missing as false.
+		oldBP, _ := r.RuleSettings["block_page_enabled"].(bool)
 		oldIPCat, _ := r.RuleSettings["ip_categories"].(bool)
-		settingsChanged := !hasOldBP || oldBP != blockPage || oldIPCat != ipCat
+		settingsChanged := oldBP != blockPage || oldIPCat != ipCat
 
 		changed := r.Traffic != trafficExpr ||
 			r.Identity != identityExpr ||
@@ -3939,7 +3910,7 @@ func run() error {
 	compileAndFit := func(pols []policyConfig, elists []gatewayList) ([]compiledPolicy, int, int, error) {
 		compiled, guardWarns := buildPolicySets(cfg, pols, fetched, spamTLDs, hasActiveSpamTLD)
 		if len(guardWarns) > 0 {
-			summaryWarnings = append(summaryWarnings, fmt.Sprintf("Safety floor protected %d root domain(s): %s",
+			summaryWarnings = append(summaryWarnings, fmt.Sprintf("Config never_block stripped %d domain(s): %s",
 				len(guardWarns), strings.Join(guardWarns, ", ")))
 		}
 
