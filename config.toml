@@ -17,13 +17,13 @@ scrub_targets = [
     "Bypass Prevention", "AI Block", "New Domain Block"
 ]
 
-#[tld]
-#url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
+[tld]
+url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-onlydomains.txt"
 
-#[spam_allow_source]
-#name      = "HaGeZi Spam Allow"
-#url       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
-#relevance = false
+[spam_allow_source]
+name      = "HaGeZi Spam Allow"
+url       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/spam-tlds-allow-onlydomains.txt"
+relevance = false
 
 # Truly standalone Cloudflare Gateway Firewall Policies (managed policies belong only under [policies.*])
 [gateway_policies]
@@ -38,7 +38,7 @@ scrub_targets = [
 
 [sources]
 # Large feeds (relevance = true by default to fit 300k quota)
-"HaGeZi Normal"      = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
+#"HaGeZi Normal"      = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/multi-onlydomains.txt"
 #"HaGeZi Pro++"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
 "HaGeZi TIF Full"    = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/tif.medium-onlydomains.txt"
 #"HaGeZi Badware"     = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/hoster-onlydomains.txt"
@@ -54,9 +54,9 @@ scrub_targets = [
 "HaGeZi Social"            = { url = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/social-onlydomains.txt", relevance = false }
 
 # Inactive sources
-#"HaGeZi Pro"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
+"HaGeZi Pro"       = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt"
 #"HaGeZi Ultimate"  = "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/ultimate-onlydomains.txt"
-#"NoAI"             = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
+"NoAI"             = "https://raw.githubusercontent.com/laylavish/uBlockOrigin-HUGE-AI-Blocklist/refs/heads/main/noai_hosts.txt"
 
 [ip_sources]
 "Spamhaus DROP"   = "https://www.spamhaus.org/drop/drop.txt"
@@ -89,13 +89,13 @@ content_categories  = []
 
 [policies.relaxed]
 prefix              = "L_Relaxed"
-name                = "AdBlock HaGeZi Normal"
+name                = "AdBlock HaGeZi Pro"
 action              = "block"
 type                = "DOMAIN"
 priority            = 20
 trimmable           = false
 use_spam_tld        = false
-include             = ["HaGeZi Normal", "HaGeZi No SafeSearch", "HaGeZi DynDNS", "HaGeZi Fake"]
+include             = ["HaGeZi Pro", "HaGeZi No SafeSearch", "HaGeZi DynDNS", "HaGeZi Fake"]
 exclude             = []
 security_categories = []
 content_categories  = []
@@ -162,18 +162,18 @@ include   = [
 ]
 exclude   = []
 
-#[policies.spamtld]
-#prefix              = "L_SpamTLD"
-#name                = "HaGeZi Spam TLD"
-#action              = "block"
-#type                = "DOMAIN"
-#priority            = 55
-#trimmable           = false
-#use_spam_tld        = true
-#include             = []
-#exclude             = []
-#security_categories = []
-#content_categories  = []
+[policies.spamtld]
+prefix              = "L_SpamTLD"
+name                = "HaGeZi Spam TLD"
+action              = "block"
+type                = "DOMAIN"
+priority            = 55
+trimmable           = false
+use_spam_tld        = true
+include             = []
+exclude             = []
+security_categories = []
+content_categories  = []
 
 [policies.NewDomainBlock]
 prefix              = "L_NewDomainBlock"
@@ -236,16 +236,16 @@ content_categories  = [2, 67, 125, 133]
 
 # ---------- Inactive Policy Templates ----------
 
-#[policies.AIBlockIsaac]
-#prefix              = "L_AIBlockIsaac"
-#name                = "AI Block Isaac"
-#action              = "block"
-#type                = "DOMAIN"
-#priority            = 35
-#trimmable           = false
-#restrict_users      = true
-#use_spam_tld        = false
-#include             = ["NoAI"]
-#exclude             = []
-#security_categories = []
-#content_categories  = []
+[policies.AIBlockIsaac]
+prefix              = "L_AIBlockIsaac"
+name                = "AI Block Isaac"
+action              = "block"
+type                = "DOMAIN"
+priority            = 35
+trimmable           = false
+restrict_users      = true
+use_spam_tld        = false
+include             = ["NoAI"]
+exclude             = []
+security_categories = []
+content_categories  = []
