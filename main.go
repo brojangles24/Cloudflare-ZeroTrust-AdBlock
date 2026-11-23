@@ -1787,12 +1787,12 @@ type rankedEntry struct {
 }
 
 type compiledPolicy struct {
-	Policy                                        policyConfig
-	Priority                                      int
-	Trimmable                                     bool
-	Entries                                       []rankedEntry
-	Chunks                                        [][]string
-	RawCount, DedupedCount, TrimmedCount, Guarded int
+	Policy                                                     policyConfig
+	Priority                                                   int
+	Trimmable                                                  bool
+	Entries                                                    []rankedEntry
+	Chunks                                                     [][]string
+	RawCount, DedupedCount, TrimmedCount, Guarded, TLDStripped int
 }
 
 func buildPolicySets(
@@ -1810,6 +1810,7 @@ func buildPolicySets(
 		ips          []string
 		rawCount     int
 		guardedCount int
+		tldStripped  int
 		guardedHits  []string
 	}
 
@@ -1878,12 +1879,14 @@ func buildPolicySets(
 			}
 
 			var guardedHits []string
+			tldStripped := 0
 			if p.resolvedAction() != "allow" {
 				if len(spamTLDs) > 0 && (p.UseSpamTLD || hasActiveSpamTLD) {
 					for d := range pSet {
 						if dot := strings.LastIndexByte(d, '.'); dot >= 0 {
 							if _, blocked := spamTLDs[d[dot+1:]]; blocked {
 								delete(pSet, d)
+								tldStripped++
 							}
 						}
 					}
@@ -1924,17 +1927,22 @@ func buildPolicySets(
 
 			rawSets[i] = rawPolicySet{
 				policy: p.clone(), priority: prio, trimmable: p.isTrimmable(),
-				domains: pSet, rawCount: len(pSet), guardedCount: len(guardedHits), guardedHits: guardedHits,
+				domains: pSet, rawCount: len(pSet), guardedCount: len(guardedHits),
+				tldStripped: tldStripped, guardedHits: guardedHits,
 			}
 		}(i, pol)
 	}
 	wg.Wait()
 
 	var guardWarnings []string
-	totalRaw := 0
+	totalRaw, totalTLDStripped := 0, 0
 	for _, rs := range rawSets {
 		guardWarnings = append(guardWarnings, rs.guardedHits...)
 		totalRaw += len(rs.domains)
+		totalTLDStripped += rs.tldStripped
+	}
+	if totalTLDStripped > 0 {
+		logInfo("Spam-TLD filter removed %d total domain(s) across policies", totalTLDStripped)
 	}
 	if len(guardWarnings) > 0 {
 		slices.Sort(guardWarnings)
@@ -2025,6 +2033,10 @@ func buildPolicySets(
 			out[outIdx] = compiledPolicy{Policy: rs.policy, Priority: rs.priority, Entries: entries, RawCount: rs.rawCount}
 			continue
 		}
+		if rs.tldStripped > 0 {
+			logInfo("Spam-TLD filter removed %d domain(s) from '%s' (priority %d)",
+				rs.tldStripped, rs.policy.Name, rs.priority)
+		}
 		entries := make([]rankedEntry, 0, len(rs.domains))
 		for d, r := range rs.domains {
 			entries = append(entries, rankedEntry{Value: d, Rank: r})
@@ -2037,7 +2049,8 @@ func buildPolicySets(
 		})
 		out[outIdx] = compiledPolicy{
 			Policy: rs.policy, Priority: rs.priority, Trimmable: rs.trimmable,
-			Entries: entries, RawCount: rs.rawCount, DedupedCount: dedupCounts[idx], Guarded: rs.guardedCount,
+			Entries: entries, RawCount: rs.rawCount, DedupedCount: dedupCounts[idx],
+			Guarded: rs.guardedCount, TLDStripped: rs.tldStripped,
 		}
 	}
 	return out, guardWarnings
@@ -2633,7 +2646,7 @@ func deleteListsBatched(cf *cloudflareAPI, lists []gatewayList, existingRules *[
 
 type policySyncStats struct {
 	Name, Prefix, Type, Status, RuleAction               string
-	Priority, Entries, Deduped, Trimmed                  int
+	Priority, Entries, Deduped, Trimmed, TLDStripped     int
 	ListsTotal, ListsCreated, ListsUpdated, ListsSkipped int
 	Trimmable                                            bool
 }
@@ -2680,7 +2693,8 @@ func syncAllPolicies(
 		stats[pIdx] = policySyncStats{
 			Name: p.Name, Prefix: p.Prefix, Type: p.resolvedType(),
 			Priority: cp.Priority, Trimmable: cp.Trimmable, Status: "synced",
-			Entries: len(cp.Entries), Deduped: cp.DedupedCount, Trimmed: cp.TrimmedCount, RuleAction: "unchanged",
+			Entries: len(cp.Entries), Deduped: cp.DedupedCount, Trimmed: cp.TrimmedCount,
+			TLDStripped: cp.TLDStripped, RuleAction: "unchanged",
 		}
 		if p.Prefix == "" || p.Name == "" {
 			stats[pIdx].Status = "inactive"
@@ -3100,11 +3114,12 @@ func writeStepSummary(
 	if summaryPath == "" {
 		return
 	}
-	created, updated, skipped := 0, 0, 0
+	created, updated, skipped, tldStripped := 0, 0, 0, 0
 	for _, ps := range policyStats {
 		created += ps.ListsCreated
 		updated += ps.ListsUpdated
 		skipped += ps.ListsSkipped
+		tldStripped += ps.TLDStripped
 	}
 	skipPct := 100.0
 	if ops := created + updated + skipped; ops > 0 {
@@ -3120,17 +3135,18 @@ func writeStepSummary(
 	fmt.Fprintf(&sb, "| **List Quota** | `%d / %d` (%.1f%% — %d managed, %d unmanaged) |\n",
 		usedLists, maxCloudflareLists, float64(usedLists)*100.0/float64(maxCloudflareLists), managedLists, unmanagedLists)
 	fmt.Fprintf(&sb, "| **List Writes** | `%d` created, `%d` updated, `%d` unchanged (%.1f%% skipped) |\n", created, updated, skipped, skipPct)
+	fmt.Fprintf(&sb, "| **Spam TLD Stripped** | `%d` domains |\n", tldStripped)
 	fmt.Fprintf(&sb, "| **Upstream Feeds** | `%d` ok, `%d` failed |\n\n", feedsOK, len(failedFeeds))
 
-	sb.WriteString("### Policies\n\n| Policy | Prio | Type | Mode | Status | Entries | Deduped | Trimmed | Lists (C/U/S) | Rule |\n| :--- | :---: | :---: | :---: | :---: | ---: | ---: | ---: | :---: | :---: |\n")
+	sb.WriteString("### Policies\n\n| Policy | Prio | Type | Mode | Status | Entries | Spam TLD | Deduped | Trimmed | Lists (C/U/S) | Rule |\n| :--- | :---: | :---: | :---: | :---: | ---: | ---: | ---: | ---: | :---: | :---: |\n")
 	for _, ps := range policyStats {
 		mode := "protected"
 		if ps.Trimmable {
 			mode = "trimmable"
 		}
-		fmt.Fprintf(&sb, "| %s | %d | %s | `%s` | `%s` | %d | %d | %d | %d (%d/%d/%d) | `%s` |\n",
+		fmt.Fprintf(&sb, "| %s | %d | %s | `%s` | `%s` | %d | %d | %d | %d | %d (%d/%d/%d) | `%s` |\n",
 			ps.Name, ps.Priority, ps.Type, mode, ps.Status,
-			ps.Entries, ps.Deduped, ps.Trimmed,
+			ps.Entries, ps.TLDStripped, ps.Deduped, ps.Trimmed,
 			ps.ListsTotal, ps.ListsCreated, ps.ListsUpdated, ps.ListsSkipped, ps.RuleAction)
 	}
 	if len(failedFeeds) > 0 || len(warnings) > 0 {
@@ -3499,17 +3515,18 @@ func run() error {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	created, updated, skipped := 0, 0, 0
+	created, updated, skipped, tldStripped := 0, 0, 0, 0
 	for _, ps := range policyStats {
 		created += ps.ListsCreated
 		updated += ps.ListsUpdated
 		skipped += ps.ListsSkipped
+		tldStripped += ps.TLDStripped
 	}
 	elapsed := time.Since(start)
 	totalLive := activeEntries + preservedItems
-	logInfo("Sync finished in %.2fs | relevance=%s | lists=%d (C:%d U:%d S:%d) | items=%d/%d | feeds_ok=%d failed=%d",
+	logInfo("Sync finished in %.2fs | relevance=%s | lists=%d (C:%d U:%d S:%d) | items=%d/%d | tld_stripped=%d | feeds_ok=%d failed=%d",
 		elapsed.Seconds(), relevanceStatus, len(allActiveIDs), created, updated, skipped,
-		totalLive, cfg.TotalQuota, len(fetched), len(failedFeedList))
+		totalLive, cfg.TotalQuota, tldStripped, len(fetched), len(failedFeedList))
 
 	writeStepSummary(elapsed, relevanceStatus, relevanceCount, len(fetched), totalLive, cfg.TotalQuota,
 		len(allActiveIDs), unmanagedLists, failedFeedList, summaryWarnings, policyStats)
