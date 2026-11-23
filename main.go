@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"net"
@@ -65,6 +66,19 @@ var (
 		{"https://openpagerank.keywordseverywhere.com/downloads/top10milliondomains.csv.zip", "zip", 1, true},
 		{"https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip", "zip", 1, false},
 	}
+	trimmableKeywords = []string{"porn", "nsfw", "adult", "malware", "tif", "threat", "badware"}
+	priorityRules     = []struct {
+		prio int
+		kws  []string
+	}{
+		{20, []string{"normal", "relaxed", "base"}},
+		{25, []string{"restrictive", "pro", "adblock"}},
+		{30, []string{"social", "ai"}},
+		{40, []string{"piracy"}},
+		{80, []string{"malware", "tif", "threat", "phish"}},
+		{85, []string{"badware"}},
+		{90, []string{"porn", "nsfw", "adult"}},
+	}
 	rejectedEntryRe = regexp.MustCompile(`invalid (?:label|domain|value) ["']?([a-zA-Z0-9_\-\.:/]+?)["'\s]`)
 )
 
@@ -91,6 +105,15 @@ func divCeil(n, d int) int {
 		return 0
 	}
 	return (n + d - 1) / d
+}
+
+func containsAny(s string, needles []string) bool {
+	for _, n := range needles {
+		if strings.Contains(s, n) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------- Configuration ----------
@@ -156,6 +179,19 @@ func (p policyConfig) effectiveIdentity(cfg *appConfig) string {
 
 func (p policyConfig) isScoped(cfg *appConfig) bool { return p.effectiveIdentity(cfg) != "" }
 
+func (p policyConfig) willBeEnabled(cfg *appConfig, existing *gatewayRule) bool {
+	if p.Enabled != nil && !*p.Enabled {
+		return false
+	}
+	if cfg.AutoEnableRules {
+		return true
+	}
+	if existing != nil {
+		return existing.Enabled
+	}
+	return p.Enabled != nil && *p.Enabled
+}
+
 func (p policyConfig) isTrimmable() bool {
 	if p.resolvedAction() == "allow" || p.resolvedType() == "IP" {
 		return false
@@ -164,12 +200,7 @@ func (p policyConfig) isTrimmable() bool {
 		return *p.Trimmable
 	}
 	full := strings.ToLower(p.Name + " " + p.Prefix + " " + strings.Join(p.Include, " "))
-	for _, kw := range []string{"porn", "nsfw", "adult", "malware", "tif", "threat", "badware"} {
-		if strings.Contains(full, kw) {
-			return true
-		}
-	}
-	return false
+	return containsAny(full, trimmableKeywords)
 }
 
 func (p policyConfig) resolvedPriority(cfg *appConfig) int {
@@ -183,38 +214,18 @@ func (p policyConfig) resolvedPriority(cfg *appConfig) int {
 		return 50
 	}
 	key := strings.ToLower(p.Name + " " + p.Prefix)
-	switch {
-	case strings.Contains(key, "bypass"):
+	if strings.Contains(key, "bypass") {
 		return 10
-	case strings.Contains(key, "normal") || strings.Contains(key, "relaxed") ||
-		strings.Contains(key, "base") || slices.Contains(p.Include, cfg.BaseFeed):
-		return 20
-	case strings.Contains(key, "restrictive") || strings.Contains(key, "pro") || strings.Contains(key, "adblock"):
-		return 25
-	case strings.Contains(key, "social") || strings.Contains(key, "ai"):
-		return 30
-	case strings.Contains(key, "piracy"):
-		return 40
-	case strings.Contains(key, "malware") || strings.Contains(key, "tif") ||
-		strings.Contains(key, "threat") || strings.Contains(key, "phish"):
-		return 80
-	case strings.Contains(key, "badware"):
-		return 85
-	case strings.Contains(key, "porn") || strings.Contains(key, "nsfw") || strings.Contains(key, "adult"):
-		return 90
-	default:
-		return 60
 	}
-}
-
-func (p policyConfig) clone() policyConfig {
-	p.Include = slices.Clone(p.Include)
-	p.Exclude = slices.Clone(p.Exclude)
-	p.Domains = slices.Clone(p.Domains)
-	p.SecurityCategories = slices.Clone(p.SecurityCategories)
-	p.ContentCategories = slices.Clone(p.ContentCategories)
-	p.AppIDs = slices.Clone(p.AppIDs)
-	return p
+	if slices.Contains(p.Include, cfg.BaseFeed) {
+		return 20
+	}
+	for _, r := range priorityRules {
+		if containsAny(key, r.kws) {
+			return r.prio
+		}
+	}
+	return 60
 }
 
 type rawConfig struct {
@@ -238,18 +249,9 @@ type appConfig struct {
 	ScrubTargets, UnmanagedListKeywords                              []string
 	AutoEnableRules, BlockPageEnabled                                bool
 	ForceRefreshRelevance, StrictFeeds                               bool
-	ProtectedRules, NeverBlock                                       map[string]struct{}
+	ProtectedRules, NeverBlock, NeverBlockAncestors                  map[string]struct{}
 	RelevanceMinRefreshSecs, RelevanceTTLSecs                        int64
 	Raw                                                              rawConfig
-}
-
-func containsAny(s string, needles []string) bool {
-	for _, n := range needles {
-		if strings.Contains(s, n) {
-			return true
-		}
-	}
-	return false
 }
 
 func (c *appConfig) isManagedList(name string) bool {
@@ -272,14 +274,10 @@ func (c *appConfig) isNeverBlocked(domain string) bool {
 	if len(c.NeverBlock) == 0 {
 		return false
 	}
-	if _, ok := c.NeverBlock[domain]; ok {
+	if _, ok := c.NeverBlockAncestors[domain]; ok {
 		return true
 	}
-	if trimmed, ok := strings.CutPrefix(domain, "www."); ok {
-		_, found := c.NeverBlock[trimmed]
-		return found
-	}
-	return false
+	return hasSuffixDomain(domain, c.NeverBlock)
 }
 
 func parseTimeoutSecs(v any) int64 {
@@ -343,9 +341,23 @@ func loadConfig(configPath string, forceRefresh, strict bool) (*appConfig, error
 	}
 
 	neverBlock := make(map[string]struct{}, len(s.NeverBlock))
+	neverBlockAncestors := make(map[string]struct{}, len(s.NeverBlock))
 	for _, d := range s.NeverBlock {
 		if clean, ok := normalizeDomainBytes([]byte(d), nil); ok {
-			neverBlock[string(clean)] = struct{}{}
+			dom := string(clean)
+			neverBlock[dom] = struct{}{}
+			for rest := dom; ; {
+				dot := strings.IndexByte(rest, '.')
+				if dot < 0 {
+					break
+				}
+				parent := rest[dot+1:]
+				if strings.IndexByte(parent, '.') < 0 {
+					break
+				}
+				neverBlockAncestors[parent] = struct{}{}
+				rest = parent
+			}
 		}
 	}
 
@@ -376,6 +388,7 @@ func loadConfig(configPath string, forceRefresh, strict bool) (*appConfig, error
 		ProtectedRules:          protected,
 		UnmanagedListKeywords:   unmanaged,
 		NeverBlock:              neverBlock,
+		NeverBlockAncestors:     neverBlockAncestors,
 		RelevanceCacheDir:       cacheDir,
 		RelevanceMinRefreshSecs: max(ptrOr(s.RelevanceMinRefreshHours, 24), 0) * 3600,
 		RelevanceTTLSecs:        max(ptrOr(s.RelevanceTTLDays, 7), 1) * 86400,
@@ -415,13 +428,7 @@ func (r gatewayRule) isDNSRule() bool {
 
 func (r gatewayRule) clone() gatewayRule {
 	r.Filters = slices.Clone(r.Filters)
-	if r.RuleSettings != nil {
-		cp := make(map[string]any, len(r.RuleSettings))
-		for k, v := range r.RuleSettings {
-			cp[k] = v
-		}
-		r.RuleSettings = cp
-	}
+	r.RuleSettings = maps.Clone(r.RuleSettings)
 	return r
 }
 
@@ -452,6 +459,21 @@ func parseRulePrecedence(raw json.RawMessage) (int64, bool) {
 		return int64(f), true
 	}
 	return 0, false
+}
+
+func copyRuleMeta(dst map[string]any, r gatewayRule) {
+	if isNonNullRaw(r.Precedence) {
+		dst["precedence"] = r.Precedence
+	}
+	if isNonNullRaw(r.Description) {
+		dst["description"] = r.Description
+	}
+	if isNonNullRaw(r.Schedule) {
+		dst["schedule"] = r.Schedule
+	}
+	if isNonNullRaw(r.DevicePosture) {
+		dst["device_posture"] = r.DevicePosture
+	}
 }
 
 func newHTTPClient(timeout time.Duration) *http.Client {
@@ -907,7 +929,10 @@ func normalizeDomainBytes(raw []byte, scratch *[]byte) ([]byte, bool) {
 	return d, true
 }
 
-func hasParentDomain[V any](host string, lookup map[string]V) bool {
+func hasSuffixDomain(host string, lookup map[string]struct{}) bool {
+	if _, ok := lookup[host]; ok {
+		return true
+	}
 	for rest := host; ; {
 		dot := strings.IndexByte(rest, '.')
 		if dot < 0 {
@@ -924,11 +949,24 @@ func hasParentDomain[V any](host string, lookup map[string]V) bool {
 	}
 }
 
-func hasSuffixDomain[V any](host string, lookup map[string]V) bool {
-	if _, ok := lookup[host]; ok {
+func domainHasLabel(domain, bad string) bool {
+	if strings.EqualFold(domain, bad) {
 		return true
 	}
-	return hasParentDomain(host, lookup)
+	for rest := domain; ; {
+		dot := strings.IndexByte(rest, '.')
+		lbl := rest
+		if dot >= 0 {
+			lbl = rest[:dot]
+		}
+		if strings.EqualFold(lbl, bad) {
+			return true
+		}
+		if dot < 0 {
+			return false
+		}
+		rest = rest[dot+1:]
+	}
 }
 
 // ---------- Rank-Aware Relevance Set, Radix Index & Binary Cache (RELCAC03) ----------
@@ -1210,15 +1248,15 @@ func loadRelevanceCache(cacheDir string) (*relevanceSet, error) {
 
 // ---------- Streaming Feed Fetching & Parsing ----------
 
-func looksLikeHTMLOrXML(contentType string, body []byte) bool {
-	ct := strings.ToLower(contentType)
-	if strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml") {
-		return true
+func looksLikeHTMLBody(sample []byte) bool {
+	b := bytes.TrimSpace(bytes.TrimPrefix(sample, []byte{0xEF, 0xBB, 0xBF}))
+	if len(b) == 0 || b[0] != '<' {
+		return false
 	}
-	sample := bytes.TrimPrefix(body[:min(len(body), 512)], []byte{0xEF, 0xBB, 0xBF})
-	t := strings.ToLower(strings.TrimSpace(string(sample)))
-	for _, p := range []string{"<!doctype", "<html", "<head", "<body", "<?xml"} {
-		if strings.HasPrefix(t, p) {
+	for _, p := range [][]byte{
+		[]byte("<!doctype"), []byte("<html"), []byte("<head"), []byte("<body"), []byte("<?xml"),
+	} {
+		if len(b) >= len(p) && bytes.EqualFold(b[:len(p)], p) {
 			return true
 		}
 	}
@@ -1276,7 +1314,7 @@ func streamWithRetry(client *http.Client, url string, checkBodyHTML bool, consum
 					sample, pErr := br.Peek(512)
 					if pErr != nil && !errors.Is(pErr, io.EOF) && !errors.Is(pErr, bufio.ErrBufferFull) {
 						err = pErr
-					} else if looksLikeHTMLOrXML(ct, sample) {
+					} else if looksLikeHTMLBody(sample) {
 						err = errors.New("HTML/XML error page in feed body")
 					}
 				}
@@ -1748,14 +1786,14 @@ func fetchSpamTLDs(client *http.Client, url string) (string, map[string]struct{}
 	tldSet := make(map[string]struct{})
 	err := streamWithRetry(client, url, true, func(r io.Reader, _ string) error {
 		return forEachLine(r, func(rawLine []byte) {
-			l := strings.ToLower(string(bytes.TrimSpace(rawLine)))
-			if l != "" && l[0] != '#' && l[0] != '!' && l[0] != '/' {
-				if fields := strings.Fields(l); len(fields) > 0 {
-					clean := strings.Trim(strings.TrimPrefix(fields[len(fields)-1], "*."), ".")
-					if clean != "" && !strings.ContainsAny(clean, ".*") {
-						tldSet[clean] = struct{}{}
-					}
-				}
+			line := bytes.TrimSpace(rawLine)
+			if len(line) == 0 || line[0] == '#' || line[0] == '!' || line[0] == '/' {
+				return
+			}
+			fields := bytes.Fields(line)
+			tok := bytes.Trim(bytes.TrimPrefix(fields[len(fields)-1], []byte("*.")), ".")
+			if len(tok) > 0 && bytes.IndexAny(tok, ".*") < 0 {
+				tldSet[strings.ToLower(string(tok))] = struct{}{}
 			}
 		})
 	})
@@ -1800,7 +1838,7 @@ func buildPolicySets(
 	policies []policyConfig,
 	fetched map[string]fetchedFeed,
 	spamTLDs map[string]struct{},
-	hasActiveSpamTLD bool,
+	stripSpamTLDs bool,
 ) ([]compiledPolicy, []string) {
 	type rawPolicySet struct {
 		policy       policyConfig
@@ -1850,7 +1888,7 @@ func buildPolicySets(
 						collapsed[j] = pf.String()
 					}
 				}
-				rawSets[i] = rawPolicySet{policy: p.clone(), priority: prio, ips: collapsed, rawCount: len(collapsed)}
+				rawSets[i] = rawPolicySet{policy: p, priority: prio, ips: collapsed, rawCount: len(collapsed)}
 				return
 			}
 
@@ -1881,7 +1919,7 @@ func buildPolicySets(
 			var guardedHits []string
 			tldStripped := 0
 			if p.resolvedAction() != "allow" {
-				if len(spamTLDs) > 0 && (p.UseSpamTLD || hasActiveSpamTLD) {
+				if len(spamTLDs) > 0 && (stripSpamTLDs || p.UseSpamTLD) {
 					for d := range pSet {
 						if dot := strings.LastIndexByte(d, '.'); dot >= 0 {
 							if _, blocked := spamTLDs[d[dot+1:]]; blocked {
@@ -1926,7 +1964,7 @@ func buildPolicySets(
 			}
 
 			rawSets[i] = rawPolicySet{
-				policy: p.clone(), priority: prio, trimmable: p.isTrimmable(),
+				policy: p, priority: prio, trimmable: p.isTrimmable(),
 				domains: pSet, rawCount: len(pSet), guardedCount: len(guardedHits),
 				tldStripped: tldStripped, guardedHits: guardedHits,
 			}
@@ -2024,7 +2062,7 @@ func buildPolicySets(
 
 	out := make([]compiledPolicy, len(order))
 	for outIdx, idx := range order {
-		rs := rawSets[idx]
+		rs := &rawSets[idx]
 		if rs.policy.resolvedType() == "IP" {
 			entries := make([]rankedEntry, len(rs.ips))
 			for j, cidr := range rs.ips {
@@ -2041,6 +2079,7 @@ func buildPolicySets(
 		for d, r := range rs.domains {
 			entries = append(entries, rankedEntry{Value: d, Rank: r})
 		}
+		rs.domains = nil
 		slices.SortFunc(entries, func(a, b rankedEntry) int {
 			if c := cmp.Compare(a.Rank, b.Rank); c != 0 {
 				return c
@@ -2208,18 +2247,6 @@ func bucketEntries(entries []rankedEntry, numBuckets, maxListSize int) [][]strin
 }
 
 func assignHashBuckets(compiled []compiledPolicy, existingLists []gatewayList, maxListSize, maxActiveLists int) int {
-	existingCounts := make(map[string]int, len(compiled))
-	for _, cp := range compiled {
-		if cp.Policy.Prefix == "" {
-			continue
-		}
-		for _, l := range existingLists {
-			if _, ok := parseChunkIndex(l.Name, cp.Policy.Prefix); ok {
-				existingCounts[cp.Policy.Prefix]++
-			}
-		}
-	}
-
 	targetSize, minFillSize := max((maxListSize*90)/100, 1), max((maxListSize*75)/100, 1)
 	bucketCounts, minBuckets := make([]int, len(compiled)), make([]int, len(compiled))
 	totalBuckets := 0
@@ -2236,7 +2263,7 @@ func assignHashBuckets(compiled []compiledPolicy, existingLists []gatewayList, m
 		}
 		minB, targetB, maxStickyB := divCeil(n, maxListSize), divCeil(n, targetSize), divCeil(n, minFillSize)
 		minBuckets[i] = minB
-		if existingB := existingCounts[cp.Policy.Prefix]; existingB >= minB && existingB <= maxStickyB {
+		if existingB := len(matchPolicyLists(existingLists, cp.Policy.Prefix)); existingB >= minB && existingB <= maxStickyB {
 			bucketCounts[i] = existingB
 		} else {
 			bucketCounts[i] = targetB
@@ -2315,6 +2342,28 @@ func parseChunkIndex(listName, prefix string) (int, bool) {
 	return n, err == nil
 }
 
+func matchPolicyLists(lists []gatewayList, prefix string) []gatewayList {
+	if prefix == "" {
+		return nil
+	}
+	type indexed struct {
+		idx  int
+		list gatewayList
+	}
+	var matched []indexed
+	for _, l := range lists {
+		if idx, ok := parseChunkIndex(l.Name, prefix); ok {
+			matched = append(matched, indexed{idx: idx, list: l})
+		}
+	}
+	slices.SortFunc(matched, func(a, b indexed) int { return cmp.Compare(a.idx, b.idx) })
+	out := make([]gatewayList, len(matched))
+	for i, m := range matched {
+		out[i] = m.list
+	}
+	return out
+}
+
 func hashChunk(chunk []string) string {
 	h := sha256.New()
 	comma := []byte(",")
@@ -2389,20 +2438,9 @@ func buildRuleUpdatePayload(rule gatewayRule, enabled bool, traffic string) map[
 		payload["identity"] = rule.Identity
 	}
 	if rule.RuleSettings != nil {
-		cp := make(map[string]any, len(rule.RuleSettings))
-		for k, v := range rule.RuleSettings {
-			cp[k] = v
-		}
-		payload["rule_settings"] = cp
+		payload["rule_settings"] = maps.Clone(rule.RuleSettings)
 	}
-	for k, raw := range map[string]json.RawMessage{
-		"device_posture": rule.DevicePosture, "schedule": rule.Schedule,
-		"precedence": rule.Precedence, "description": rule.Description,
-	} {
-		if isNonNullRaw(raw) {
-			payload[k] = raw
-		}
-	}
+	copyRuleMeta(payload, rule)
 	return payload
 }
 
@@ -2429,28 +2467,23 @@ func ensureSpamAllowPrecedence(cf *cloudflareAPI, spamTLDBlockNames map[string]s
 			}
 		}
 	}
-	if len(spamBlockIndices) == 0 {
-		return nil
-	}
-	if allowPrec < minSpamPrec {
-		logInfo("Rule precedence verified: '%s' (%d) precedes spam-TLD block rule(s) (min %d).",
-			spamAllowRuleName, allowPrec, minSpamPrec)
+	if len(spamBlockIndices) == 0 || allowPrec < minSpamPrec {
+		if len(spamBlockIndices) > 0 {
+			logInfo("Rule precedence verified: '%s' (%d) precedes spam-TLD block rule(s) (min %d).",
+				spamAllowRuleName, allowPrec, minSpamPrec)
+		}
 		return nil
 	}
 
 	var prevPrec, maxDNSPrec int64
-	usedPrecs := make(map[int64]struct{}, len(existingRules))
 	for i, r := range existingRules {
 		if !r.isDNSRule() {
 			continue
 		}
 		if p, ok := parseRulePrecedence(r.Precedence); ok {
 			maxDNSPrec = max(maxDNSPrec, p)
-			if i != allowIdx {
-				usedPrecs[p] = struct{}{}
-				if p < minSpamPrec && p > prevPrec {
-					prevPrec = p
-				}
+			if i != allowIdx && p < minSpamPrec && p > prevPrec {
+				prevPrec = p
 			}
 		}
 	}
@@ -2473,14 +2506,6 @@ func ensureSpamAllowPrecedence(cf *cloudflareAPI, spamTLDBlockNames map[string]s
 
 	if prevPrec+1 < minSpamPrec {
 		target := prevPrec + (minSpamPrec-prevPrec)/2
-		if _, taken := usedPrecs[target]; taken {
-			for cand := minSpamPrec - 1; cand > prevPrec; cand-- {
-				if _, used := usedPrecs[cand]; !used {
-					target = cand
-					break
-				}
-			}
-		}
 		if err := setPrec(allowIdx, target); err != nil {
 			logErr("Failed adjusting precedence of '%s': %v", spamAllowRuleName, err)
 			return []string{fmt.Sprintf("Failed to reorder '%s': %v", spamAllowRuleName, err)}
@@ -2651,6 +2676,20 @@ type policySyncStats struct {
 	Trimmable                                            bool
 }
 
+type syncTotals struct {
+	Created, Updated, Skipped, TLDStripped int
+}
+
+func sumPolicyStats(stats []policySyncStats) (t syncTotals) {
+	for _, ps := range stats {
+		t.Created += ps.ListsCreated
+		t.Updated += ps.ListsUpdated
+		t.Skipped += ps.ListsSkipped
+		t.TLDStripped += ps.TLDStripped
+	}
+	return t
+}
+
 func syncAllPolicies(
 	cf *cloudflareAPI,
 	cfg *appConfig,
@@ -2701,18 +2740,7 @@ func syncAllPolicies(
 			continue
 		}
 
-		type indexedList struct {
-			idx  int
-			list gatewayList
-		}
-		var matched []indexedList
-		for _, l := range existingLists {
-			if idx, ok := parseChunkIndex(l.Name, p.Prefix); ok {
-				matched = append(matched, indexedList{idx: idx, list: l})
-			}
-		}
-		slices.SortFunc(matched, func(a, b indexedList) int { return cmp.Compare(a.idx, b.idx) })
-
+		matched := matchPolicyLists(existingLists, p.Prefix)
 		chunkIDs[pIdx] = make([]string, len(cp.Chunks))
 		chunkOps[pIdx] = make([]int, len(cp.Chunks))
 		pType := p.resolvedType()
@@ -2720,20 +2748,20 @@ func syncAllPolicies(
 		for cIdx, chunk := range cp.Chunks {
 			name := fmt.Sprintf("%s %03d", p.Prefix, cIdx+1)
 			rawHash := hashChunk(chunk)
-			if cIdx < len(matched) && chunkMatchesRemote(matched[cIdx].list, name, rawHash, len(chunk)) {
-				chunkIDs[pIdx][cIdx], chunkOps[pIdx][cIdx] = matched[cIdx].list.ID, chunkSkipped
+			if cIdx < len(matched) && chunkMatchesRemote(matched[cIdx], name, rawHash, len(chunk)) {
+				chunkIDs[pIdx][cIdx], chunkOps[pIdx][cIdx] = matched[cIdx].ID, chunkSkipped
 				continue
 			}
 			targetID := ""
 			if cIdx < len(matched) {
-				targetID = matched[cIdx].list.ID
+				targetID = matched[cIdx].ID
 			}
 			dirty = append(dirty, dirtyChunk{
 				pIdx: pIdx, cIdx: cIdx, targetID: targetID, name: name, rawHash: rawHash, listTyp: pType, chunk: chunk,
 			})
 		}
 		for _, m := range matched[min(len(cp.Chunks), len(matched)):] {
-			allSurplusIDs = append(allSurplusIDs, m.list.ID)
+			allSurplusIDs = append(allSurplusIDs, m.ID)
 		}
 	}
 
@@ -2758,13 +2786,13 @@ func syncAllPolicies(
 					return
 				}
 
-				cur := slices.Clone(dc.chunk)
+				cur, origLen := dc.chunk, len(dc.chunk)
 				for attempt := 0; attempt < maxLabelPurgeAttempts; attempt++ {
 					if len(cur) == 0 {
 						return
 					}
 					desc := dc.rawHash
-					if len(cur) != len(dc.chunk) {
+					if len(cur) != origLen {
 						desc = fmt.Sprintf("%s:%d", dc.rawHash, len(cur))
 					}
 
@@ -2791,12 +2819,9 @@ func syncAllPolicies(
 					}
 					if attempt+1 < maxLabelPurgeAttempts {
 						if m := rejectedEntryRe.FindStringSubmatch(wErr.Error()); len(m) > 1 {
-							bad := strings.ToLower(m[1])
+							bad := m[1]
 							before := len(cur)
-							cur = slices.DeleteFunc(cur, func(d string) bool {
-								dl := strings.ToLower(d)
-								return dl == bad || slices.Contains(strings.Split(dl, "."), bad)
-							})
+							cur = slices.DeleteFunc(cur, func(d string) bool { return domainHasLabel(d, bad) })
 							if len(cur) < before {
 								logWarn("Purged rejected entry '%s' from %s (%d removed) and retrying...", bad, dc.name, before-len(cur))
 								continue
@@ -2891,26 +2916,19 @@ func syncAllPolicies(
 			}
 		}
 
-		var ruleEnabled bool
-		switch {
-		case p.Enabled != nil && !*p.Enabled:
-			ruleEnabled = false
-		case cfg.AutoEnableRules:
-			ruleEnabled = true
-		case ruleIdx >= 0:
-			ruleEnabled = rules[ruleIdx].Enabled
-		case p.Enabled != nil:
-			ruleEnabled = *p.Enabled
+		var existing *gatewayRule
+		if ruleIdx >= 0 {
+			existing = &rules[ruleIdx]
 		}
-
+		ruleEnabled := p.willBeEnabled(cfg, existing)
 		blockPage := ptrOr(p.BlockPageEnabled, cfg.BlockPageEnabled)
 		ipCat, action := p.IPCategories, p.resolvedAction()
 
-		settings := map[string]any{}
-		if ruleIdx >= 0 && rules[ruleIdx].RuleSettings != nil {
-			for k, v := range rules[ruleIdx].RuleSettings {
-				settings[k] = v
-			}
+		var settings map[string]any
+		if existing != nil && existing.RuleSettings != nil {
+			settings = maps.Clone(existing.RuleSettings)
+		} else {
+			settings = make(map[string]any, 2)
 		}
 		settings["block_page_enabled"], settings["ip_categories"] = blockPage, ipCat
 
@@ -2922,21 +2940,13 @@ func syncAllPolicies(
 			payload["identity"] = identityExpr
 		}
 
-		if ruleIdx >= 0 {
-			r := rules[ruleIdx]
-			for k, raw := range map[string]json.RawMessage{
-				"precedence": r.Precedence, "description": r.Description,
-				"schedule": r.Schedule, "device_posture": r.DevicePosture,
-			} {
-				if isNonNullRaw(raw) {
-					payload[k] = raw
-				}
-			}
-			oldBP, _ := r.RuleSettings["block_page_enabled"].(bool)
-			oldIPCat, _ := r.RuleSettings["ip_categories"].(bool)
-			if r.Traffic != trafficExpr || r.Identity != identityExpr || r.Enabled != ruleEnabled ||
-				r.Action != action || oldBP != blockPage || oldIPCat != ipCat {
-				updated, uErr := cf.updateRule(r.ID, payload)
+		if existing != nil {
+			copyRuleMeta(payload, *existing)
+			oldBP, _ := existing.RuleSettings["block_page_enabled"].(bool)
+			oldIPCat, _ := existing.RuleSettings["ip_categories"].(bool)
+			if existing.Traffic != trafficExpr || existing.Identity != identityExpr || existing.Enabled != ruleEnabled ||
+				existing.Action != action || oldBP != blockPage || oldIPCat != ipCat {
+				updated, uErr := cf.updateRule(existing.ID, payload)
 				if uErr != nil {
 					return nil, nil, nil, nil, uErr
 				}
@@ -3015,19 +3025,9 @@ func reclaimStaleResources(
 		if len(cp.Chunks) > 0 || (tldExpr != "" && cp.Policy.UseSpamTLD) || compileCategoryExpression(cp.Policy) != "" {
 			expectedRules[cp.Policy.Name] = struct{}{}
 		}
-		type indexedList struct {
-			idx int
-			id  string
-		}
-		var matched []indexedList
-		for _, l := range *existingLists {
-			if idx, ok := parseChunkIndex(l.Name, cp.Policy.Prefix); ok {
-				matched = append(matched, indexedList{idx: idx, id: l.ID})
-			}
-		}
-		slices.SortFunc(matched, func(a, b indexedList) int { return cmp.Compare(a.idx, b.idx) })
+		matched := matchPolicyLists(*existingLists, cp.Policy.Prefix)
 		for _, m := range matched[:min(len(cp.Chunks), len(matched))] {
-			keepIDs[m.id] = struct{}{}
+			keepIDs[m.ID] = struct{}{}
 		}
 	}
 
@@ -3071,7 +3071,7 @@ func cleanupOrphans(
 	for _, r := range activeRules {
 		keepRules[r] = struct{}{}
 	}
-	if scrubOrphanRules(cf, cfg, keepRules, existingRules) > 0 || len(surplusIDs) > 0 {
+	if scrubOrphanRules(cf, cfg, keepRules, existingRules) > 0 {
 		time.Sleep(2 * time.Second)
 	}
 
@@ -3095,10 +3095,14 @@ func cleanupOrphans(
 	return err
 }
 
-func filterPolicyIncludes(policies []policyConfig, keep func(string) bool) {
+func filterPolicyIncludes(policies []policyConfig, keep func(string) bool) int {
+	removed := 0
 	for i := range policies {
+		before := len(policies[i].Include)
 		policies[i].Include = slices.DeleteFunc(policies[i].Include, func(s string) bool { return !keep(s) })
+		removed += before - len(policies[i].Include)
 	}
+	return removed
 }
 
 // ---------- GitHub Actions Step Summary ----------
@@ -3107,6 +3111,7 @@ func writeStepSummary(
 	duration time.Duration,
 	relStatus string,
 	relCount, feedsOK, totalItems, totalQuota, managedLists, unmanagedLists int,
+	totals syncTotals,
 	failedFeeds, warnings []string,
 	policyStats []policySyncStats,
 ) {
@@ -3114,16 +3119,9 @@ func writeStepSummary(
 	if summaryPath == "" {
 		return
 	}
-	created, updated, skipped, tldStripped := 0, 0, 0, 0
-	for _, ps := range policyStats {
-		created += ps.ListsCreated
-		updated += ps.ListsUpdated
-		skipped += ps.ListsSkipped
-		tldStripped += ps.TLDStripped
-	}
 	skipPct := 100.0
-	if ops := created + updated + skipped; ops > 0 {
-		skipPct = float64(skipped) * 100.0 / float64(ops)
+	if ops := totals.Created + totals.Updated + totals.Skipped; ops > 0 {
+		skipPct = float64(totals.Skipped) * 100.0 / float64(ops)
 	}
 	usedLists := managedLists + unmanagedLists
 
@@ -3134,8 +3132,9 @@ func writeStepSummary(
 	fmt.Fprintf(&sb, "| **Item Quota** | `%d / %d` (%.1f%%) |\n", totalItems, totalQuota, float64(totalItems)*100.0/float64(max(totalQuota, 1)))
 	fmt.Fprintf(&sb, "| **List Quota** | `%d / %d` (%.1f%% — %d managed, %d unmanaged) |\n",
 		usedLists, maxCloudflareLists, float64(usedLists)*100.0/float64(maxCloudflareLists), managedLists, unmanagedLists)
-	fmt.Fprintf(&sb, "| **List Writes** | `%d` created, `%d` updated, `%d` unchanged (%.1f%% skipped) |\n", created, updated, skipped, skipPct)
-	fmt.Fprintf(&sb, "| **Spam TLD Stripped** | `%d` domains |\n", tldStripped)
+	fmt.Fprintf(&sb, "| **List Writes** | `%d` created, `%d` updated, `%d` unchanged (%.1f%% skipped) |\n",
+		totals.Created, totals.Updated, totals.Skipped, skipPct)
+	fmt.Fprintf(&sb, "| **Spam TLD Stripped** | `%d` domains |\n", totals.TLDStripped)
 	fmt.Fprintf(&sb, "| **Upstream Feeds** | `%d` ok, `%d` failed |\n\n", feedsOK, len(failedFeeds))
 
 	sb.WriteString("### Policies\n\n| Policy | Prio | Type | Mode | Status | Entries | Spam TLD | Deduped | Trimmed | Lists (C/U/S) | Rule |\n| :--- | :---: | :---: | :---: | :---: | ---: | ---: | ---: | ---: | :---: | :---: |\n")
@@ -3346,6 +3345,7 @@ func run() error {
 	if totalSources > 0 && len(fetched) == 0 {
 		return fmt.Errorf("all %d upstream feeds failed; aborting", totalSources)
 	}
+	feedsOK := len(fetched)
 
 	var activePolicies, preservedPolicies []policyConfig
 	for _, p := range allPolicies {
@@ -3359,25 +3359,40 @@ func run() error {
 		}
 	}
 
+	stripSpamTLDs := false
+	if !tldFailed && len(spamTLDs) > 0 {
+		for _, p := range allPolicies {
+			if !p.UseSpamTLD || p.resolvedAction() == "allow" {
+				continue
+			}
+			var existing *gatewayRule
+			if idx := slices.IndexFunc(existingRules, func(r gatewayRule) bool { return r.Name == p.Name }); idx >= 0 {
+				existing = &existingRules[idx]
+			}
+			if p.willBeEnabled(cfg, existing) {
+				stripSpamTLDs = true
+				break
+			}
+		}
+	}
+
 	preservedListIDs, preservedRuleNames := make(map[string]struct{}), make(map[string]struct{})
 	preservedItems := 0
 	preservedStats := make([]policySyncStats, 0, len(preservedPolicies))
 	for _, p := range preservedPolicies {
 		preservedRuleNames[p.Name] = struct{}{}
-		pLists, pItems := 0, 0
-		for _, l := range existingLists {
-			if _, ok := parseChunkIndex(l.Name, p.Prefix); ok {
-				preservedListIDs[l.ID] = struct{}{}
-				pLists++
-				if l.Count != nil {
-					pItems += int(*l.Count)
-				}
+		matched := matchPolicyLists(existingLists, p.Prefix)
+		pItems := 0
+		for _, l := range matched {
+			preservedListIDs[l.ID] = struct{}{}
+			if l.Count != nil {
+				pItems += int(*l.Count)
 			}
 		}
 		preservedItems += pItems
 		preservedStats = append(preservedStats, policySyncStats{
 			Name: p.Name, Prefix: p.Prefix, Type: p.resolvedType(), Priority: p.resolvedPriority(cfg),
-			Trimmable: p.isTrimmable(), Status: "preserved", Entries: pItems, ListsTotal: pLists, RuleAction: "preserved",
+			Trimmable: p.isTrimmable(), Status: "preserved", Entries: pItems, ListsTotal: len(matched), RuleAction: "preserved",
 		})
 	}
 
@@ -3394,7 +3409,6 @@ func run() error {
 
 	maxActiveLists := max(maxCloudflareLists-unmanagedLists-len(preservedListIDs), 0)
 	activeQuota := max(cfg.TotalQuota-preservedItems, 0)
-	hasActiveSpamTLD := useSpamTLDAny && !tldFailed
 	var summaryWarnings []string
 
 	shedTiers := []struct {
@@ -3406,39 +3420,42 @@ func run() error {
 		{"TIF domain feeds", func(l string) bool { return strings.Contains(l, "tif") }},
 	}
 
-	compileAndFit := func(pols []policyConfig, elists []gatewayList) ([]compiledPolicy, int, int, error) {
-		compiled, guardWarns := buildPolicySets(cfg, pols, fetched, spamTLDs, hasActiveSpamTLD)
-		if len(guardWarns) > 0 {
-			summaryWarnings = append(summaryWarnings, fmt.Sprintf("Config never_block stripped %d domain(s): %s",
-				len(guardWarns), strings.Join(guardWarns, ", ")))
-		}
-		summaryWarnings = append(summaryWarnings, trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)...)
-		entries, minLists := sumMinCapacity(compiled, cfg.MaxListSize)
+	var shedWarns []string
+	compiled, guardWarns := buildPolicySets(cfg, activePolicies, fetched, spamTLDs, stripSpamTLDs)
+	trimWarns := trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)
+	activeEntries, minLists := sumMinCapacity(compiled, cfg.MaxListSize)
 
-		for _, tier := range shedTiers {
-			if entries <= activeQuota && minLists <= maxActiveLists {
-				break
-			}
-			msg := fmt.Sprintf("Capacity exceeded (%d/%d entries, %d/%d min lists); shedding %s...",
-				entries, activeQuota, minLists, maxActiveLists, tier.label)
-			logWarn("%s", msg)
-			summaryWarnings = append(summaryWarnings, msg)
-			filterPolicyIncludes(pols, func(inc string) bool { return !tier.drop(strings.ToLower(inc)) })
-			compiled, _ = buildPolicySets(cfg, pols, fetched, spamTLDs, hasActiveSpamTLD)
-			trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)
-			entries, minLists = sumMinCapacity(compiled, cfg.MaxListSize)
+	for _, tier := range shedTiers {
+		if activeEntries <= activeQuota && minLists <= maxActiveLists {
+			break
 		}
-		if entries > activeQuota || minLists > maxActiveLists {
-			return nil, 0, 0, fmt.Errorf("capacity exceeded after all tiers (%d/%d entries, %d/%d lists)",
-				entries, activeQuota, minLists, maxActiveLists)
+		if filterPolicyIncludes(activePolicies, func(inc string) bool { return !tier.drop(strings.ToLower(inc)) }) == 0 {
+			continue
 		}
-		return compiled, entries, assignHashBuckets(compiled, elists, cfg.MaxListSize, maxActiveLists), nil
-	}
+		msg := fmt.Sprintf("Capacity exceeded (%d/%d entries, %d/%d min lists); shedding %s...",
+			activeEntries, activeQuota, minLists, maxActiveLists, tier.label)
+		logWarn("%s", msg)
+		shedWarns = append(shedWarns, msg)
 
-	compiled, activeEntries, totalChunks, err := compileAndFit(activePolicies, existingLists)
-	if err != nil {
-		return err
+		compiled, guardWarns = buildPolicySets(cfg, activePolicies, fetched, spamTLDs, stripSpamTLDs)
+		trimWarns = trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)
+		activeEntries, minLists = sumMinCapacity(compiled, cfg.MaxListSize)
 	}
+	if activeEntries > activeQuota || minLists > maxActiveLists {
+		return fmt.Errorf("capacity exceeded after all tiers (%d/%d entries, %d/%d lists)",
+			activeEntries, activeQuota, minLists, maxActiveLists)
+	}
+	if len(guardWarns) > 0 {
+		summaryWarnings = append(summaryWarnings, fmt.Sprintf("Config never_block stripped %d domain(s): %s",
+			len(guardWarns), strings.Join(guardWarns, ", ")))
+	}
+	summaryWarnings = append(summaryWarnings, shedWarns...)
+	summaryWarnings = append(summaryWarnings, trimWarns...)
+
+	fetched = nil
+	outcomes = nil
+	totalChunks := assignHashBuckets(compiled, existingLists, cfg.MaxListSize, maxActiveLists)
+
 	logInfo("Cloudflare lists: %d total (%d unmanaged, %d preserved, %d live items). Syncing %d list(s)...",
 		len(existingLists), unmanagedLists, len(preservedListIDs), currentManagedItems, totalChunks)
 
@@ -3454,52 +3471,8 @@ func run() error {
 		cf, cfg, existingLists, &existingRules, compiled, tldExpr, preservedListIDs, preservedRuleNames, standaloneRules,
 	)
 	if syncErr != nil {
-		if strings.Contains(syncErr.Error(), "Maximum number of lists reached") || strings.Contains(syncErr.Error(), "2017") {
-			logErr("Cloudflare 300-list limit hit; running emergency reclamation and rebuild...")
-			summaryWarnings = append(summaryWarnings, "Emergency 300-list limit recovery triggered.")
-			if existingLists, err = cf.getLists(); err != nil {
-				return err
-			}
-			if existingRules, err = cf.getRules(); err != nil {
-				return err
-			}
-			var reclaimable []gatewayList
-			for _, l := range existingLists {
-				if _, pres := preservedListIDs[l.ID]; !pres && cfg.isManagedList(l.Name) {
-					reclaimable = append(reclaimable, l)
-				}
-			}
-			snaps, delIDs, delErr := deleteListsBatched(cf, reclaimable, &existingRules)
-			if delErr != nil {
-				return delErr
-			}
-			time.Sleep(3 * time.Second)
-			filterPolicyIncludes(activePolicies, func(inc string) bool {
-				l := strings.ToLower(inc)
-				return !(strings.Contains(l, "oisd") && strings.Contains(l, "nsfw")) && !strings.Contains(l, "tif")
-			})
-			if existingLists, err = cf.getLists(); err != nil {
-				restoreDetachedRules(cf, snaps, delIDs)
-				return err
-			}
-			if existingRules, err = cf.getRules(); err != nil {
-				restoreDetachedRules(cf, snaps, delIDs)
-				return err
-			}
-			if compiled, activeEntries, totalChunks, err = compileAndFit(activePolicies, existingLists); err != nil {
-				restoreDetachedRules(cf, snaps, delIDs)
-				return err
-			}
-			if allActiveIDs, allSurplusIDs, allActiveRules, policyStats, err = syncAllPolicies(
-				cf, cfg, existingLists, &existingRules, compiled, tldExpr, preservedListIDs, preservedRuleNames, standaloneRules,
-			); err != nil {
-				restoreDetachedRules(cf, snaps, delIDs)
-				return err
-			}
-		} else {
-			restoreDetachedRules(cf, reclaimSnapshots, reclaimedIDs)
-			return syncErr
-		}
+		restoreDetachedRules(cf, reclaimSnapshots, reclaimedIDs)
+		return syncErr
 	}
 
 	if err := cleanupOrphans(cf, cfg, existingLists, &existingRules, allActiveIDs, allSurplusIDs, allActiveRules); err != nil {
@@ -3515,21 +3488,15 @@ func run() error {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	created, updated, skipped, tldStripped := 0, 0, 0, 0
-	for _, ps := range policyStats {
-		created += ps.ListsCreated
-		updated += ps.ListsUpdated
-		skipped += ps.ListsSkipped
-		tldStripped += ps.TLDStripped
-	}
+	totals := sumPolicyStats(policyStats)
 	elapsed := time.Since(start)
 	totalLive := activeEntries + preservedItems
 	logInfo("Sync finished in %.2fs | relevance=%s | lists=%d (C:%d U:%d S:%d) | items=%d/%d | tld_stripped=%d | feeds_ok=%d failed=%d",
-		elapsed.Seconds(), relevanceStatus, len(allActiveIDs), created, updated, skipped,
-		totalLive, cfg.TotalQuota, tldStripped, len(fetched), len(failedFeedList))
+		elapsed.Seconds(), relevanceStatus, len(allActiveIDs), totals.Created, totals.Updated, totals.Skipped,
+		totalLive, cfg.TotalQuota, totals.TLDStripped, feedsOK, len(failedFeedList))
 
-	writeStepSummary(elapsed, relevanceStatus, relevanceCount, len(fetched), totalLive, cfg.TotalQuota,
-		len(allActiveIDs), unmanagedLists, failedFeedList, summaryWarnings, policyStats)
+	writeStepSummary(elapsed, relevanceStatus, relevanceCount, feedsOK, totalLive, cfg.TotalQuota,
+		len(allActiveIDs), unmanagedLists, totals, failedFeedList, summaryWarnings, policyStats)
 
 	if cfg.StrictFeeds && len(failedFeedList) > 0 {
 		return fmt.Errorf("--strict enabled and %d upstream feed(s) failed", len(failedFeedList))
