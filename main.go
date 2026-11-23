@@ -44,78 +44,40 @@ const (
 	maxLabelPurgeAttempts  = 10
 	unrankedRank           = uint32(math.MaxUint32)
 	coreRankProtectionCap  = 10_000
-	cacheMagicV1           = "RELCAC01"
-	cacheMagicV2           = "RELCAC02"
 	cacheMagicV3           = "RELCAC03"
 	spamAllowRuleName      = "Allow: Spam Exceptions"
 	dummyTrafficExpression = `any(dns.domains[*] in {"invalid.local.blocklist.temp"})`
 )
 
-var defaultProtectedRules = []string{
-	"IoT Bypass",
-	"Custom",
-	"Keywords",
-	"SafeSearch",
-	"Global Blocklist",
-	"Global Bypass",
-	"Block IoT Network",
-	"YouTube Restricted",
-}
-
-type topListSpec struct {
-	URL         string
-	Col         int
-	SkipHeader  bool
-	Compression string
-}
-
-var defaultTopLists = []topListSpec{
-	{URL: "https://tranco-list.eu/top-1m.csv.zip", Col: 1, SkipHeader: false, Compression: "zip"},
-	{URL: "https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz", Col: 0, SkipHeader: true, Compression: "gzip"},
-	{URL: "https://downloads.majestic.com/majestic_million.csv", Col: 2, SkipHeader: true, Compression: "raw"},
-	{URL: "https://openpagerank.keywordseverywhere.com/downloads/top10milliondomains.csv.zip", Col: 1, SkipHeader: true, Compression: "zip"},
-	{URL: "https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip", Col: 1, SkipHeader: false, Compression: "zip"},
-}
-
 var (
+	defaultProtectedRules = []string{
+		"IoT Bypass", "Custom", "Keywords", "SafeSearch",
+		"Global Blocklist", "Global Bypass", "Block IoT Network", "YouTube Restricted",
+	}
+	defaultTopLists = []struct {
+		URL, Compression string
+		Col              int
+		SkipHeader       bool
+	}{
+		{"https://tranco-list.eu/top-1m.csv.zip", "zip", 1, false},
+		{"https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz", "gzip", 0, true},
+		{"https://downloads.majestic.com/majestic_million.csv", "raw", 2, true},
+		{"https://openpagerank.keywordseverywhere.com/downloads/top10milliondomains.csv.zip", "zip", 1, true},
+		{"https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip", "zip", 1, false},
+	}
 	rejectedEntryRe = regexp.MustCompile(`invalid (?:label|domain|value) ["']?([a-zA-Z0-9_\-\.:/]+?)["'\s]`)
-	reservedV4Nets  = mustParsePrefixes([]string{
-		"0.0.0.0/8",       // RFC 1122 / Unspecified
-		"10.0.0.0/8",      // RFC 1918
-		"100.64.0.0/10",   // RFC 6598 CGNAT (Tailscale / WARP)
-		"127.0.0.0/8",     // Loopback
-		"169.254.0.0/16",  // Link-local
-		"172.16.0.0/12",   // RFC 1918
-		"192.0.0.0/24",    // IETF protocol assignments
-		"192.0.2.0/24",    // TEST-NET-1
-		"192.168.0.0/16",  // RFC 1918
-		"198.18.0.0/15",   // Benchmarking
-		"198.51.100.0/24", // TEST-NET-2
-		"203.0.113.0/24",  // TEST-NET-3
-		"224.0.0.0/4",     // Multicast
-		"240.0.0.0/4",     // Reserved + Broadcast
-	})
-	reservedV6Nets = mustParsePrefixes([]string{
-		"::/128",
-		"::1/128",
-		"fc00::/7",      // Unique local
-		"fe80::/10",     // Link-local
-		"ff00::/8",      // Multicast
-		"2001:db8::/32", // Documentation
-	})
 )
 
-func mustParsePrefixes(cidrs []string) []netip.Prefix {
-	out := make([]netip.Prefix, len(cidrs))
-	for i, c := range cidrs {
-		out[i] = netip.MustParsePrefix(c)
-	}
-	return out
-}
+func logInfo(f string, a ...any) { fmt.Printf("[INFO] "+f+"\n", a...) }
+func logWarn(f string, a ...any) { fmt.Fprintf(os.Stderr, "[WARN] "+f+"\n", a...) }
+func logErr(f string, a ...any)  { fmt.Fprintf(os.Stderr, "[ERROR] "+f+"\n", a...) }
 
-func logInfo(format string, args ...any) { fmt.Printf("[INFO] "+format+"\n", args...) }
-func logWarn(format string, args ...any) { fmt.Fprintf(os.Stderr, "[WARN] "+format+"\n", args...) }
-func logErr(format string, args ...any)  { fmt.Fprintf(os.Stderr, "[ERROR] "+format+"\n", args...) }
+func ptrOr[T any](p *T, def T) T {
+	if p != nil {
+		return *p
+	}
+	return def
+}
 
 func jitterMs(maxMs int64) time.Duration {
 	if maxMs <= 1 {
@@ -131,7 +93,7 @@ func divCeil(n, d int) int {
 	return (n + d - 1) / d
 }
 
-// ---------- Typed Configuration ----------
+// ---------- Configuration ----------
 
 type settingsConfig struct {
 	MaxWorkers               *int     `toml:"max_workers"`
@@ -192,13 +154,8 @@ func (p policyConfig) effectiveIdentity(cfg *appConfig) string {
 	return strings.TrimSpace(p.IdentityCondition)
 }
 
-func (p policyConfig) isScoped(cfg *appConfig) bool {
-	return p.effectiveIdentity(cfg) != ""
-}
+func (p policyConfig) isScoped(cfg *appConfig) bool { return p.effectiveIdentity(cfg) != "" }
 
-// isTrimmable defaults to true ONLY for dynamic bulk Porn/NSFW and Malware/Badware/TIF policies.
-// Static safety policies (Bypass, AdBlock, Social, Piracy, IP lists, Allow lists) are
-// protected from rank trimming unless explicitly opted in via `trimmable = true`.
 func (p policyConfig) isTrimmable() bool {
 	if p.resolvedAction() == "allow" || p.resolvedType() == "IP" {
 		return false
@@ -206,27 +163,15 @@ func (p policyConfig) isTrimmable() bool {
 	if p.Trimmable != nil {
 		return *p.Trimmable
 	}
-	var sb strings.Builder
-	sb.WriteString(strings.ToLower(p.Name))
-	sb.WriteByte(' ')
-	sb.WriteString(strings.ToLower(p.Prefix))
-	for _, inc := range p.Include {
-		sb.WriteByte(' ')
-		sb.WriteString(strings.ToLower(inc))
+	full := strings.ToLower(p.Name + " " + p.Prefix + " " + strings.Join(p.Include, " "))
+	for _, kw := range []string{"porn", "nsfw", "adult", "malware", "tif", "threat", "badware"} {
+		if strings.Contains(full, kw) {
+			return true
+		}
 	}
-	full := sb.String()
-	return strings.Contains(full, "porn") ||
-		strings.Contains(full, "nsfw") ||
-		strings.Contains(full, "adult") ||
-		strings.Contains(full, "malware") ||
-		strings.Contains(full, "tif") ||
-		strings.Contains(full, "threat") ||
-		strings.Contains(full, "badware")
+	return false
 }
 
-// resolvedPriority assigns lower numbers (higher priority) to static safety lists
-// (Bypass -> AdBlock -> Social -> Piracy -> IPs -> Other) and higher numbers to
-// trimmable bulk lists (Malware=80, Badware=85, Porn=90).
 func (p policyConfig) resolvedPriority(cfg *appConfig) int {
 	if p.Priority != nil {
 		return *p.Priority
@@ -237,7 +182,6 @@ func (p policyConfig) resolvedPriority(cfg *appConfig) int {
 	if p.resolvedType() == "IP" {
 		return 50
 	}
-
 	key := strings.ToLower(p.Name + " " + p.Prefix)
 	switch {
 	case strings.Contains(key, "bypass"):
@@ -264,77 +208,52 @@ func (p policyConfig) resolvedPriority(cfg *appConfig) int {
 }
 
 func (p policyConfig) clone() policyConfig {
-	cp := p
-	cp.Include = slices.Clone(p.Include)
-	cp.Exclude = slices.Clone(p.Exclude)
-	cp.Domains = slices.Clone(p.Domains)
-	cp.SecurityCategories = slices.Clone(p.SecurityCategories)
-	cp.ContentCategories = slices.Clone(p.ContentCategories)
-	cp.AppIDs = slices.Clone(p.AppIDs)
-	return cp
-}
-
-type tldConfig struct {
-	URL string `toml:"url"`
-}
-
-type spamAllowSourceConfig struct {
-	Name      string `toml:"name"`
-	URL       string `toml:"url"`
-	Relevance *bool  `toml:"relevance"`
+	p.Include = slices.Clone(p.Include)
+	p.Exclude = slices.Clone(p.Exclude)
+	p.Domains = slices.Clone(p.Domains)
+	p.SecurityCategories = slices.Clone(p.SecurityCategories)
+	p.ContentCategories = slices.Clone(p.ContentCategories)
+	p.AppIDs = slices.Clone(p.AppIDs)
+	return p
 }
 
 type rawConfig struct {
-	Settings        settingsConfig          `toml:"settings"`
-	Sources         map[string]any          `toml:"sources"`
-	IPSources       map[string]any          `toml:"ip_sources"`
-	Policies        map[string]policyConfig `toml:"policies"`
-	TLD             tldConfig               `toml:"tld"`
-	SpamAllowSource *spamAllowSourceConfig  `toml:"spam_allow_source"`
-	GatewayPolicies map[string]any          `toml:"gateway_policies"`
+	Settings        settingsConfig                    `toml:"settings"`
+	Sources         map[string]any                    `toml:"sources"`
+	IPSources       map[string]any                    `toml:"ip_sources"`
+	Policies        map[string]policyConfig           `toml:"policies"`
+	TLD             struct{ URL string `toml:"url"` } `toml:"tld"`
+	SpamAllowSource *struct {
+		Name      string `toml:"name"`
+		URL       string `toml:"url"`
+		Relevance *bool  `toml:"relevance"`
+	} `toml:"spam_allow_source"`
+	GatewayPolicies map[string]any `toml:"gateway_policies"`
 }
 
 type appConfig struct {
-	APIToken                string
-	AccountID               string
-	TargetIdentity          string
-	MaxWorkers              int
-	MaxListSize             int
-	TotalQuota              int
-	Timeout                 time.Duration
-	ScrubTargets            []string
-	AutoEnableRules         bool
-	BlockPageEnabled        bool
-	BaseFeed                string
-	ProtectedRules          map[string]struct{}
-	UnmanagedListKeywords   []string
-	NeverBlock              map[string]struct{}
-	RelevanceCacheDir       string
-	RelevanceMinRefreshSecs int64
-	RelevanceTTLSecs        int64
-	DryRun                  bool
-	ForceRefreshRelevance   bool
-	StrictFeeds             bool
-	Raw                     rawConfig
+	APIToken, AccountID, TargetIdentity, BaseFeed, RelevanceCacheDir string
+	MaxWorkers, MaxListSize, TotalQuota                              int
+	Timeout                                                          time.Duration
+	ScrubTargets, UnmanagedListKeywords                              []string
+	AutoEnableRules, BlockPageEnabled                                bool
+	ForceRefreshRelevance, StrictFeeds                               bool
+	ProtectedRules, NeverBlock                                       map[string]struct{}
+	RelevanceMinRefreshSecs, RelevanceTTLSecs                        int64
+	Raw                                                              rawConfig
+}
+
+func containsAny(s string, needles []string) bool {
+	for _, n := range needles {
+		if strings.Contains(s, n) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *appConfig) isManagedList(name string) bool {
-	matched := false
-	for _, t := range c.ScrubTargets {
-		if strings.Contains(name, t) {
-			matched = true
-			break
-		}
-	}
-	if !matched {
-		return false
-	}
-	for _, kw := range c.UnmanagedListKeywords {
-		if strings.Contains(name, kw) {
-			return false
-		}
-	}
-	return true
+	return containsAny(name, c.ScrubTargets) && !containsAny(name, c.UnmanagedListKeywords)
 }
 
 func (c *appConfig) isProtectedRule(name string) bool {
@@ -357,33 +276,27 @@ func (c *appConfig) isNeverBlocked(domain string) bool {
 		return true
 	}
 	if trimmed, ok := strings.CutPrefix(domain, "www."); ok {
-		if _, ok := c.NeverBlock[trimmed]; ok {
-			return true
-		}
+		_, found := c.NeverBlock[trimmed]
+		return found
 	}
 	return false
 }
 
 func parseTimeoutSecs(v any) int64 {
+	if arr, ok := v.([]any); ok && len(arr) > 0 {
+		v = arr[len(arr)-1]
+	}
 	switch val := v.(type) {
 	case int64:
-		return val
+		return max(val, 5)
 	case float64:
-		return int64(val)
-	case []any:
-		if len(val) > 0 {
-			switch last := val[len(val)-1].(type) {
-			case int64:
-				return last
-			case float64:
-				return int64(last)
-			}
-		}
+		return max(int64(val), 5)
+	default:
+		return 30
 	}
-	return 30
 }
 
-func loadConfig(configPath string, dryRun, forceRefresh, strict bool) (*appConfig, error) {
+func loadConfig(configPath string, forceRefresh, strict bool) (*appConfig, error) {
 	var raw rawConfig
 	if _, err := toml.DecodeFile(configPath, &raw); err != nil {
 		return nil, fmt.Errorf("failed to load %s: %w", configPath, err)
@@ -396,58 +309,22 @@ func loadConfig(configPath string, dryRun, forceRefresh, strict bool) (*appConfi
 	}
 
 	var excluded []string
-	addExcluded := func(email string) {
-		email = strings.TrimSpace(email)
-		if email != "" && !slices.Contains(excluded, email) {
-			excluded = append(excluded, email)
+	for _, rawEmail := range append(
+		[]string{os.Getenv("SECONDARY_EMAIL"), os.Getenv("TERTIARY_EMAIL")},
+		strings.Split(os.Getenv("EXCLUDED_EMAILS"), ",")...,
+	) {
+		if e := strings.TrimSpace(rawEmail); e != "" {
+			if q := fmt.Sprintf(`"%s"`, e); !slices.Contains(excluded, q) {
+				excluded = append(excluded, q)
+			}
 		}
 	}
-	addExcluded(os.Getenv("SECONDARY_EMAIL"))
-	addExcluded(os.Getenv("TERTIARY_EMAIL"))
-	if extra := os.Getenv("EXCLUDED_EMAILS"); extra != "" {
-		for _, e := range strings.Split(extra, ",") {
-			addExcluded(e)
-		}
-	}
-
 	targetIdentity := ""
 	if len(excluded) > 0 {
-		quoted := make([]string, len(excluded))
-		for i, e := range excluded {
-			quoted[i] = fmt.Sprintf(`"%s"`, e)
-		}
-		targetIdentity = fmt.Sprintf("not(identity.email in {%s})", strings.Join(quoted, " "))
+		targetIdentity = fmt.Sprintf("not(identity.email in {%s})", strings.Join(excluded, " "))
 	}
 
 	s := raw.Settings
-	maxWorkers := 8
-	if s.MaxWorkers != nil && *s.MaxWorkers > 0 {
-		maxWorkers = *s.MaxWorkers
-	}
-	maxListSize := 1000
-	if s.MaxListSize != nil && *s.MaxListSize > 0 {
-		maxListSize = *s.MaxListSize
-	}
-	totalQuota := maxSafeDomains
-	if s.TotalQuota != nil && *s.TotalQuota > 0 {
-		totalQuota = min(*s.TotalQuota, maxSafeDomains)
-	}
-	timeoutSecs := max(parseTimeoutSecs(s.RequestTimeout), 5)
-
-	autoEnable := true
-	if s.AutoEnableRules != nil {
-		autoEnable = *s.AutoEnableRules
-	}
-	blockPage := false
-	if s.BlockPageEnabled != nil {
-		blockPage = *s.BlockPageEnabled
-	}
-
-	baseFeed := s.BaseFeed
-	if baseFeed == "" {
-		baseFeed = "HaGeZi Normal"
-	}
-
 	protList := s.ProtectedRules
 	if len(protList) == 0 {
 		protList = defaultProtectedRules
@@ -460,15 +337,15 @@ func loadConfig(configPath string, dryRun, forceRefresh, strict bool) (*appConfi
 		protected[k] = struct{}{}
 	}
 
-	unmanagedKeywords := s.UnmanagedListKeywords
-	if len(unmanagedKeywords) == 0 {
-		unmanagedKeywords = []string{"IoT Bypass"}
+	unmanaged := s.UnmanagedListKeywords
+	if len(unmanaged) == 0 {
+		unmanaged = []string{"IoT Bypass"}
 	}
 
 	neverBlock := make(map[string]struct{}, len(s.NeverBlock))
 	for _, d := range s.NeverBlock {
-		if clean, ok := normalizeDomain(d); ok {
-			neverBlock[clean] = struct{}{}
+		if clean, ok := normalizeDomainBytes([]byte(d), nil); ok {
+			neverBlock[string(clean)] = struct{}{}
 		}
 	}
 
@@ -479,46 +356,36 @@ func loadConfig(configPath string, dryRun, forceRefresh, strict bool) (*appConfi
 	if cacheDir == "" {
 		cacheDir = filepath.Join(".cache", "relevance")
 	}
-
-	minRefreshHours := int64(24)
-	if s.RelevanceMinRefreshHours != nil && *s.RelevanceMinRefreshHours >= 0 {
-		minRefreshHours = *s.RelevanceMinRefreshHours
-	}
-	ttlDays := int64(7)
-	if s.RelevanceTTLDays != nil && *s.RelevanceTTLDays >= 1 {
-		ttlDays = *s.RelevanceTTLDays
-	}
-
-	if dryRun {
-		logInfo("Running in --dry-run mode: no Cloudflare resources will be modified.")
+	baseFeed := s.BaseFeed
+	if baseFeed == "" {
+		baseFeed = "HaGeZi Normal"
 	}
 
 	return &appConfig{
 		APIToken:                apiToken,
 		AccountID:               accountID,
 		TargetIdentity:          targetIdentity,
-		MaxWorkers:              maxWorkers,
-		MaxListSize:             maxListSize,
-		TotalQuota:              totalQuota,
-		Timeout:                 time.Duration(timeoutSecs) * time.Second,
+		MaxWorkers:              max(ptrOr(s.MaxWorkers, 8), 1),
+		MaxListSize:             max(ptrOr(s.MaxListSize, 1000), 1),
+		TotalQuota:              min(max(ptrOr(s.TotalQuota, maxSafeDomains), 1), maxSafeDomains),
+		Timeout:                 time.Duration(parseTimeoutSecs(s.RequestTimeout)) * time.Second,
 		ScrubTargets:            s.ScrubTargets,
-		AutoEnableRules:         autoEnable,
-		BlockPageEnabled:        blockPage,
+		AutoEnableRules:         ptrOr(s.AutoEnableRules, true),
+		BlockPageEnabled:        ptrOr(s.BlockPageEnabled, false),
 		BaseFeed:                baseFeed,
 		ProtectedRules:          protected,
-		UnmanagedListKeywords:   unmanagedKeywords,
+		UnmanagedListKeywords:   unmanaged,
 		NeverBlock:              neverBlock,
 		RelevanceCacheDir:       cacheDir,
-		RelevanceMinRefreshSecs: minRefreshHours * 3600,
-		RelevanceTTLSecs:        ttlDays * 86400,
-		DryRun:                  dryRun,
+		RelevanceMinRefreshSecs: max(ptrOr(s.RelevanceMinRefreshHours, 24), 0) * 3600,
+		RelevanceTTLSecs:        max(ptrOr(s.RelevanceTTLDays, 7), 1) * 86400,
 		ForceRefreshRelevance:   forceRefresh,
 		StrictFeeds:             strict,
 		Raw:                     raw,
 	}, nil
 }
 
-// ---------- Cloudflare Models & API Client ----------
+// ---------- Cloudflare API Client ----------
 
 type gatewayList struct {
 	ID          string `json:"id"`
@@ -547,15 +414,15 @@ func (r gatewayRule) isDNSRule() bool {
 }
 
 func (r gatewayRule) clone() gatewayRule {
-	cp := r
-	cp.Filters = slices.Clone(r.Filters)
+	r.Filters = slices.Clone(r.Filters)
 	if r.RuleSettings != nil {
-		cp.RuleSettings = make(map[string]any, len(r.RuleSettings))
+		cp := make(map[string]any, len(r.RuleSettings))
 		for k, v := range r.RuleSettings {
-			cp.RuleSettings[k] = v
+			cp[k] = v
 		}
+		r.RuleSettings = cp
 	}
-	return cp
+	return r
 }
 
 type cfEnvelope struct {
@@ -567,18 +434,18 @@ type cfEnvelope struct {
 	} `json:"result_info"`
 }
 
+type listItem struct {
+	Value string `json:"value"`
+}
+
 func isNonNullRaw(raw json.RawMessage) bool {
-	trimmed := bytes.TrimSpace(raw)
-	return len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null"))
+	t := bytes.TrimSpace(raw)
+	return len(t) > 0 && !bytes.Equal(t, []byte("null"))
 }
 
 func parseRulePrecedence(raw json.RawMessage) (int64, bool) {
 	if !isNonNullRaw(raw) {
 		return 0, false
-	}
-	var n int64
-	if err := json.Unmarshal(raw, &n); err == nil {
-		return n, true
 	}
 	var f float64
 	if err := json.Unmarshal(raw, &f); err == nil {
@@ -588,22 +455,18 @@ func parseRulePrecedence(raw json.RawMessage) (int64, bool) {
 }
 
 func newHTTPClient(timeout time.Duration) *http.Client {
-	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   15 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          64,
-		MaxIdleConnsPerHost:   16,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   15 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-	}
 	return &http.Client{
-		Transport: transport,
-		Timeout:   timeout,
+		Timeout: timeout,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          64,
+			MaxIdleConnsPerHost:   16,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   15 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
 	}
 }
 
@@ -611,7 +474,6 @@ type cloudflareAPI struct {
 	client      *http.Client
 	baseURL     string
 	token       string
-	dryRun      bool
 	mu          sync.Mutex
 	nextWriteAt time.Time
 }
@@ -621,69 +483,59 @@ func newCloudflareAPI(cfg *appConfig) *cloudflareAPI {
 		client:      newHTTPClient(cfg.Timeout),
 		baseURL:     fmt.Sprintf("https://api.cloudflare.com/client/v4/accounts/%s/gateway", cfg.AccountID),
 		token:       cfg.APIToken,
-		dryRun:      cfg.DryRun,
 		nextWriteAt: time.Now(),
 	}
 }
 
-func (cf *cloudflareAPI) paceWrite(ctx context.Context) error {
-	cf.mu.Lock()
-	now := time.Now()
-	target := cf.nextWriteAt
-	if now.After(target) {
-		target = now
-	}
-	cf.nextWriteAt = target.Add(220*time.Millisecond + jitterMs(60))
-	cf.mu.Unlock()
-
-	if wait := time.Until(target); wait > 0 {
-		timer := time.NewTimer(wait)
-		defer timer.Stop()
-		select {
-		case <-timer.C:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	return nil
-}
-
-func (cf *cloudflareAPI) backoffAllWriters(wait time.Duration) {
-	cf.mu.Lock()
-	resume := time.Now().Add(wait)
-	if resume.After(cf.nextWriteAt) {
-		cf.nextWriteAt = resume
-	}
-	cf.mu.Unlock()
-}
-
 func sleepWithContext(ctx context.Context, d time.Duration) error {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
+	t := time.NewTimer(d)
+	defer t.Stop()
 	select {
-	case <-timer.C:
+	case <-t.C:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
-func isTransientStatus(code int) bool {
-	return code == 408 || (code >= 500 && code <= 504) || (code >= 520 && code <= 530)
+func (cf *cloudflareAPI) paceWrite(ctx context.Context) error {
+	cf.mu.Lock()
+	target := cf.nextWriteAt
+	if now := time.Now(); now.After(target) {
+		target = now
+	}
+	cf.nextWriteAt = target.Add(220*time.Millisecond + jitterMs(60))
+	cf.mu.Unlock()
+	if wait := time.Until(target); wait > 0 {
+		return sleepWithContext(ctx, wait)
+	}
+	return nil
+}
+
+func (cf *cloudflareAPI) backoffAllWriters(wait time.Duration) {
+	cf.mu.Lock()
+	if resume := time.Now().Add(wait); resume.After(cf.nextWriteAt) {
+		cf.nextWriteAt = resume
+	}
+	cf.mu.Unlock()
 }
 
 func (cf *cloudflareAPI) req(ctx context.Context, method, endpoint string, body any) (*cfEnvelope, error) {
 	url := cf.baseURL + "/" + endpoint
 	const retries = 6
-	const baseDelaySecs = 2
 
 	var bodyBytes []byte
 	if body != nil {
 		var err error
-		bodyBytes, err = json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("marshal request body for %s %s: %w", method, endpoint, err)
+		if bodyBytes, err = json.Marshal(body); err != nil {
+			return nil, fmt.Errorf("marshal body for %s %s: %w", method, endpoint, err)
 		}
+	}
+
+	retryWait := func(attempt int, msg string) error {
+		wait := time.Duration(min(2*(1<<attempt), 60))*time.Second + jitterMs(1000)
+		logWarn("%s on %s %s. Retrying in %.2fs...", msg, method, endpoint, wait.Seconds())
+		return sleepWithContext(ctx, wait)
 	}
 
 	for attempt := 0; attempt < retries; attempt++ {
@@ -697,7 +549,6 @@ func (cf *cloudflareAPI) req(ctx context.Context, method, endpoint string, body 
 		if bodyBytes != nil {
 			bodyReader = bytes.NewReader(bodyBytes)
 		}
-
 		httpReq, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
 		if err != nil {
 			return nil, err
@@ -710,44 +561,34 @@ func (cf *cloudflareAPI) req(ctx context.Context, method, endpoint string, body 
 
 		resp, err := cf.client.Do(httpReq)
 		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
+			if ctx.Err() != nil || attempt == retries-1 {
+				return nil, err
 			}
-			if attempt < retries-1 {
-				wait := time.Duration(min(baseDelaySecs*(1<<attempt), 60))*time.Second + jitterMs(1000)
-				logWarn("Network error on %s %s: %v. Retrying in %.2fs...", method, endpoint, err, wait.Seconds())
-				if err := sleepWithContext(ctx, wait); err != nil {
-					return nil, err
-				}
-				continue
+			if err := retryWait(attempt, fmt.Sprintf("Network error (%v)", err)); err != nil {
+				return nil, err
 			}
-			return nil, err
+			continue
 		}
 
 		respBytes, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if readErr != nil {
-			if attempt < retries-1 {
-				wait := time.Duration(min(baseDelaySecs*(1<<attempt), 60))*time.Second + jitterMs(1000)
-				logWarn("Body read error on %s %s: %v. Retrying in %.2fs...", method, endpoint, readErr, wait.Seconds())
-				if err := sleepWithContext(ctx, wait); err != nil {
-					return nil, err
-				}
-				continue
+			if attempt == retries-1 {
+				return nil, readErr
 			}
-			return nil, readErr
+			if err := retryWait(attempt, fmt.Sprintf("Body read error (%v)", readErr)); err != nil {
+				return nil, err
+			}
+			continue
 		}
 
 		code := resp.StatusCode
 		if code == http.StatusTooManyRequests && attempt < retries-1 {
-			waitSecs := baseDelaySecs * (1 << attempt)
-			if ra := strings.TrimSpace(resp.Header.Get("Retry-After")); ra != "" {
-				if parsed, err := strconv.Atoi(ra); err == nil {
-					waitSecs = parsed
-				}
+			waitSecs := 2 * (1 << attempt)
+			if parsed, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After"))); err == nil {
+				waitSecs = parsed
 			}
-			waitSecs = min(max(waitSecs, 1), 120)
-			wait := time.Duration(waitSecs)*time.Second + jitterMs(1000)
+			wait := time.Duration(min(max(waitSecs, 1), 120))*time.Second + jitterMs(1000)
 			cf.backoffAllWriters(wait)
 			logWarn("Rate limited (429) on %s %s. Backing off all writers for %.2fs.", method, endpoint, wait.Seconds())
 			if err := sleepWithContext(ctx, wait); err != nil {
@@ -756,28 +597,21 @@ func (cf *cloudflareAPI) req(ctx context.Context, method, endpoint string, body 
 			continue
 		}
 
-		if isTransientStatus(code) && attempt < retries-1 {
-			wait := time.Duration(min(baseDelaySecs*(1<<attempt), 60))*time.Second + jitterMs(1000)
-			logWarn("Transient HTTP %d on %s %s. Retrying in %.2fs...", code, method, endpoint, wait.Seconds())
-			if err := sleepWithContext(ctx, wait); err != nil {
+		if (code == 408 || (code >= 500 && code <= 504) || (code >= 520 && code <= 530)) && attempt < retries-1 {
+			if err := retryWait(attempt, fmt.Sprintf("Transient HTTP %d", code)); err != nil {
 				return nil, err
 			}
 			continue
 		}
 
 		if code < 200 || code >= 300 {
-			text := string(respBytes)
-			logErr("Cloudflare API error [%d] on %s %s: %s", code, method, endpoint, text)
-			return nil, fmt.Errorf("HTTP %d on %s %s: %s", code, method, endpoint, text)
+			logErr("Cloudflare API error [%d] on %s %s: %s", code, method, endpoint, string(respBytes))
+			return nil, fmt.Errorf("HTTP %d on %s %s: %s", code, method, endpoint, string(respBytes))
 		}
 
 		var env cfEnvelope
 		if err := json.Unmarshal(respBytes, &env); err != nil {
-			snippet := string(respBytes)
-			if len(snippet) > 300 {
-				snippet = snippet[:300]
-			}
-			return nil, fmt.Errorf("invalid JSON from %s %s: %w (%s)", method, endpoint, err, snippet)
+			return nil, fmt.Errorf("invalid JSON from %s %s: %w", method, endpoint, err)
 		}
 		if env.Success != nil && !*env.Success {
 			logErr("Cloudflare API error payload on %s %s: %s", method, endpoint, string(env.Errors))
@@ -785,217 +619,271 @@ func (cf *cloudflareAPI) req(ctx context.Context, method, endpoint string, body 
 		}
 		return &env, nil
 	}
-
-	return nil, fmt.Errorf("exceeded max retries on Cloudflare endpoint: %s", endpoint)
+	return nil, fmt.Errorf("exceeded max retries on %s", endpoint)
 }
 
 func paginate[T any](cf *cloudflareAPI, endpoint string) ([]T, error) {
-	var results []T
-	for page := 1; ; page++ {
-		env, err := cf.req(context.Background(), http.MethodGet, fmt.Sprintf("%s?page=%d&per_page=100", endpoint, page), nil)
+	fetchPage := func(ctx context.Context, page int) ([]T, int, error) {
+		env, err := cf.req(ctx, http.MethodGet, fmt.Sprintf("%s?page=%d&per_page=100", endpoint, page), nil)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
+		var items []T
 		if isNonNullRaw(env.Result) {
-			var pageItems []T
-			if err := json.Unmarshal(env.Result, &pageItems); err != nil {
-				return nil, fmt.Errorf("failed to deserialize %s page %d: %w", endpoint, page, err)
+			if err := json.Unmarshal(env.Result, &items); err != nil {
+				return nil, 0, fmt.Errorf("deserialize %s page %d: %w", endpoint, page, err)
 			}
-			results = append(results, pageItems...)
 		}
-		totalPages := env.ResultInfo.TotalPages
-		if totalPages < 1 {
-			totalPages = 1
-		}
-		if page >= totalPages {
-			break
-		}
+		return items, max(env.ResultInfo.TotalPages, 1), nil
 	}
-	return results, nil
+
+	first, totalPages, err := fetchPage(context.Background(), 1)
+	if err != nil || totalPages == 1 {
+		return first, err
+	}
+
+	pages := make([][]T, totalPages)
+	pages[0] = first
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	var errMu sync.Mutex
+	var firstErr error
+
+	for page := 2; page <= totalPages; page++ {
+		wg.Add(1)
+		go func(p int) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+			items, _, pErr := fetchPage(ctx, p)
+			if pErr != nil {
+				errMu.Lock()
+				if firstErr == nil {
+					firstErr = pErr
+					cancel()
+				}
+				errMu.Unlock()
+				return
+			}
+			pages[p-1] = items
+		}(page)
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
+	totalLen := 0
+	for _, p := range pages {
+		totalLen += len(p)
+	}
+	out := make([]T, 0, totalLen)
+	for _, p := range pages {
+		out = append(out, p...)
+	}
+	return out, nil
 }
 
 func (cf *cloudflareAPI) getLists() ([]gatewayList, error) { return paginate[gatewayList](cf, "lists") }
 func (cf *cloudflareAPI) getRules() ([]gatewayRule, error) { return paginate[gatewayRule](cf, "rules") }
 
-func (cf *cloudflareAPI) deleteList(lid string) error {
-	if cf.dryRun {
-		logInfo("[DRY-RUN] Would DELETE lists/%s", lid)
-		return nil
-	}
-	_, err := cf.req(context.Background(), http.MethodDelete, "lists/"+lid, nil)
+func (cf *cloudflareAPI) deleteList(id string) error {
+	_, err := cf.req(context.Background(), http.MethodDelete, "lists/"+id, nil)
 	return err
 }
 
-func (cf *cloudflareAPI) deleteRule(rid string) error {
-	if cf.dryRun {
-		logInfo("[DRY-RUN] Would DELETE rules/%s", rid)
-		return nil
-	}
-	_, err := cf.req(context.Background(), http.MethodDelete, "rules/"+rid, nil)
+func (cf *cloudflareAPI) deleteRule(id string) error {
+	_, err := cf.req(context.Background(), http.MethodDelete, "rules/"+id, nil)
 	return err
 }
 
-type listItemPayload struct {
-	Value string `json:"value"`
+func wrapListItems(items []string) []listItem {
+	out := make([]listItem, len(items))
+	for i, v := range items {
+		out[i] = listItem{Value: v}
+	}
+	return out
 }
 
 func (cf *cloudflareAPI) createList(ctx context.Context, name string, items []string, listType, desc string) (string, error) {
-	if cf.dryRun {
-		logInfo("[DRY-RUN] Would CREATE list '%s' (%d %s items)", name, len(items), listType)
-		return "dry-run-" + strings.ReplaceAll(name, " ", "-"), nil
-	}
-	wrapped := make([]listItemPayload, len(items))
-	for i, v := range items {
-		wrapped[i] = listItemPayload{Value: v}
-	}
-	payload := map[string]any{
-		"name":        name,
-		"type":        listType,
-		"items":       wrapped,
-		"description": desc,
-	}
-	env, err := cf.req(ctx, http.MethodPost, "lists", payload)
+	env, err := cf.req(ctx, http.MethodPost, "lists", map[string]any{
+		"name": name, "type": listType, "items": wrapListItems(items), "description": desc,
+	})
 	if err != nil {
 		return "", err
 	}
-	var created struct {
-		ID string `json:"id"`
-	}
+	var created struct{ ID string `json:"id"` }
 	if err := json.Unmarshal(env.Result, &created); err != nil || created.ID == "" {
-		return "", fmt.Errorf("Cloudflare createList response missing result.id for '%s'", name)
+		return "", fmt.Errorf("createList missing result.id for '%s'", name)
 	}
 	return created.ID, nil
 }
 
-func (cf *cloudflareAPI) updateList(ctx context.Context, lid, name string, items []string, desc string) error {
-	if cf.dryRun {
-		logInfo("[DRY-RUN] Would UPDATE list '%s' (%s, %d items)", name, lid, len(items))
-		return nil
-	}
-	wrapped := make([]listItemPayload, len(items))
-	for i, v := range items {
-		wrapped[i] = listItemPayload{Value: v}
-	}
-	payload := map[string]any{
-		"name":        name,
-		"items":       wrapped,
-		"description": desc,
-	}
-	_, err := cf.req(ctx, http.MethodPut, "lists/"+lid, payload)
+func (cf *cloudflareAPI) updateList(ctx context.Context, id, name string, items []string, desc string) error {
+	_, err := cf.req(ctx, http.MethodPut, "lists/"+id, map[string]any{
+		"name": name, "items": wrapListItems(items), "description": desc,
+	})
 	return err
 }
 
-func ensureRuleSettings(payload map[string]any) {
-	settings, ok := payload["rule_settings"].(map[string]any)
-	if !ok || settings == nil {
+func (cf *cloudflareAPI) upsertRule(method, endpoint string, payload map[string]any) (*gatewayRule, error) {
+	settings, _ := payload["rule_settings"].(map[string]any)
+	if settings == nil {
 		settings = map[string]any{}
 		payload["rule_settings"] = settings
 	}
 	if _, exists := settings["block_page_enabled"]; !exists {
 		settings["block_page_enabled"] = false
 	}
+	env, err := cf.req(context.Background(), method, endpoint, payload)
+	if err != nil || !isNonNullRaw(env.Result) {
+		return nil, err
+	}
+	var r gatewayRule
+	if err := json.Unmarshal(env.Result, &r); err != nil {
+		return nil, fmt.Errorf("deserialize rule: %w", err)
+	}
+	return &r, nil
 }
 
 func (cf *cloudflareAPI) createRule(payload map[string]any) (*gatewayRule, error) {
-	ensureRuleSettings(payload)
-	if cf.dryRun {
-		logInfo("[DRY-RUN] Would CREATE rule '%v'", payload["name"])
-		return nil, nil
-	}
-	env, err := cf.req(context.Background(), http.MethodPost, "rules", payload)
-	if err != nil {
-		return nil, err
-	}
-	if !isNonNullRaw(env.Result) {
-		return nil, nil
-	}
-	var created gatewayRule
-	if err := json.Unmarshal(env.Result, &created); err != nil {
-		return nil, fmt.Errorf("deserialize created rule: %w", err)
-	}
-	return &created, nil
+	return cf.upsertRule(http.MethodPost, "rules", payload)
 }
 
-func (cf *cloudflareAPI) updateRule(rid string, payload map[string]any) (*gatewayRule, error) {
-	ensureRuleSettings(payload)
-	if cf.dryRun {
-		logInfo("[DRY-RUN] Would UPDATE rule '%v' (%s)", payload["name"], rid)
-		return nil, nil
-	}
-	env, err := cf.req(context.Background(), http.MethodPut, "rules/"+rid, payload)
-	if err != nil {
-		return nil, err
-	}
-	if !isNonNullRaw(env.Result) {
-		return nil, nil
-	}
-	var updated gatewayRule
-	if err := json.Unmarshal(env.Result, &updated); err != nil {
-		return nil, fmt.Errorf("deserialize updated rule: %w", err)
-	}
-	return &updated, nil
+func (cf *cloudflareAPI) updateRule(id string, payload map[string]any) (*gatewayRule, error) {
+	return cf.upsertRule(http.MethodPut, "rules/"+id, payload)
 }
 
-// ---------- Domain & IP Validation ----------
+// ---------- Single-Pass Zero-Alloc Domain Validation & Parsing ----------
 
-func isASCII(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] >= 0x80 {
-			return false
+func stripWWWBytes(b []byte) []byte {
+	if len(b) > 4 && bytes.HasPrefix(b, []byte("www.")) && bytes.IndexByte(b[4:], '.') >= 0 {
+		return b[4:]
+	}
+	return b
+}
+
+func normalizeDomainBytes(raw []byte, scratch *[]byte) ([]byte, bool) {
+	b := bytes.TrimSpace(raw)
+	if len(b) == 0 {
+		return nil, false
+	}
+
+	// Single-pass zero-alloc fast path for clean lowercase ASCII domains
+	if len(b) >= 4 && len(b) <= 253 {
+		lblStart, labels, lastAlpha, ok := 0, 0, true, true
+		for i, c := range b {
+			switch {
+			case c >= 'a' && c <= 'z':
+			case c >= '0' && c <= '9':
+				lastAlpha = false
+			case c == '-':
+				lastAlpha = false
+				if i == lblStart || b[i-1] == '-' {
+					ok = false
+				}
+			case c == '.':
+				if n := i - lblStart; n == 0 || n > 63 || b[i-1] == '-' {
+					ok = false
+				} else {
+					labels++
+					lblStart = i + 1
+					lastAlpha = true
+				}
+			default:
+				ok = false
+			}
+			if !ok {
+				break
+			}
+		}
+		if ok && labels >= 1 && lastAlpha {
+			if n := len(b) - lblStart; n >= 2 && n <= 63 && b[len(b)-1] != '-' {
+				return b, true
+			}
 		}
 	}
-	return true
-}
 
-func isValidASCIILabel(label string) bool {
-	n := len(label)
-	if n == 0 || n > 63 || label[0] == '-' || label[n-1] == '-' {
-		return false
+	// Slow path: URL stripping, wildcards, uppercase ASCII, IDNA, punycode
+	if idx := bytes.Index(b, []byte("://")); idx >= 0 {
+		b = b[idx+3:]
 	}
-	for i := 0; i < n; i++ {
-		c := label[i]
-		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
-			return false
-		}
+	if idx := bytes.IndexAny(b, "?/:"); idx >= 0 {
+		b = b[:idx]
 	}
-	return true
-}
+	b = bytes.Trim(bytes.TrimPrefix(b, []byte("*.")), ".")
+	if len(b) == 0 || len(b) > 253 || bytes.IndexByte(b, '.') < 0 || bytes.Contains(b, []byte("..")) {
+		return nil, false
+	}
 
-func isValidTLD(tld string) bool {
-	n := len(tld)
-	if n < 2 || n > 63 {
-		return false
-	}
-	allAlpha := true
-	for i := 0; i < n; i++ {
-		if tld[i] < 'a' || tld[i] > 'z' {
-			allAlpha = false
+	hasUpper, nonASCII := false, false
+	for _, c := range b {
+		if c >= 0x80 {
+			nonASCII = true
 			break
 		}
+		if c >= 'A' && c <= 'Z' {
+			hasUpper = true
+		}
 	}
-	if allAlpha {
-		return true
-	}
-	return strings.HasPrefix(tld, "xn--") && n >= 5 && isValidASCIILabel(tld)
-}
 
-func isFastASCIIDomain(s string) bool {
-	if len(s) > 253 || strings.Contains(s, "--") {
-		return false
-	}
-	labels := 0
-	last := ""
-	rest := s
-	for {
-		dot := strings.IndexByte(rest, '.')
-		var lbl string
-		if dot < 0 {
-			lbl = rest
+	d := b
+	if nonASCII {
+		ascii, err := idna.Lookup.ToASCII(strings.ToLower(string(b)))
+		if err != nil || len(ascii) > 253 {
+			return nil, false
+		}
+		d = []byte(ascii)
+	} else if hasUpper {
+		var buf []byte
+		if scratch != nil && cap(*scratch) >= len(b) {
+			buf = (*scratch)[:len(b)]
 		} else {
+			buf = make([]byte, len(b))
+		}
+		for i, c := range b {
+			if c >= 'A' && c <= 'Z' {
+				c += 'a' - 'A'
+			}
+			buf[i] = c
+		}
+		if scratch != nil {
+			*scratch = buf
+		}
+		d = buf
+	}
+
+	labels := 0
+	var last []byte
+	for rest := d; ; {
+		dot := bytes.IndexByte(rest, '.')
+		lbl := rest
+		if dot >= 0 {
 			lbl = rest[:dot]
 		}
-		if !isValidASCIILabel(lbl) {
-			return false
+		n := len(lbl)
+		if n == 0 || n > 63 || lbl[0] == '-' || lbl[n-1] == '-' {
+			return nil, false
+		}
+		for _, c := range lbl {
+			if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+				return nil, false
+			}
+		}
+		if n >= 4 && lbl[2] == '-' && lbl[3] == '-' {
+			if !bytes.HasPrefix(lbl, []byte("xn--")) {
+				return nil, false
+			}
+			if _, err := idna.Lookup.ToUnicode(string(lbl)); err != nil {
+				return nil, false
+			}
 		}
 		labels++
 		last = lbl
@@ -1005,95 +893,28 @@ func isFastASCIIDomain(s string) bool {
 		rest = rest[dot+1:]
 	}
 	if labels < 2 || len(last) < 2 {
-		return false
+		return nil, false
 	}
-	for i := 0; i < len(last); i++ {
-		if last[i] < 'a' || last[i] > 'z' {
-			return false
-		}
-	}
-	return true
-}
-
-func normalizeDomain(raw string) (string, bool) {
-	s := strings.TrimSpace(raw)
-	if s == "" {
-		return "", false
-	}
-	if idx := strings.Index(s, "://"); idx >= 0 {
-		s = s[idx+3:]
-	}
-	if strings.ContainsAny(s, "/?:*") || strings.HasPrefix(s, ".") || strings.HasSuffix(s, ".") {
-		if idx := strings.IndexByte(s, '?'); idx >= 0 {
-			s = s[:idx]
-		}
-		if idx := strings.IndexByte(s, '/'); idx >= 0 {
-			s = s[:idx]
-		}
-		if idx := strings.IndexByte(s, ':'); idx >= 0 {
-			s = s[:idx]
-		}
-		s = strings.TrimPrefix(s, "*.")
-		s = strings.Trim(s, ".")
-	}
-	if s == "" || len(s) > 253 || !strings.ContainsRune(s, '.') || strings.Contains(s, "..") {
-		return "", false
-	}
-
-	if isFastASCIIDomain(s) {
-		return s, true
-	}
-
-	var d string
-	if isASCII(s) {
-		d = strings.ToLower(s)
-	} else {
-		var err error
-		d, err = idna.Lookup.ToASCII(strings.ToLower(s))
-		if err != nil {
-			return "", false
-		}
-	}
-
-	if len(d) > 253 {
-		return "", false
-	}
-	if isFastASCIIDomain(d) {
-		return d, true
-	}
-
-	labels := strings.Split(d, ".")
-	if len(labels) < 2 {
-		return "", false
-	}
-	for _, lbl := range labels {
-		if !isValidASCIILabel(lbl) {
-			return "", false
-		}
-		if len(lbl) >= 4 && lbl[2] == '-' && lbl[3] == '-' {
-			if !strings.HasPrefix(lbl, "xn--") {
-				return "", false
-			}
-			if _, err := idna.Lookup.ToUnicode(lbl); err != nil {
-				return "", false
+	if !bytes.HasPrefix(last, []byte("xn--")) {
+		for _, c := range last {
+			if c < 'a' || c > 'z' {
+				return nil, false
 			}
 		}
-	}
-	if !isValidTLD(labels[len(labels)-1]) {
-		return "", false
+	} else if len(last) < 5 {
+		return nil, false
 	}
 	return d, true
 }
 
 func hasParentDomain[V any](host string, lookup map[string]V) bool {
-	rest := host
-	for {
+	for rest := host; ; {
 		dot := strings.IndexByte(rest, '.')
 		if dot < 0 {
 			return false
 		}
 		parent := rest[dot+1:]
-		if !strings.ContainsRune(parent, '.') {
+		if strings.IndexByte(parent, '.') < 0 {
 			return false
 		}
 		if _, ok := lookup[parent]; ok {
@@ -1110,30 +931,7 @@ func hasSuffixDomain[V any](host string, lookup map[string]V) bool {
 	return hasParentDomain(host, lookup)
 }
 
-func isNonRoutableIP(p netip.Prefix) bool {
-	p = p.Masked()
-	addr := p.Addr()
-	if addr.Is4In6() && p.Bits() >= 96 {
-		p = netip.PrefixFrom(addr.Unmap(), p.Bits()-96)
-		addr = p.Addr()
-	}
-	if addr.Is4() {
-		for _, r := range reservedV4Nets {
-			if r.Overlaps(p) {
-				return true
-			}
-		}
-		return false
-	}
-	for _, r := range reservedV6Nets {
-		if r.Overlaps(p) {
-			return true
-		}
-	}
-	return false
-}
-
-// ---------- Rank-Aware Flat Relevance Set & Binary Cache (RELCAC03) ----------
+// ---------- Rank-Aware Relevance Set, Radix Index & Binary Cache (RELCAC03) ----------
 
 type rankedHash struct {
 	hash uint64
@@ -1141,8 +939,22 @@ type rankedHash struct {
 }
 
 type relevanceSet struct {
-	hashes []uint64
-	ranks  []uint32
+	hashes  []uint64
+	ranks   []uint32
+	offsets [65537]uint32
+}
+
+func (rs *relevanceSet) buildIndex() {
+	n := uint32(len(rs.hashes))
+	var cur uint32
+	for i, h := range rs.hashes {
+		for b := uint32(h >> 48); cur <= b; cur++ {
+			rs.offsets[cur] = uint32(i)
+		}
+	}
+	for ; cur <= 65536; cur++ {
+		rs.offsets[cur] = n
+	}
 }
 
 func (rs *relevanceSet) len() int {
@@ -1152,32 +964,37 @@ func (rs *relevanceSet) len() int {
 	return len(rs.hashes)
 }
 
-func (rs *relevanceSet) bestRank(host string) (uint32, bool) {
+func (rs *relevanceSet) lookupHash(h uint64) (uint32, bool) {
+	b := h >> 48
+	lo, hi := rs.offsets[b], rs.offsets[b+1]
+	if lo == hi {
+		return 0, false
+	}
+	if idx, ok := slices.BinarySearch(rs.hashes[lo:hi], h); ok {
+		return rs.ranks[lo+uint32(idx)], true
+	}
+	return 0, false
+}
+
+func (rs *relevanceSet) bestRankBytes(host []byte) (uint32, bool) {
 	if rs == nil || len(rs.hashes) == 0 {
 		return unrankedRank, false
 	}
-	best := unrankedRank
-	found := false
-
-	if idx, ok := slices.BinarySearch(rs.hashes, xxh3.HashString(host)); ok {
-		best = rs.ranks[idx]
-		found = true
+	best, found := unrankedRank, false
+	if r, ok := rs.lookupHash(xxh3.Hash(host)); ok {
+		best, found = r, true
 	}
-	rest := host
-	for {
-		dot := strings.IndexByte(rest, '.')
+	for rest := host; ; {
+		dot := bytes.IndexByte(rest, '.')
 		if dot < 0 {
 			break
 		}
 		parent := rest[dot+1:]
-		if !strings.ContainsRune(parent, '.') {
+		if bytes.IndexByte(parent, '.') < 0 {
 			break
 		}
-		if idx, ok := slices.BinarySearch(rs.hashes, xxh3.HashString(parent)); ok {
-			if rs.ranks[idx] < best {
-				best = rs.ranks[idx]
-			}
-			found = true
+		if r, ok := rs.lookupHash(xxh3.Hash(parent)); ok {
+			best, found = min(best, r), true
 		}
 		rest = parent
 	}
@@ -1192,19 +1009,16 @@ type relevanceMeta struct {
 }
 
 func atomicRename(tmp, dest string) error {
-	if err := os.Rename(tmp, dest); err != nil {
-		if runtime.GOOS == "windows" {
-			_ = os.Remove(dest)
-			return os.Rename(tmp, dest)
-		}
-		return err
+	err := os.Rename(tmp, dest)
+	if err != nil && runtime.GOOS == "windows" {
+		_ = os.Remove(dest)
+		return os.Rename(tmp, dest)
 	}
-	return nil
+	return err
 }
 
 func extractHeaderFingerprint(h http.Header) string {
-	etag := strings.TrimSpace(h.Get("ETag"))
-	lm := strings.TrimSpace(h.Get("Last-Modified"))
+	etag, lm := strings.TrimSpace(h.Get("ETag")), strings.TrimSpace(h.Get("Last-Modified"))
 	if etag != "" || lm != "" {
 		return fmt.Sprintf("etag=%s|lm=%s", etag, lm)
 	}
@@ -1218,14 +1032,13 @@ func probeTopListHeaders(client *http.Client) map[string]string {
 	out := make(map[string]string, len(defaultTopLists))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-
 	for _, spec := range defaultTopLists {
 		wg.Add(1)
-		go func(spec topListSpec) {
+		go func(url string) {
 			defer wg.Done()
 			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 			defer cancel()
-			req, err := http.NewRequestWithContext(ctx, http.MethodHead, spec.URL, nil)
+			req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 			if err != nil {
 				return
 			}
@@ -1238,11 +1051,11 @@ func probeTopListHeaders(client *http.Client) map[string]string {
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 				if fp := extractHeaderFingerprint(resp.Header); fp != "" {
 					mu.Lock()
-					out[spec.URL] = fp
+					out[url] = fp
 					mu.Unlock()
 				}
 			}
-		}(spec)
+		}(spec.URL)
 	}
 	wg.Wait()
 	return out
@@ -1252,10 +1065,8 @@ func saveRelevanceCache(cacheDir string, rs *relevanceSet, meta *relevanceMeta) 
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return err
 	}
-	binPath := filepath.Join(cacheDir, "relevance.bin")
-	binTmp := filepath.Join(cacheDir, "relevance.bin.tmp")
-	metaPath := filepath.Join(cacheDir, "relevance.meta.json")
-	metaTmp := filepath.Join(cacheDir, "relevance.meta.json.tmp")
+	binPath, binTmp := filepath.Join(cacheDir, "relevance.bin"), filepath.Join(cacheDir, "relevance.bin.tmp")
+	metaPath, metaTmp := filepath.Join(cacheDir, "relevance.meta.json"), filepath.Join(cacheDir, "relevance.meta.json.tmp")
 
 	f, err := os.Create(binTmp)
 	if err != nil {
@@ -1272,29 +1083,27 @@ func saveRelevanceCache(cacheDir string, rs *relevanceSet, meta *relevanceMeta) 
 		return err
 	}
 
-	hashBuf := make([]byte, 8192*8)
+	buf := make([]byte, 8192*8)
 	for i := 0; i < len(rs.hashes); i += 8192 {
 		end := min(i+8192, len(rs.hashes))
-		nBytes := (end - i) * 8
 		for j, h := range rs.hashes[i:end] {
-			binary.LittleEndian.PutUint64(hashBuf[j*8:(j+1)*8], h)
+			binary.LittleEndian.PutUint64(buf[j*8:], h)
 		}
-		_, _ = hasher.Write(hashBuf[:nBytes])
-		if _, err := bw.Write(hashBuf[:nBytes]); err != nil {
+		chunk := buf[:(end-i)*8]
+		_, _ = hasher.Write(chunk)
+		if _, err := bw.Write(chunk); err != nil {
 			f.Close()
 			return err
 		}
 	}
-
-	rankBuf := make([]byte, 8192*4)
 	for i := 0; i < len(rs.ranks); i += 8192 {
 		end := min(i+8192, len(rs.ranks))
-		nBytes := (end - i) * 4
 		for j, r := range rs.ranks[i:end] {
-			binary.LittleEndian.PutUint32(rankBuf[j*4:(j+1)*4], r)
+			binary.LittleEndian.PutUint32(buf[j*4:], r)
 		}
-		_, _ = hasher.Write(rankBuf[:nBytes])
-		if _, err := bw.Write(rankBuf[:nBytes]); err != nil {
+		chunk := buf[:(end-i)*4]
+		_, _ = hasher.Write(chunk)
+		if _, err := bw.Write(chunk); err != nil {
 			f.Close()
 			return err
 		}
@@ -1321,16 +1130,14 @@ func saveRelevanceCache(cacheDir string, rs *relevanceSet, meta *relevanceMeta) 
 	if err := os.WriteFile(metaTmp, metaBytes, 0o644); err != nil {
 		return err
 	}
-
 	if err := atomicRename(binTmp, binPath); err != nil {
 		return err
 	}
 	return atomicRename(metaTmp, metaPath)
 }
 
-func loadRelevanceCache(cacheDir string, allowLegacy bool) (*relevanceSet, error) {
-	binPath := filepath.Join(cacheDir, "relevance.bin")
-	f, err := os.Open(binPath)
+func loadRelevanceCache(cacheDir string) (*relevanceSet, error) {
+	f, err := os.Open(filepath.Join(cacheDir, "relevance.bin"))
 	if err != nil {
 		return nil, err
 	}
@@ -1346,228 +1153,157 @@ func loadRelevanceCache(cacheDir string, allowLegacy bool) (*relevanceSet, error
 	if _, err := io.ReadFull(br, hdr[:]); err != nil {
 		return nil, err
 	}
-	magic := string(hdr[:8])
+	if string(hdr[:8]) != cacheMagicV3 {
+		return nil, fmt.Errorf("cache format %q != %s; rebuilding", string(hdr[:8]), cacheMagicV3)
+	}
 	count := binary.LittleEndian.Uint64(hdr[8:16])
 	if count < minRelevanceDomains {
-		return nil, fmt.Errorf("relevance cache count (%d) below minimum threshold", count)
+		return nil, fmt.Errorf("relevance cache count (%d) below minimum", count)
+	}
+	if expected := int64(count)*12 + 24; stat.Size() != expected {
+		return nil, fmt.Errorf("relevance cache truncated (expected %d, got %d)", expected, stat.Size())
 	}
 
-	switch magic {
-	case cacheMagicV3:
-		expectedLen := int64(count)*12 + 24
-		if stat.Size() != expectedLen {
-			return nil, fmt.Errorf("relevance v3 cache truncated (expected %d bytes, got %d)", expectedLen, stat.Size())
-		}
-		hashes := make([]uint64, count)
-		ranks := make([]uint32, count)
-		hasher := xxh3.New()
+	hashes, ranks := make([]uint64, count), make([]uint32, count)
+	hasher := xxh3.New()
+	buf := make([]byte, 8192*8)
 
-		hashBuf := make([]byte, 8192*8)
-		var prev uint64
-		for i := 0; i < int(count); i += 8192 {
-			take := min(8192, int(count)-i)
-			nBytes := take * 8
-			if _, err := io.ReadFull(br, hashBuf[:nBytes]); err != nil {
-				return nil, err
-			}
-			_, _ = hasher.Write(hashBuf[:nBytes])
-			for j := 0; j < take; j++ {
-				v := binary.LittleEndian.Uint64(hashBuf[j*8 : (j+1)*8])
-				if i+j > 0 && v < prev {
-					return nil, errors.New("relevance v3 cache hashes are not sorted")
-				}
-				prev = v
-				hashes[i+j] = v
-			}
-		}
-
-		rankBuf := make([]byte, 8192*4)
-		for i := 0; i < int(count); i += 8192 {
-			take := min(8192, int(count)-i)
-			nBytes := take * 4
-			if _, err := io.ReadFull(br, rankBuf[:nBytes]); err != nil {
-				return nil, err
-			}
-			_, _ = hasher.Write(rankBuf[:nBytes])
-			for j := 0; j < take; j++ {
-				ranks[i+j] = binary.LittleEndian.Uint32(rankBuf[j*4 : (j+1)*4])
-			}
-		}
-
-		var trailer [8]byte
-		if _, err := io.ReadFull(br, trailer[:]); err != nil {
+	var prev uint64
+	for i := 0; i < int(count); i += 8192 {
+		take := min(8192, int(count)-i)
+		chunk := buf[:take*8]
+		if _, err := io.ReadFull(br, chunk); err != nil {
 			return nil, err
 		}
-		if binary.LittleEndian.Uint64(trailer[:]) != hasher.Sum64() {
-			return nil, errors.New("relevance v3 cache checksum mismatch (corrupted file)")
-		}
-		return &relevanceSet{hashes: hashes, ranks: ranks}, nil
-
-	case cacheMagicV2, cacheMagicV1:
-		if !allowLegacy {
-			return nil, fmt.Errorf("legacy cache format %s detected; upgrading to %s with popularity ranks", magic, cacheMagicV3)
-		}
-		expectedLen := int64(count)*8 + 24
-		if stat.Size() != expectedLen {
-			return nil, fmt.Errorf("legacy relevance cache truncated (expected %d bytes, got %d)", expectedLen, stat.Size())
-		}
-		hashes := make([]uint64, count)
-		hasher := xxh3.New()
-		buf := make([]byte, 8192*8)
-		for i := 0; i < int(count); i += 8192 {
-			take := min(8192, int(count)-i)
-			nBytes := take * 8
-			if _, err := io.ReadFull(br, buf[:nBytes]); err != nil {
-				return nil, err
+		_, _ = hasher.Write(chunk)
+		for j := 0; j < take; j++ {
+			v := binary.LittleEndian.Uint64(chunk[j*8:])
+			if i+j > 0 && v < prev {
+				return nil, errors.New("relevance cache hashes not sorted")
 			}
-			_, _ = hasher.Write(buf[:nBytes])
-			for j := 0; j < take; j++ {
-				hashes[i+j] = binary.LittleEndian.Uint64(buf[j*8 : (j+1)*8])
-			}
+			prev, hashes[i+j] = v, v
 		}
-		var trailer [8]byte
-		if _, err := io.ReadFull(br, trailer[:]); err != nil {
+	}
+	for i := 0; i < int(count); i += 8192 {
+		take := min(8192, int(count)-i)
+		chunk := buf[:take*4]
+		if _, err := io.ReadFull(br, chunk); err != nil {
 			return nil, err
 		}
-		if binary.LittleEndian.Uint64(trailer[:]) != hasher.Sum64() {
-			return nil, errors.New("legacy relevance cache checksum mismatch")
+		_, _ = hasher.Write(chunk)
+		for j := 0; j < take; j++ {
+			ranks[i+j] = binary.LittleEndian.Uint32(chunk[j*4:])
 		}
-		slices.Sort(hashes)
-		hashes = slices.Compact(hashes)
-		ranks := make([]uint32, len(hashes))
-		for i := range ranks {
-			ranks[i] = unrankedRank
-		}
-		return &relevanceSet{hashes: hashes, ranks: ranks}, nil
-
-	default:
-		return nil, fmt.Errorf("invalid relevance cache magic header: %q", magic)
 	}
+
+	var trailer [8]byte
+	if _, err := io.ReadFull(br, trailer[:]); err != nil {
+		return nil, err
+	}
+	if binary.LittleEndian.Uint64(trailer[:]) != hasher.Sum64() {
+		return nil, errors.New("relevance cache checksum mismatch")
+	}
+	rs := &relevanceSet{hashes: hashes, ranks: ranks}
+	rs.buildIndex()
+	return rs, nil
 }
 
-func loadRelevanceMeta(cacheDir string) *relevanceMeta {
-	data, err := os.ReadFile(filepath.Join(cacheDir, "relevance.meta.json"))
-	if err != nil {
-		return nil
-	}
-	var m relevanceMeta
-	if err := json.Unmarshal(data, &m); err != nil {
-		return nil
-	}
-	return &m
-}
-
-// ---------- Feed Fetching, HTML Guardrail, & Parsing ----------
+// ---------- Streaming Feed Fetching & Parsing ----------
 
 func looksLikeHTMLOrXML(contentType string, body []byte) bool {
 	ct := strings.ToLower(contentType)
 	if strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml") {
 		return true
 	}
-	sample := body
-	if len(sample) > 512 {
-		sample = sample[:512]
+	sample := bytes.TrimPrefix(body[:min(len(body), 512)], []byte{0xEF, 0xBB, 0xBF})
+	t := strings.ToLower(strings.TrimSpace(string(sample)))
+	for _, p := range []string{"<!doctype", "<html", "<head", "<body", "<?xml"} {
+		if strings.HasPrefix(t, p) {
+			return true
+		}
 	}
-	sample = bytes.TrimPrefix(sample, []byte{0xEF, 0xBB, 0xBF}) // UTF-8 BOM
-	trimmed := strings.ToLower(strings.TrimSpace(string(sample)))
-	return strings.HasPrefix(trimmed, "<!doctype") ||
-		strings.HasPrefix(trimmed, "<html") ||
-		strings.HasPrefix(trimmed, "<head") ||
-		strings.HasPrefix(trimmed, "<body") ||
-		strings.HasPrefix(trimmed, "<?xml")
+	return false
 }
 
-func fetchWithRetryMeta(client *http.Client, url string, checkBodyHTML bool) ([]byte, string, error) {
+func forEachLine(r io.Reader, fn func(line []byte)) error {
+	br, ok := r.(*bufio.Reader)
+	if !ok {
+		br = bufio.NewReaderSize(r, 64*1024)
+	}
+	var overflow []byte
+	for {
+		frag, err := br.ReadSlice('\n')
+		if errors.Is(err, bufio.ErrBufferFull) {
+			overflow = append(overflow, frag...)
+			continue
+		}
+		if len(overflow) > 0 {
+			fn(append(overflow, frag...))
+			overflow = overflow[:0]
+		} else if len(frag) > 0 {
+			fn(frag)
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+func streamWithRetry(client *http.Client, url string, checkBodyHTML bool, consume func(r io.Reader, fp string) error) error {
 	for attempt := 0; attempt < 5; attempt++ {
 		req, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
-			return nil, "", err
+			return err
 		}
 		req.Header.Set("User-Agent", uaStr)
 		resp, err := client.Do(req)
 		if err == nil {
 			ct := resp.Header.Get("Content-Type")
-			body, readErr := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			if readErr != nil {
-				err = readErr
-			} else if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
 				err = fmt.Errorf("HTTP %d", resp.StatusCode)
-			} else if strings.Contains(strings.ToLower(ct), "text/html") || strings.Contains(strings.ToLower(ct), "application/xhtml") {
-				err = fmt.Errorf("HTML response rejected (Content-Type: %s)", ct)
-			} else if checkBodyHTML && looksLikeHTMLOrXML(ct, body) {
-				err = errors.New("HTML/XML error page detected in feed body")
+			} else if strings.Contains(strings.ToLower(ct), "html") {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+				err = fmt.Errorf("HTML response rejected (%s)", ct)
 			} else {
-				return body, extractHeaderFingerprint(resp.Header), nil
-			}
-		}
-		if attempt < 4 {
-			wait := time.Duration(1500*(1<<attempt))*time.Millisecond + jitterMs(500)
-			if attempt >= 2 {
-				logWarn("Fetch attempt %d/5 failed for %s: %v. Retrying...", attempt+1, url, err)
-			}
-			time.Sleep(wait)
-		} else {
-			return nil, "", err
-		}
-	}
-	return nil, "", errors.New("unreachable")
-}
-
-func fetchWithRetry(client *http.Client, url string) ([]byte, error) {
-	b, _, err := fetchWithRetryMeta(client, url, true)
-	return b, err
-}
-
-func sortAndCompactRanked(items []rankedHash) []rankedHash {
-	slices.SortFunc(items, func(a, b rankedHash) int {
-		if c := cmp.Compare(a.hash, b.hash); c != 0 {
-			return c
-		}
-		return cmp.Compare(a.rank, b.rank)
-	})
-	return slices.CompactFunc(items, func(a, b rankedHash) bool {
-		return a.hash == b.hash
-	})
-}
-
-func parseCSVStream(r io.Reader, col int, skipHeader bool) []rankedHash {
-	var items []rankedHash
-	br := bufio.NewReaderSize(r, 64*1024)
-	rowIdx := 0
-	var rank uint32
-	for {
-		line, err := br.ReadString('\n')
-		if len(line) > 0 {
-			curIdx := rowIdx
-			rowIdx++
-			if !(skipHeader && curIdx == 0) {
-				rank++
-				if rawCol, ok := nthCSVCol(line, col); ok {
-					trimmed := strings.Trim(strings.TrimSpace(rawCol), `"`)
-					if trimmed != "" {
-						if clean, ok := normalizeDomain(trimmed); ok {
-							items = append(items, rankedHash{
-								hash: xxh3.HashString(clean),
-								rank: rank,
-							})
-						}
+				br := bufio.NewReaderSize(resp.Body, 64*1024)
+				if checkBodyHTML {
+					sample, pErr := br.Peek(512)
+					if pErr != nil && !errors.Is(pErr, io.EOF) && !errors.Is(pErr, bufio.ErrBufferFull) {
+						err = pErr
+					} else if looksLikeHTMLOrXML(ct, sample) {
+						err = errors.New("HTML/XML error page in feed body")
 					}
+				}
+				if err == nil {
+					err = consume(br, extractHeaderFingerprint(resp.Header))
+				}
+				resp.Body.Close()
+				if err == nil {
+					return nil
 				}
 			}
 		}
-		if err != nil {
-			break
+		if attempt == 4 {
+			return err
 		}
+		if attempt >= 2 {
+			logWarn("Fetch attempt %d/5 failed for %s: %v. Retrying...", attempt+1, url, err)
+		}
+		time.Sleep(time.Duration(1500*(1<<attempt))*time.Millisecond + jitterMs(500))
 	}
-	return sortAndCompactRanked(items)
+	return errors.New("unreachable")
 }
 
-func nthCSVCol(line string, col int) (string, bool) {
-	cur := 0
-	start := 0
-	for i := 0; i < len(line); i++ {
-		if line[i] == ',' {
+func nthCSVColBytes(line []byte, col int) ([]byte, bool) {
+	cur, start := 0, 0
+	for i, b := range line {
+		if b == ',' {
 			if cur == col {
 				return line[start:i], true
 			}
@@ -1578,165 +1314,217 @@ func nthCSVCol(line string, col int) (string, bool) {
 	if cur == col {
 		return line[start:], true
 	}
-	return "", false
+	return nil, false
+}
+
+func parseCSVStream(r io.Reader, col int, skipHeader bool) ([]rankedHash, error) {
+	items := make([]rankedHash, 0, 256_000)
+	scratch := make([]byte, 0, 256)
+	rowIdx, rank := 0, uint32(0)
+
+	err := forEachLine(r, func(line []byte) {
+		cur := rowIdx
+		rowIdx++
+		if skipHeader && cur == 0 {
+			return
+		}
+		rank++
+		rawCol, ok := nthCSVColBytes(line, col)
+		if !ok {
+			return
+		}
+		trimmed := bytes.Trim(bytes.TrimSpace(rawCol), `"`)
+		if clean, ok := normalizeDomainBytes(trimmed, &scratch); ok {
+			items = append(items, rankedHash{hash: xxh3.Hash(stripWWWBytes(clean)), rank: rank})
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(items, func(a, b rankedHash) int {
+		if c := cmp.Compare(a.hash, b.hash); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.rank, b.rank)
+	})
+	return slices.CompactFunc(items, func(a, b rankedHash) bool { return a.hash == b.hash }), nil
 }
 
 func buildFreshRelevanceDataset(client *http.Client) (*relevanceSet, map[string]string, error) {
 	logInfo("Fetching fresh ranked relevance datasets directly from sources...")
 	type itemResult struct {
-		url   string
-		fp    string
-		items []rankedHash
+		url, fp string
+		items   []rankedHash
 	}
 	results := make([]itemResult, len(defaultTopLists))
 	var wg sync.WaitGroup
 
 	for i, spec := range defaultTopLists {
 		wg.Add(1)
-		go func(i int, spec topListSpec) {
+		go func(i int, url, comp string, col int, skip bool) {
 			defer wg.Done()
-			rawBytes, fp, err := fetchWithRetryMeta(client, spec.URL, spec.Compression == "raw")
-			if err != nil {
-				logWarn("Failed to fetch top list (%s): %v", spec.URL, err)
-				results[i] = itemResult{url: spec.URL}
-				return
-			}
-
 			var parsed []rankedHash
-			switch spec.Compression {
-			case "zip":
-				zr, err := zip.NewReader(bytes.NewReader(rawBytes), int64(len(rawBytes)))
-				if err != nil {
-					logWarn("Failed opening zip archive from %s: %v", spec.URL, err)
-					results[i] = itemResult{url: spec.URL, fp: fp}
-					return
-				}
-				var target *zip.File
-				for _, f := range zr.File {
-					lower := strings.ToLower(f.Name)
-					if (strings.HasSuffix(lower, ".csv") || strings.HasSuffix(lower, ".txt")) && !strings.HasSuffix(lower, "/") {
-						target = f
-						break
+			var fp string
+			err := streamWithRetry(client, url, comp == "raw", func(r io.Reader, headerFP string) error {
+				fp = headerFP
+				switch comp {
+				case "zip":
+					raw, err := io.ReadAll(r)
+					if err != nil {
+						return err
 					}
-				}
-				if target == nil && len(zr.File) > 0 {
-					target = zr.File[0]
-				}
-				if target != nil {
-					if rc, err := target.Open(); err == nil {
-						parsed = parseCSVStream(rc, spec.Col, spec.SkipHeader)
-						rc.Close()
+					zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+					if err != nil {
+						return err
 					}
+					var target *zip.File
+					for _, f := range zr.File {
+						l := strings.ToLower(f.Name)
+						if (strings.HasSuffix(l, ".csv") || strings.HasSuffix(l, ".txt")) && !strings.HasSuffix(l, "/") {
+							target = f
+							break
+						}
+					}
+					if target == nil && len(zr.File) > 0 {
+						target = zr.File[0]
+					}
+					if target == nil {
+						return nil
+					}
+					rc, err := target.Open()
+					if err != nil {
+						return err
+					}
+					defer rc.Close()
+					parsed, err = parseCSVStream(rc, col, skip)
+					return err
+				case "gzip":
+					gz, err := gzip.NewReader(r)
+					if err != nil {
+						return err
+					}
+					defer gz.Close()
+					parsed, err = parseCSVStream(gz, col, skip)
+					return err
+				default:
+					var err error
+					parsed, err = parseCSVStream(r, col, skip)
+					return err
 				}
-			case "gzip":
-				if gz, err := gzip.NewReader(bytes.NewReader(rawBytes)); err == nil {
-					parsed = parseCSVStream(gz, spec.Col, spec.SkipHeader)
-					gz.Close()
-				}
-			default:
-				parsed = parseCSVStream(bytes.NewReader(rawBytes), spec.Col, spec.SkipHeader)
+			})
+			if err != nil {
+				logWarn("Failed top list (%s): %v", url, err)
+			} else {
+				logInfo("Fetched & parsed %d ranked domains from %s", len(parsed), url)
 			}
-
-			logInfo("Fetched & parsed %d ranked domains from %s", len(parsed), spec.URL)
-			results[i] = itemResult{url: spec.URL, fp: fp, items: parsed}
-		}(i, spec)
+			results[i] = itemResult{url: url, fp: fp, items: parsed}
+		}(i, spec.URL, spec.Compression, spec.Col, spec.SkipHeader)
 	}
 	wg.Wait()
 
 	headersMap := make(map[string]string, len(results))
-	totalCap := 0
-	for _, r := range results {
-		if r.fp != "" {
-			headersMap[r.url] = r.fp
-		}
-		totalCap += len(r.items)
-	}
-
-	merged := make([]rankedHash, 0, totalCap)
+	active := make([][]rankedHash, 0, len(results))
+	maxLen := 0
 	for i := range results {
-		merged = append(merged, results[i].items...)
-		results[i].items = nil
+		if results[i].fp != "" {
+			headersMap[results[i].url] = results[i].fp
+		}
+		if len(results[i].items) > 0 {
+			active = append(active, results[i].items)
+			maxLen = max(maxLen, len(results[i].items))
+			results[i].items = nil
+		}
 	}
-	merged = sortAndCompactRanked(merged)
 
-	if len(merged) < minRelevanceDomains {
-		return nil, nil, fmt.Errorf("relevance dataset critically low (%d domains)", len(merged))
+	estCap := maxLen + maxLen/4
+	hashes, ranks := make([]uint64, 0, estCap), make([]uint32, 0, estCap)
+	cursors := make([]int, len(active))
+
+	for len(active) > 0 {
+		minHash := active[0][cursors[0]].hash
+		for i := 1; i < len(active); i++ {
+			minHash = min(minHash, active[i][cursors[i]].hash)
+		}
+		bestRank := unrankedRank
+		for i := 0; i < len(active); {
+			if it := active[i][cursors[i]]; it.hash == minHash {
+				bestRank = min(bestRank, it.rank)
+				cursors[i]++
+				if cursors[i] == len(active[i]) {
+					last := len(active) - 1
+					active[i], cursors[i] = active[last], cursors[last]
+					active[last] = nil
+					active, cursors = active[:last], cursors[:last]
+					continue
+				}
+			}
+			i++
+		}
+		hashes = append(hashes, minHash)
+		ranks = append(ranks, bestRank)
 	}
 
-	hashes := make([]uint64, len(merged))
-	ranks := make([]uint32, len(merged))
-	for i, it := range merged {
-		hashes[i] = it.hash
-		ranks[i] = it.rank
+	if len(hashes) < minRelevanceDomains {
+		return nil, nil, fmt.Errorf("relevance dataset critically low (%d domains)", len(hashes))
 	}
-	merged = nil
-
+	rs := &relevanceSet{hashes: hashes, ranks: ranks}
+	rs.buildIndex()
 	logInfo("Ranked relevance dataset compiled: %d hashed root domains.", len(hashes))
-	return &relevanceSet{hashes: hashes, ranks: ranks}, headersMap, nil
+	return rs, headersMap, nil
 }
 
 func resolveRelevanceDataset(client *http.Client, cfg *appConfig) (*relevanceSet, string, error) {
-	binPath := filepath.Join(cfg.RelevanceCacheDir, "relevance.bin")
-	_, statErr := os.Stat(binPath)
+	_, statErr := os.Stat(filepath.Join(cfg.RelevanceCacheDir, "relevance.bin"))
 	binExists := statErr == nil
 	var cachedMeta *relevanceMeta
 	if binExists {
-		cachedMeta = loadRelevanceMeta(cfg.RelevanceCacheDir)
+		if data, err := os.ReadFile(filepath.Join(cfg.RelevanceCacheDir, "relevance.meta.json")); err == nil {
+			var m relevanceMeta
+			if json.Unmarshal(data, &m) == nil {
+				cachedMeta = &m
+			}
+		}
 	}
 	now := time.Now().Unix()
 
 	if !cfg.ForceRefreshRelevance && cachedMeta != nil && cachedMeta.Version >= 3 {
 		ageSecs := max(now-cachedMeta.CreatedAt, 0)
-		shouldUseCache := false
-
+		useCache := false
 		if ageSecs < cfg.RelevanceMinRefreshSecs {
-			logInfo("Relevance cache is %.1fh old (under %dh min refresh); loading directly from disk.",
+			logInfo("Relevance cache is %.1fh old (under %dh min refresh); loading from disk.",
 				float64(ageSecs)/3600.0, cfg.RelevanceMinRefreshSecs/3600)
-			shouldUseCache = true
+			useCache = true
 		} else if ageSecs < cfg.RelevanceTTLSecs {
-			logInfo("Relevance cache is %.1fd old; checking upstream HEAD headers for changes...",
-				float64(ageSecs)/86400.0)
-			probes := probeTopListHeaders(client)
-			changedURL := ""
-			for url, newFP := range probes {
-				if oldFP, ok := cachedMeta.SourceHeaders[url]; ok && newFP != oldFP {
-					changedURL = url
+			logInfo("Relevance cache is %.1fd old; probing upstream HEAD headers...", float64(ageSecs)/86400.0)
+			changed := ""
+			for u, newFP := range probeTopListHeaders(client) {
+				if oldFP, ok := cachedMeta.SourceHeaders[u]; ok && newFP != oldFP {
+					changed = u
 					break
 				}
 			}
-			if changedURL != "" {
-				logInfo("Upstream top-list header changed (%s); refreshing relevance cache.", changedURL)
+			if changed != "" {
+				logInfo("Upstream top-list changed (%s); refreshing relevance cache.", changed)
 			} else {
-				logInfo("No upstream top-list changes detected; reusing cached relevance dataset.")
-				shouldUseCache = true
+				logInfo("No upstream top-list changes; reusing cached relevance dataset.")
+				useCache = true
 			}
-		} else {
-			logInfo("Relevance cache expired (%.1fd >= %dd TTL); refreshing dataset.",
-				float64(ageSecs)/86400.0, cfg.RelevanceTTLSecs/86400)
 		}
-
-		if shouldUseCache {
-			rs, err := loadRelevanceCache(cfg.RelevanceCacheDir, false)
-			if err == nil {
+		if useCache {
+			if rs, err := loadRelevanceCache(cfg.RelevanceCacheDir); err == nil {
 				logInfo("Loaded %d ranked root domains from relevance cache.", rs.len())
 				return rs, "cache-hit", nil
+			} else {
+				logWarn("Cached relevance.bin unusable (%v); rebuilding.", err)
 			}
-			logWarn("Cached relevance.bin unusable (%v); rebuilding from upstream.", err)
 		}
-	} else if binExists && cachedMeta != nil && cachedMeta.Version < 3 {
-		logInfo("Upgrading relevance cache from v%d to v3 (rank-aware format)...", cachedMeta.Version)
 	}
 
-	rs, sourceHeaders, err := buildFreshRelevanceDataset(client)
+	rs, headers, err := buildFreshRelevanceDataset(client)
 	if err == nil {
-		meta := &relevanceMeta{
-			Version:       3,
-			CreatedAt:     now,
-			DomainCount:   rs.len(),
-			SourceHeaders: sourceHeaders,
-		}
+		meta := &relevanceMeta{Version: 3, CreatedAt: now, DomainCount: rs.len(), SourceHeaders: headers}
 		if saveErr := saveRelevanceCache(cfg.RelevanceCacheDir, rs, meta); saveErr != nil {
-			logWarn("Failed writing relevance cache to %s: %v (continuing sync)", cfg.RelevanceCacheDir, saveErr)
+			logWarn("Failed saving relevance cache: %v", saveErr)
 		} else {
 			logInfo("Saved ranked relevance cache to %s (%d entries).", cfg.RelevanceCacheDir, rs.len())
 		}
@@ -1744,13 +1532,13 @@ func resolveRelevanceDataset(client *http.Client, cfg *appConfig) (*relevanceSet
 	}
 
 	if binExists {
-		logWarn("Fresh relevance fetch failed (%v). Attempting fallback to existing stale cache...", err)
-		if stale, loadErr := loadRelevanceCache(cfg.RelevanceCacheDir, true); loadErr == nil {
-			logWarn("Self-healed using stale relevance cache (%d entries) to keep sync running.", stale.len())
+		logWarn("Fresh relevance fetch failed (%v); falling back to stale cache...", err)
+		if stale, loadErr := loadRelevanceCache(cfg.RelevanceCacheDir); loadErr == nil {
+			logWarn("Self-healed using stale relevance cache (%d entries).", stale.len())
 			return stale, "stale-fallback", nil
 		}
 	}
-	return nil, "", fmt.Errorf("relevance dataset unavailable and no valid local cache exists: %w", err)
+	return nil, "", fmt.Errorf("relevance dataset unavailable: %w", err)
 }
 
 type sourceSpec struct {
@@ -1768,68 +1556,66 @@ func parseSources(table map[string]any, isIP bool) []sourceSpec {
 
 	out := make([]sourceSpec, 0, len(names))
 	for _, name := range names {
-		raw := table[name]
-		switch val := raw.(type) {
+		spec := sourceSpec{Name: name, EnableRelevance: !isIP}
+		switch val := table[name].(type) {
 		case string:
-			out = append(out, sourceSpec{Name: name, URLs: []string{val}, EnableRelevance: !isIP})
+			spec.URLs = []string{val}
 		case []any:
-			var urls []string
 			for _, u := range val {
 				if s, ok := u.(string); ok {
-					urls = append(urls, s)
+					spec.URLs = append(spec.URLs, s)
 				}
 			}
-			out = append(out, sourceSpec{Name: name, URLs: urls, EnableRelevance: !isIP})
 		case map[string]any:
-			var urls []string
 			if arr, ok := val["urls"].([]any); ok {
 				for _, u := range arr {
 					if s, ok := u.(string); ok {
-						urls = append(urls, s)
+						spec.URLs = append(spec.URLs, s)
 					}
 				}
 			} else if u, ok := val["url"].(string); ok {
-				urls = []string{u}
+				spec.URLs = []string{u}
 			}
-			enableRel := !isIP
 			if !isIP {
 				if rel, ok := val["relevance"].(bool); ok {
-					enableRel = rel
+					spec.EnableRelevance = rel
 				}
 			}
-			out = append(out, sourceSpec{Name: name, URLs: urls, EnableRelevance: enableRel})
 		}
+		out = append(out, spec)
 	}
 	return out
 }
 
-func ingestDomainToken(rawTok string, rel *relevanceSet, enforceRelevance bool, kept map[string]uint32) {
-	beforeMod := rawTok
-	if idx := strings.IndexByte(rawTok, '$'); idx >= 0 {
-		beforeMod = rawTok[:idx]
-		mods := rawTok[idx+1:]
-		for _, opt := range strings.Split(mods, ",") {
-			if strings.EqualFold(opt, "badfilter") {
+func ingestDomainTokenBytes(rawTok []byte, rel *relevanceSet, enforceRelevance bool, kept map[string]uint32, scratch *[]byte) {
+	if idx := bytes.IndexByte(rawTok, '$'); idx >= 0 {
+		for mods := rawTok[idx+1:]; len(mods) > 0; {
+			opt := mods
+			if c := bytes.IndexByte(mods, ','); c >= 0 {
+				opt, mods = mods[:c], mods[c+1:]
+			} else {
+				mods = nil
+			}
+			if bytes.EqualFold(opt, []byte("badfilter")) {
 				return
 			}
 		}
+		rawTok = rawTok[:idx]
 	}
-	token := strings.TrimPrefix(beforeMod, "||")
-	if idx := strings.IndexByte(token, '^'); idx >= 0 {
+	token := bytes.TrimPrefix(rawTok, []byte("||"))
+	if idx := bytes.IndexByte(token, '^'); idx >= 0 {
 		token = token[:idx]
 	}
-	clean, ok := normalizeDomain(token)
+	clean, ok := normalizeDomainBytes(token, scratch)
 	if !ok {
 		return
 	}
-	if _, exists := kept[clean]; exists {
+	if _, exists := kept[string(clean)]; exists {
 		return
 	}
-
 	rank := unrankedRank
 	if rel != nil {
-		checkDom := strings.TrimPrefix(clean, "www.")
-		best, found := rel.bestRank(checkDom)
+		best, found := rel.bestRankBytes(stripWWWBytes(clean))
 		if enforceRelevance && !found {
 			return
 		}
@@ -1837,119 +1623,121 @@ func ingestDomainToken(rawTok string, rel *relevanceSet, enforceRelevance bool, 
 			rank = best
 		}
 	}
-	kept[clean] = rank
+	kept[string(clean)] = rank
 }
 
 func fetchFeedSource(client *http.Client, spec sourceSpec, rel *relevanceSet) (map[string]uint32, error) {
-	kept := make(map[string]uint32)
+	kept := make(map[string]uint32, 16_384)
+	scratch := make([]byte, 0, 256)
+
 	for _, u := range spec.URLs {
-		rawBytes, err := fetchWithRetry(client, u)
+		err := streamWithRetry(client, u, true, func(r io.Reader, _ string) error {
+			return forEachLine(r, func(rawLine []byte) {
+				line := bytes.TrimSpace(rawLine)
+				if len(line) == 0 || line[0] == '#' || line[0] == '!' || line[0] == '/' ||
+					bytes.HasPrefix(line, []byte("@@")) || bytes.Contains(line, []byte("##")) ||
+					bytes.Contains(line, []byte("#@#")) || bytes.Contains(line, []byte("#?#")) ||
+					bytes.Contains(line, []byte("#$#")) {
+					return
+				}
+				if idx := bytes.IndexAny(line, "#!;"); idx >= 0 {
+					line = bytes.TrimSpace(line[:idx])
+				}
+				if len(line) == 0 {
+					return
+				}
+				if bytes.IndexAny(line, " \t") < 0 {
+					ingestDomainTokenBytes(line, rel, spec.EnableRelevance, kept, &scratch)
+					return
+				}
+				fields := bytes.Fields(line)
+				var addr netip.Addr
+				if addr.UnmarshalText(fields[0]) == nil {
+					for _, tok := range fields[1:] {
+						ingestDomainTokenBytes(tok, rel, spec.EnableRelevance, kept, &scratch)
+					}
+				} else {
+					ingestDomainTokenBytes(fields[len(fields)-1], rel, spec.EnableRelevance, kept, &scratch)
+				}
+			})
+		})
 		if err != nil {
 			return nil, err
-		}
-		br := bufio.NewReaderSize(bytes.NewReader(rawBytes), 64*1024)
-		for {
-			line, readErr := br.ReadString('\n')
-			if len(line) > 0 {
-				line = strings.TrimSpace(line)
-				if line != "" &&
-					line[0] != '#' && line[0] != '!' && line[0] != '/' &&
-					!strings.HasPrefix(line, "@@") &&
-					!strings.Contains(line, "##") &&
-					!strings.Contains(line, "#@#") &&
-					!strings.Contains(line, "#?#") &&
-					!strings.Contains(line, "#$#") {
-
-					if idx := strings.IndexAny(line, "#!;"); idx >= 0 {
-						line = strings.TrimSpace(line[:idx])
-					}
-					if line != "" {
-						fields := strings.Fields(line)
-						if len(fields) > 0 {
-							if _, ipErr := netip.ParseAddr(fields[0]); ipErr == nil {
-								for _, tok := range fields[1:] {
-									ingestDomainToken(tok, rel, spec.EnableRelevance, kept)
-								}
-							} else {
-								ingestDomainToken(fields[len(fields)-1], rel, spec.EnableRelevance, kept)
-							}
-						}
-					}
-				}
-			}
-			if readErr != nil {
-				break
-			}
 		}
 	}
 	logInfo("Fetched %s: %d kept (relevance=%t)", spec.Name, len(kept), spec.EnableRelevance)
 	return kept, nil
 }
 
+func parseIPTokenBytes(rawTok []byte) (netip.Prefix, bool) {
+	tok := bytes.Trim(rawTok, "[]")
+	if bytes.IndexAny(tok, ".:") < 0 {
+		return netip.Prefix{}, false
+	}
+	if bytes.IndexByte(tok, '.') >= 0 && bytes.Count(tok, []byte(":")) == 1 {
+		tok, _, _ = bytes.Cut(tok, []byte(":"))
+	} else if v6, _, found := bytes.Cut(rawTok, []byte("]:")); found {
+		tok = bytes.TrimPrefix(v6, []byte("["))
+	}
+
+	var p netip.Prefix
+	if bytes.IndexByte(tok, '/') >= 0 {
+		if p.UnmarshalText(tok) != nil {
+			return netip.Prefix{}, false
+		}
+		p = p.Masked()
+	} else {
+		var addr netip.Addr
+		if addr.UnmarshalText(tok) != nil {
+			return netip.Prefix{}, false
+		}
+		if addr.Is4In6() {
+			addr = addr.Unmap()
+		}
+		p = netip.PrefixFrom(addr, addr.BitLen())
+	}
+	if p.Addr().Is4In6() && p.Bits() >= 96 {
+		p = netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96)
+	}
+	return p, true
+}
+
 func fetchIPSource(client *http.Client, spec sourceSpec) (map[netip.Prefix]struct{}, error) {
-	networks := make(map[netip.Prefix]struct{})
-	replacer := strings.NewReplacer(`"`, " ", `'`, " ", ",", " ", "\t", " ")
+	networks := make(map[netip.Prefix]struct{}, 4096)
+	isSep := func(r rune) bool { return r == ' ' || r == '\t' || r == ',' || r == '"' || r == '\'' }
 
 	for _, u := range spec.URLs {
-		rawBytes, err := fetchWithRetry(client, u)
-		if err != nil {
-			return nil, err
-		}
-		br := bufio.NewReaderSize(bytes.NewReader(rawBytes), 64*1024)
-		for {
-			line, readErr := br.ReadString('\n')
-			if len(line) > 0 {
-				line = strings.TrimSpace(line)
-				if line != "" && line[0] != '#' && line[0] != ';' && line[0] != '/' {
-					for _, sep := range []string{"#", ";", "//"} {
-						if idx := strings.Index(line, sep); idx >= 0 {
-							line = line[:idx]
-						}
+		err := streamWithRetry(client, u, true, func(r io.Reader, _ string) error {
+			return forEachLine(r, func(rawLine []byte) {
+				line := bytes.TrimSpace(rawLine)
+				if len(line) == 0 || line[0] == '#' || line[0] == ';' || line[0] == '/' {
+					return
+				}
+				if idx := bytes.IndexAny(line, "#;"); idx >= 0 {
+					line = line[:idx]
+				}
+				if idx := bytes.Index(line, []byte("//")); idx >= 0 {
+					line = line[:idx]
+				}
+				line = bytes.TrimSpace(line)
+				if len(line) == 0 {
+					return
+				}
+				if bytes.IndexAny(line, " \t,\"'") < 0 {
+					if p, ok := parseIPTokenBytes(line); ok {
+						networks[p] = struct{}{}
 					}
-					line = strings.TrimSpace(line)
-					if line != "" {
-						for _, rawTok := range strings.Fields(replacer.Replace(line)) {
-							tok := strings.Trim(rawTok, "[]")
-							if !strings.ContainsAny(tok, ".:") {
-								continue
-							}
-							if strings.ContainsRune(tok, '.') && strings.Count(tok, ":") == 1 {
-								tok, _, _ = strings.Cut(tok, ":")
-							} else if v6Part, _, found := strings.Cut(rawTok, "]:"); found {
-								tok = strings.TrimPrefix(v6Part, "[")
-							}
-
-							var prefix netip.Prefix
-							var parseErr error
-							if strings.ContainsRune(tok, '/') {
-								prefix, parseErr = netip.ParsePrefix(tok)
-								if parseErr == nil {
-									prefix = prefix.Masked()
-								}
-							} else {
-								var addr netip.Addr
-								addr, parseErr = netip.ParseAddr(tok)
-								if parseErr == nil {
-									if addr.Is4In6() {
-										addr = addr.Unmap()
-									}
-									prefix = netip.PrefixFrom(addr, addr.BitLen())
-								}
-							}
-
-							if parseErr == nil && !isNonRoutableIP(prefix) {
-								if prefix.Addr().Is4In6() && prefix.Bits() >= 96 {
-									prefix = netip.PrefixFrom(prefix.Addr().Unmap(), prefix.Bits()-96)
-								}
-								networks[prefix] = struct{}{}
-							}
-						}
+					return
+				}
+				for _, tok := range bytes.FieldsFunc(line, isSep) {
+					if p, ok := parseIPTokenBytes(tok); ok {
+						networks[p] = struct{}{}
 					}
 				}
-			}
-			if readErr != nil {
-				break
-			}
+			})
+		})
+		if err != nil {
+			return nil, err
 		}
 	}
 	logInfo("Fetched IP feed %s: %d unique subnets/IPs", spec.Name, len(networks))
@@ -1957,29 +1745,22 @@ func fetchIPSource(client *http.Client, spec sourceSpec) (map[netip.Prefix]struc
 }
 
 func fetchSpamTLDs(client *http.Client, url string) (string, map[string]struct{}, error) {
-	rawBytes, err := fetchWithRetry(client, url)
-	if err != nil {
-		return "", nil, err
-	}
 	tldSet := make(map[string]struct{})
-	br := bufio.NewReader(bytes.NewReader(rawBytes))
-	for {
-		line, readErr := br.ReadString('\n')
-		if len(line) > 0 {
-			l := strings.ToLower(strings.TrimSpace(line))
+	err := streamWithRetry(client, url, true, func(r io.Reader, _ string) error {
+		return forEachLine(r, func(rawLine []byte) {
+			l := strings.ToLower(string(bytes.TrimSpace(rawLine)))
 			if l != "" && l[0] != '#' && l[0] != '!' && l[0] != '/' {
-				fields := strings.Fields(l)
-				if len(fields) > 0 {
+				if fields := strings.Fields(l); len(fields) > 0 {
 					clean := strings.Trim(strings.TrimPrefix(fields[len(fields)-1], "*."), ".")
 					if clean != "" && !strings.ContainsAny(clean, ".*") {
 						tldSet[clean] = struct{}{}
 					}
 				}
 			}
-		}
-		if readErr != nil {
-			break
-		}
+		})
+	})
+	if err != nil {
+		return "", nil, err
 	}
 	if len(tldSet) == 0 {
 		return "", nil, fmt.Errorf("zero TLDs parsed from %s", url)
@@ -1989,11 +1770,10 @@ func fetchSpamTLDs(client *http.Client, url string) (string, map[string]struct{}
 		sorted = append(sorted, t)
 	}
 	slices.Sort(sorted)
-	expr := fmt.Sprintf(`any(dns.domains[*] matches "(?i)\.(%s)$")`, strings.Join(sorted, "|"))
-	return expr, tldSet, nil
+	return fmt.Sprintf(`any(dns.domains[*] matches "(?i)\.(%s)$")`, strings.Join(sorted, "|")), tldSet, nil
 }
 
-// ---------- Policy Compilation, Cross-Policy Dedup, Rank Trimming, & Hash Bucketing ----------
+// ---------- Policy Compilation, Dedup, Rank Trimming & Hash Bucketing ----------
 
 type fetchedFeed struct {
 	IsIP    bool
@@ -2007,15 +1787,12 @@ type rankedEntry struct {
 }
 
 type compiledPolicy struct {
-	Policy       policyConfig
-	Priority     int
-	Trimmable    bool
-	Entries      []rankedEntry
-	Chunks       [][]string
-	RawCount     int
-	DedupedCount int
-	TrimmedCount int
-	GuardedCount int
+	Policy                                        policyConfig
+	Priority                                      int
+	Trimmable                                     bool
+	Entries                                       []rankedEntry
+	Chunks                                        [][]string
+	RawCount, DedupedCount, TrimmedCount, Guarded int
 }
 
 func buildPolicySets(
@@ -2049,43 +1826,43 @@ func buildPolicySets(
 
 			prio := p.resolvedPriority(cfg)
 			if p.resolvedType() == "IP" {
-				var builder netipx.IPSetBuilder
+				var b netipx.IPSetBuilder
 				for _, inc := range p.Include {
-					if feed, ok := fetched[inc]; ok && feed.IsIP {
-						for pf := range feed.IPs {
-							builder.AddPrefix(pf)
+					if f, ok := fetched[inc]; ok && f.IsIP {
+						for pf := range f.IPs {
+							b.AddPrefix(pf)
 						}
 					}
 				}
 				for _, exc := range p.Exclude {
-					if feed, ok := fetched[exc]; ok && feed.IsIP {
-						for pf := range feed.IPs {
-							builder.RemovePrefix(pf)
+					if f, ok := fetched[exc]; ok && f.IsIP {
+						for pf := range f.IPs {
+							b.RemovePrefix(pf)
 						}
 					}
 				}
 				var collapsed []string
-				if ipSet, err := builder.IPSet(); err == nil && ipSet != nil {
-					prefixes := ipSet.Prefixes()
-					collapsed = make([]string, len(prefixes))
-					for j, pf := range prefixes {
+				if ipSet, err := b.IPSet(); err == nil && ipSet != nil {
+					pfs := ipSet.Prefixes()
+					collapsed = make([]string, len(pfs))
+					for j, pf := range pfs {
 						collapsed[j] = pf.String()
 					}
 				}
-				rawSets[i] = rawPolicySet{
-					policy:    p.clone(),
-					priority:  prio,
-					trimmable: false,
-					ips:       collapsed,
-					rawCount:  len(collapsed),
-				}
+				rawSets[i] = rawPolicySet{policy: p.clone(), priority: prio, ips: collapsed, rawCount: len(collapsed)}
 				return
 			}
 
-			pSet := make(map[string]uint32)
+			estCap := 0
 			for _, inc := range p.Include {
-				if feed, ok := fetched[inc]; ok && !feed.IsIP {
-					for d, r := range feed.Domains {
+				if f, ok := fetched[inc]; ok && !f.IsIP {
+					estCap = max(estCap, len(f.Domains))
+				}
+			}
+			pSet := make(map[string]uint32, estCap)
+			for _, inc := range p.Include {
+				if f, ok := fetched[inc]; ok && !f.IsIP {
+					for d, r := range f.Domains {
 						if prev, exists := pSet[d]; !exists || r < prev {
 							pSet[d] = r
 						}
@@ -2093,15 +1870,14 @@ func buildPolicySets(
 				}
 			}
 			for _, exc := range p.Exclude {
-				if feed, ok := fetched[exc]; ok && !feed.IsIP {
-					for d := range feed.Domains {
+				if f, ok := fetched[exc]; ok && !f.IsIP {
+					for d := range f.Domains {
 						delete(pSet, d)
 					}
 				}
 			}
 
 			var guardedHits []string
-			guardedCount := 0
 			if p.resolvedAction() != "allow" {
 				if len(spamTLDs) > 0 && (p.UseSpamTLD || hasActiveSpamTLD) {
 					for d := range pSet {
@@ -2116,44 +1892,55 @@ func buildPolicySets(
 					for d := range pSet {
 						if cfg.isNeverBlocked(d) {
 							delete(pSet, d)
-							guardedCount++
 							guardedHits = append(guardedHits, fmt.Sprintf("%s (%s)", d, p.Name))
 						}
 					}
 				}
 			}
 
-			for d := range pSet {
-				if hasParentDomain(d, pSet) {
+			for d, r := range pSet {
+				hasParent := false
+				for rest := d; ; {
+					dot := strings.IndexByte(rest, '.')
+					if dot < 0 {
+						break
+					}
+					parent := rest[dot+1:]
+					if strings.IndexByte(parent, '.') < 0 {
+						break
+					}
+					if pr, ok := pSet[parent]; ok {
+						if r < pr {
+							pSet[parent] = r
+						}
+						hasParent = true
+					}
+					rest = parent
+				}
+				if hasParent {
 					delete(pSet, d)
 				}
 			}
 
 			rawSets[i] = rawPolicySet{
-				policy:       p.clone(),
-				priority:     prio,
-				trimmable:    p.isTrimmable(),
-				domains:      pSet,
-				rawCount:     len(pSet),
-				guardedCount: guardedCount,
-				guardedHits:  guardedHits,
+				policy: p.clone(), priority: prio, trimmable: p.isTrimmable(),
+				domains: pSet, rawCount: len(pSet), guardedCount: len(guardedHits), guardedHits: guardedHits,
 			}
 		}(i, pol)
 	}
 	wg.Wait()
 
 	var guardWarnings []string
+	totalRaw := 0
 	for _, rs := range rawSets {
 		guardWarnings = append(guardWarnings, rs.guardedHits...)
+		totalRaw += len(rs.domains)
 	}
 	if len(guardWarnings) > 0 {
 		slices.Sort(guardWarnings)
 		logWarn("Config never_block stripped %d domain(s): %s", len(guardWarnings), strings.Join(guardWarnings, ", "))
 	}
 
-	// Step 2: Priority-ordered cross-policy deduplication.
-	// Protected policies NEVER dedup against trimmable policies so rank trimming
-	// Porn/Badware/Malware can never accidentally unblock a static safety domain.
 	order := make([]int, len(rawSets))
 	for i := range order {
 		order[i] = i
@@ -2165,102 +1952,77 @@ func buildPolicySets(
 		return cmp.Compare(rawSets[a].policy.Name, rawSets[b].policy.Name)
 	})
 
-	globalStableBlocked := make(map[string]struct{})
-	globalAllBlocked := make(map[string]struct{})
-	scopedStableBlocked := make(map[string]map[string]struct{})
-	scopedAllBlocked := make(map[string]map[string]struct{})
+	dedupCap := min(totalRaw, maxSafeDomains)
+	globalStable := make(map[string]struct{}, dedupCap/2)
+	globalAll := make(map[string]struct{}, dedupCap)
+	scopedStable := make(map[string]map[string]struct{})
+	scopedAll := make(map[string]map[string]struct{})
 	dedupCounts := make([]int, len(rawSets))
 
-	// Pass 2a: Global domain block policies
-	for _, idx := range order {
-		rs := &rawSets[idx]
-		if rs.policy.resolvedType() != "DOMAIN" || rs.policy.resolvedAction() == "allow" || rs.policy.isScoped(cfg) {
-			continue
-		}
-		targetLookup := globalStableBlocked
-		if rs.trimmable {
-			targetLookup = globalAllBlocked
-		}
-		removed := 0
-		for d := range rs.domains {
-			if hasSuffixDomain(d, targetLookup) {
-				delete(rs.domains, d)
-				removed++
+	for _, scopedPass := range []bool{false, true} {
+		for _, idx := range order {
+			rs := &rawSets[idx]
+			if rs.policy.resolvedType() != "DOMAIN" || rs.policy.resolvedAction() == "allow" || rs.policy.isScoped(cfg) != scopedPass {
+				continue
 			}
-		}
-		dedupCounts[idx] = removed
-		for d := range rs.domains {
-			globalAllBlocked[d] = struct{}{}
-			if !rs.trimmable {
-				globalStableBlocked[d] = struct{}{}
+			gLookup := globalStable
+			if rs.trimmable {
+				gLookup = globalAll
 			}
-		}
-		if removed > 0 {
-			logInfo("Cross-policy dedup removed %d duplicate domain(s) from '%s' (priority %d)",
-				removed, rs.policy.Name, rs.priority)
+			var pLookup, pStable, pAll map[string]struct{}
+			if scopedPass {
+				idKey := rs.policy.effectiveIdentity(cfg)
+				if pStable = scopedStable[idKey]; pStable == nil {
+					pStable = make(map[string]struct{}, len(rs.domains))
+					scopedStable[idKey] = pStable
+				}
+				if pAll = scopedAll[idKey]; pAll == nil {
+					pAll = make(map[string]struct{}, len(rs.domains))
+					scopedAll[idKey] = pAll
+				}
+				pLookup = pStable
+				if rs.trimmable {
+					pLookup = pAll
+				}
+			}
+
+			removed := 0
+			for d := range rs.domains {
+				if hasSuffixDomain(d, gLookup) || (pLookup != nil && hasSuffixDomain(d, pLookup)) {
+					delete(rs.domains, d)
+					removed++
+				}
+			}
+			dedupCounts[idx] = removed
+			for d := range rs.domains {
+				if scopedPass {
+					pAll[d] = struct{}{}
+					if !rs.trimmable {
+						pStable[d] = struct{}{}
+					}
+				} else {
+					globalAll[d] = struct{}{}
+					if !rs.trimmable {
+						globalStable[d] = struct{}{}
+					}
+				}
+			}
+			if removed > 0 {
+				logInfo("Cross-policy dedup removed %d duplicate domain(s) from '%s' (priority %d)",
+					removed, rs.policy.Name, rs.priority)
+			}
 		}
 	}
 
-	// Pass 2b: Scoped/restricted domain block policies
-	for _, idx := range order {
-		rs := &rawSets[idx]
-		if rs.policy.resolvedType() != "DOMAIN" || rs.policy.resolvedAction() == "allow" || !rs.policy.isScoped(cfg) {
-			continue
-		}
-		idKey := rs.policy.effectiveIdentity(cfg)
-		peerStable := scopedStableBlocked[idKey]
-		if peerStable == nil {
-			peerStable = make(map[string]struct{})
-			scopedStableBlocked[idKey] = peerStable
-		}
-		peerAll := scopedAllBlocked[idKey]
-		if peerAll == nil {
-			peerAll = make(map[string]struct{})
-			scopedAllBlocked[idKey] = peerAll
-		}
-
-		globalLookup := globalStableBlocked
-		peerLookup := peerStable
-		if rs.trimmable {
-			globalLookup = globalAllBlocked
-			peerLookup = peerAll
-		}
-
-		removed := 0
-		for d := range rs.domains {
-			if hasSuffixDomain(d, globalLookup) || hasSuffixDomain(d, peerLookup) {
-				delete(rs.domains, d)
-				removed++
-			}
-		}
-		dedupCounts[idx] = removed
-		for d := range rs.domains {
-			peerAll[d] = struct{}{}
-			if !rs.trimmable {
-				peerStable[d] = struct{}{}
-			}
-		}
-		if removed > 0 {
-			logInfo("Cross-policy dedup removed %d duplicate domain(s) from scoped policy '%s' (priority %d)",
-				removed, rs.policy.Name, rs.priority)
-		}
-	}
-
-	// Step 3: Materialize rankedEntry slices sorted by (Rank asc, Value asc)
 	out := make([]compiledPolicy, len(order))
 	for outIdx, idx := range order {
 		rs := rawSets[idx]
 		if rs.policy.resolvedType() == "IP" {
 			entries := make([]rankedEntry, len(rs.ips))
 			for j, cidr := range rs.ips {
-				entries[j] = rankedEntry{Value: cidr, Rank: 0}
+				entries[j] = rankedEntry{Value: cidr}
 			}
-			out[outIdx] = compiledPolicy{
-				Policy:   rs.policy,
-				Priority: rs.priority,
-				Entries:  entries,
-				RawCount: rs.rawCount,
-			}
+			out[outIdx] = compiledPolicy{Policy: rs.policy, Priority: rs.priority, Entries: entries, RawCount: rs.rawCount}
 			continue
 		}
 		entries := make([]rankedEntry, 0, len(rs.domains))
@@ -2274,32 +2036,22 @@ func buildPolicySets(
 			return cmp.Compare(a.Value, b.Value)
 		})
 		out[outIdx] = compiledPolicy{
-			Policy:       rs.policy,
-			Priority:     rs.priority,
-			Trimmable:    rs.trimmable,
-			Entries:      entries,
-			RawCount:     rs.rawCount,
-			DedupedCount: dedupCounts[idx],
-			GuardedCount: rs.guardedCount,
+			Policy: rs.policy, Priority: rs.priority, Trimmable: rs.trimmable,
+			Entries: entries, RawCount: rs.rawCount, DedupedCount: dedupCounts[idx], Guarded: rs.guardedCount,
 		}
 	}
-
 	return out, guardWarnings
 }
 
-func sumMinCapacity(compiled []compiledPolicy, maxListSize int) (int, int) {
-	entries, minLists := 0, 0
+func sumMinCapacity(compiled []compiledPolicy, maxListSize int) (entries, minLists int) {
 	for _, cp := range compiled {
 		entries += len(cp.Entries)
 		minLists += divCeil(len(cp.Entries), maxListSize)
 	}
-	return entries, minLists
+	return
 }
 
-// trimByRank removes the least-popular (highest rank number) domains ONLY from
-// trimmable policies (Porn -> Badware -> Malware) until entry and list limits are met.
 func trimByRank(compiled []compiledPolicy, activeQuota, maxActiveLists, maxListSize int) []string {
-	var warnings []string
 	totalEntries, minLists := sumMinCapacity(compiled, maxListSize)
 	if totalEntries <= activeQuota && minLists <= maxActiveLists {
 		return nil
@@ -2318,8 +2070,6 @@ func trimByRank(compiled []compiledPolicy, activeQuota, maxActiveLists, maxListS
 		return cmp.Compare(compiled[b].Policy.Name, compiled[a].Policy.Name)
 	})
 
-	// Pass 1: Trim excess entries while protecting each trimmable policy's top 10k domains
-	// Pass 2: If still over quota, allow trimming into the protected 10k core
 	for pass := 0; pass < 2 && totalEntries > activeQuota; pass++ {
 		for _, idx := range revOrder {
 			if totalEntries <= activeQuota {
@@ -2330,25 +2080,18 @@ func trimByRank(compiled []compiledPolicy, activeQuota, maxActiveLists, maxListS
 			if pass == 0 {
 				floor = min(len(cp.Entries), coreRankProtectionCap)
 			}
-			available := len(cp.Entries) - floor
-			if available <= 0 {
-				continue
+			if avail := len(cp.Entries) - floor; avail > 0 {
+				drop := min(avail, totalEntries-activeQuota)
+				cp.Entries = cp.Entries[:len(cp.Entries)-drop]
+				cp.TrimmedCount += drop
+				totalEntries -= drop
 			}
-			toDrop := min(available, totalEntries-activeQuota)
-			cp.Entries = cp.Entries[:len(cp.Entries)-toDrop]
-			cp.TrimmedCount += toDrop
-			totalEntries -= toDrop
 		}
 	}
 
-	// Pass 3: If entries fit activeQuota but list rounding exceeds maxActiveLists,
-	// trim the smallest partial tail chunks from trimmable policies to reclaim whole lists.
 	_, minLists = sumMinCapacity(compiled, maxListSize)
 	for minLists > maxActiveLists {
-		bestIdx := -1
-		bestDrop := math.MaxInt
-		bestPrio := -1
-
+		bestIdx, bestDrop, bestPrio := -1, math.MaxInt, -1
 		for _, idx := range revOrder {
 			n := len(compiled[idx].Entries)
 			if n == 0 {
@@ -2359,9 +2102,7 @@ func trimByRank(compiled []compiledPolicy, activeQuota, maxActiveLists, maxListS
 				tail = maxListSize
 			}
 			if tail < bestDrop || (tail == bestDrop && compiled[idx].Priority > bestPrio) {
-				bestDrop = tail
-				bestIdx = idx
-				bestPrio = compiled[idx].Priority
+				bestIdx, bestDrop, bestPrio = idx, tail, compiled[idx].Priority
 			}
 		}
 		if bestIdx < 0 {
@@ -2373,20 +2114,19 @@ func trimByRank(compiled []compiledPolicy, activeQuota, maxActiveLists, maxListS
 		minLists--
 	}
 
-	for i := range compiled {
-		cp := &compiled[i]
+	var warnings []string
+	for _, cp := range compiled {
 		if cp.TrimmedCount > 0 {
-			worstRankStr := "none"
+			worst := "none"
 			if n := len(cp.Entries); n > 0 {
-				r := cp.Entries[n-1].Rank
-				if r == unrankedRank {
-					worstRankStr = "unranked"
+				if r := cp.Entries[n-1].Rank; r == unrankedRank {
+					worst = "unranked"
 				} else {
-					worstRankStr = fmt.Sprintf("#%d", r)
+					worst = fmt.Sprintf("#%d", r)
 				}
 			}
 			msg := fmt.Sprintf("Rank-trimmed %d low-popularity domains from '%s' (kept %d, worst kept rank: %s)",
-				cp.TrimmedCount, cp.Policy.Name, len(cp.Entries), worstRankStr)
+				cp.TrimmedCount, cp.Policy.Name, len(cp.Entries), worst)
 			logWarn("%s", msg)
 			warnings = append(warnings, msg)
 		}
@@ -2408,11 +2148,10 @@ func bucketEntries(entries []rankedEntry, numBuckets, maxListSize int) [][]strin
 	}
 
 	buckets := make([][]string, numBuckets)
-	avg := len(entries)/numBuckets + 16
+	avg := min(len(entries)/numBuckets+16, maxListSize)
 	for i := range buckets {
-		buckets[i] = make([]string, 0, min(avg, maxListSize))
+		buckets[i] = make([]string, 0, avg)
 	}
-
 	for _, e := range entries {
 		idx := int(xxh3.HashString(e.Value) % uint64(numBuckets))
 		buckets[idx] = append(buckets[idx], e.Value)
@@ -2426,15 +2165,13 @@ func bucketEntries(entries []rankedEntry, numBuckets, maxListSize int) [][]strin
 			buckets[i] = buckets[i][:maxListSize]
 		}
 	}
-
 	if len(overflow) > 0 {
 		slices.Sort(overflow)
 		touched := make([]bool, numBuckets)
 		for _, item := range overflow {
 			start := int(xxh3.HashString(item) % uint64(numBuckets))
 			for step := 1; step <= numBuckets; step++ {
-				b := (start + step) % numBuckets
-				if len(buckets[b]) < maxListSize {
+				if b := (start + step) % numBuckets; len(buckets[b]) < maxListSize {
 					buckets[b] = append(buckets[b], item)
 					touched[b] = true
 					break
@@ -2463,20 +2200,15 @@ func assignHashBuckets(compiled []compiledPolicy, existingLists []gatewayList, m
 		if cp.Policy.Prefix == "" {
 			continue
 		}
-		count := 0
 		for _, l := range existingLists {
 			if _, ok := parseChunkIndex(l.Name, cp.Policy.Prefix); ok {
-				count++
+				existingCounts[cp.Policy.Prefix]++
 			}
 		}
-		existingCounts[cp.Policy.Prefix] = count
 	}
 
-	targetSize := max((maxListSize*90)/100, 1)
-	minFillSize := max((maxListSize*75)/100, 1)
-
-	bucketCounts := make([]int, len(compiled))
-	minBuckets := make([]int, len(compiled))
+	targetSize, minFillSize := max((maxListSize*90)/100, 1), max((maxListSize*75)/100, 1)
+	bucketCounts, minBuckets := make([]int, len(compiled)), make([]int, len(compiled))
 	totalBuckets := 0
 
 	for i, cp := range compiled {
@@ -2485,19 +2217,13 @@ func assignHashBuckets(compiled []compiledPolicy, existingLists []gatewayList, m
 			continue
 		}
 		if n <= maxListSize {
-			bucketCounts[i] = 1
-			minBuckets[i] = 1
+			bucketCounts[i], minBuckets[i] = 1, 1
 			totalBuckets++
 			continue
 		}
-
-		minB := divCeil(n, maxListSize)
-		targetB := divCeil(n, targetSize)
-		maxStickyB := divCeil(n, minFillSize)
+		minB, targetB, maxStickyB := divCeil(n, maxListSize), divCeil(n, targetSize), divCeil(n, minFillSize)
 		minBuckets[i] = minB
-
-		existingB := existingCounts[cp.Policy.Prefix]
-		if existingB >= minB && existingB <= maxStickyB {
+		if existingB := existingCounts[cp.Policy.Prefix]; existingB >= minB && existingB <= maxStickyB {
 			bucketCounts[i] = existingB
 		} else {
 			bucketCounts[i] = targetB
@@ -2506,23 +2232,19 @@ func assignHashBuckets(compiled []compiledPolicy, existingLists []gatewayList, m
 	}
 
 	for totalBuckets > maxActiveLists {
-		slackestIdx := -1
-		lowestFill := math.MaxFloat64
+		slackestIdx, lowestFill := -1, math.MaxFloat64
 		for i, cp := range compiled {
 			if bucketCounts[i] > minBuckets[i] {
-				fill := float64(len(cp.Entries)) / float64(bucketCounts[i])
-				if fill < lowestFill {
-					lowestFill = fill
-					slackestIdx = i
+				if fill := float64(len(cp.Entries)) / float64(bucketCounts[i]); fill < lowestFill {
+					lowestFill, slackestIdx = fill, i
 				}
 			}
 		}
 		if slackestIdx < 0 {
 			break
 		}
-		saved := bucketCounts[slackestIdx] - minBuckets[slackestIdx]
+		totalBuckets -= bucketCounts[slackestIdx] - minBuckets[slackestIdx]
 		bucketCounts[slackestIdx] = minBuckets[slackestIdx]
-		totalBuckets -= saved
 	}
 
 	actualTotal := 0
@@ -2535,15 +2257,14 @@ func assignHashBuckets(compiled []compiledPolicy, existingLists []gatewayList, m
 
 func compileCategoryExpression(p policyConfig) string {
 	var parts []string
-	catSpecs := []struct {
+	for _, spec := range []struct {
 		vals  []any
 		field string
 	}{
 		{p.SecurityCategories, "dns.security_category[*]"},
 		{p.ContentCategories, "dns.content_category[*]"},
 		{p.AppIDs, "app.ids[*]"},
-	}
-	for _, spec := range catSpecs {
+	} {
 		if len(spec.vals) > 0 {
 			ids := make([]string, len(spec.vals))
 			for i, v := range spec.vals {
@@ -2562,7 +2283,7 @@ func compileCategoryExpression(p policyConfig) string {
 	return strings.Join(parts, " or ")
 }
 
-// ---------- Prefix, Clause, & Rule Helpers ----------
+// ---------- Rule, Chunk & Cleanup Helpers ----------
 
 func parseChunkIndex(listName, prefix string) (int, bool) {
 	if prefix == "" {
@@ -2578,21 +2299,29 @@ func parseChunkIndex(listName, prefix string) (int, bool) {
 		}
 	}
 	n, err := strconv.Atoi(suffix)
-	if err != nil {
-		return 0, false
+	return n, err == nil
+}
+
+func hashChunk(chunk []string) string {
+	h := sha256.New()
+	comma := []byte(",")
+	for i, item := range chunk {
+		if i > 0 {
+			_, _ = h.Write(comma)
+		}
+		_, _ = io.WriteString(h, item)
 	}
-	return n, true
+	var sum [sha256.Size]byte
+	return hex.EncodeToString(h.Sum(sum[:0]))
 }
 
 func chunkMatchesRemote(target gatewayList, expectedName, rawHash string, rawLen int) bool {
 	if target.Name != expectedName {
 		return false
 	}
-	if storedHash, storedLen, hasSep := strings.Cut(target.Description, ":"); hasSep {
-		if storedHash == rawHash {
-			if expectedCount, err := strconv.ParseInt(storedLen, 10, 64); err == nil {
-				return target.Count == nil || *target.Count == expectedCount
-			}
+	if storedHash, storedLen, hasSep := strings.Cut(target.Description, ":"); hasSep && storedHash == rawHash {
+		if n, err := strconv.ParseInt(storedLen, 10, 64); err == nil {
+			return target.Count == nil || *target.Count == n
 		}
 	}
 	return target.Description == rawHash && (target.Count == nil || int(*target.Count) == rawLen)
@@ -2603,8 +2332,7 @@ func clauseReferencesID(clause, id string) bool {
 		return false
 	}
 	needle := "$" + id
-	start := 0
-	for {
+	for start := 0; ; {
 		pos := strings.Index(clause[start:], needle)
 		if pos < 0 {
 			return false
@@ -2614,8 +2342,7 @@ func clauseReferencesID(clause, id string) bool {
 			return true
 		}
 		c := clause[end]
-		isIdent := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_'
-		if !isIdent {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
 			return true
 		}
 		start = end
@@ -2626,21 +2353,11 @@ func stripListsFromTraffic(traffic string, listIDs []string) (string, bool) {
 	clauses := strings.Split(traffic, " or ")
 	kept := make([]string, 0, len(clauses))
 	for _, cl := range clauses {
-		referenced := false
-		for _, id := range listIDs {
-			if clauseReferencesID(cl, id) {
-				referenced = true
-				break
-			}
-		}
-		if !referenced {
+		if !slices.ContainsFunc(listIDs, func(id string) bool { return clauseReferencesID(cl, id) }) {
 			kept = append(kept, cl)
 		}
 	}
-	if len(kept) == 0 {
-		return "", false
-	}
-	return strings.Join(kept, " or "), true
+	return strings.Join(kept, " or "), len(kept) > 0
 }
 
 func buildRuleUpdatePayload(rule gatewayRule, enabled bool, traffic string) map[string]any {
@@ -2653,17 +2370,10 @@ func buildRuleUpdatePayload(rule gatewayRule, enabled bool, traffic string) map[
 		action = "block"
 	}
 	payload := map[string]any{
-		"name":    rule.Name,
-		"action":  action,
-		"enabled": enabled,
-		"filters": filters,
-		"traffic": traffic,
+		"name": rule.Name, "action": action, "enabled": enabled, "filters": filters, "traffic": traffic,
 	}
 	if rule.Identity != "" {
 		payload["identity"] = rule.Identity
-	}
-	if isNonNullRaw(rule.DevicePosture) {
-		payload["device_posture"] = rule.DevicePosture
 	}
 	if rule.RuleSettings != nil {
 		cp := make(map[string]any, len(rule.RuleSettings))
@@ -2672,90 +2382,67 @@ func buildRuleUpdatePayload(rule gatewayRule, enabled bool, traffic string) map[
 		}
 		payload["rule_settings"] = cp
 	}
-	if isNonNullRaw(rule.Schedule) {
-		payload["schedule"] = rule.Schedule
-	}
-	if isNonNullRaw(rule.Precedence) {
-		payload["precedence"] = rule.Precedence
-	}
-	if isNonNullRaw(rule.Description) {
-		payload["description"] = rule.Description
+	for k, raw := range map[string]json.RawMessage{
+		"device_posture": rule.DevicePosture, "schedule": rule.Schedule,
+		"precedence": rule.Precedence, "description": rule.Description,
+	} {
+		if isNonNullRaw(raw) {
+			payload[k] = raw
+		}
 	}
 	return payload
 }
 
-// ensureSpamAllowPrecedence verifies that "Allow: Spam Exceptions" executes immediately
-// before any spam-TLD block rule (lower numeric precedence in Cloudflare Gateway),
-// while staying below higher-priority block rules (Malware, Bypass, Social, AdBlock).
-func ensureSpamAllowPrecedence(
-	cf *cloudflareAPI,
-	spamTLDBlockNames map[string]struct{},
-	existingRules []gatewayRule,
-) []string {
+func ensureSpamAllowPrecedence(cf *cloudflareAPI, spamTLDBlockNames map[string]struct{}, existingRules []gatewayRule) []string {
 	if len(spamTLDBlockNames) == 0 {
 		return nil
 	}
-
-	allowIdx := slices.IndexFunc(existingRules, func(r gatewayRule) bool {
-		return r.Name == spamAllowRuleName
-	})
+	allowIdx := slices.IndexFunc(existingRules, func(r gatewayRule) bool { return r.Name == spamAllowRuleName })
 	if allowIdx < 0 {
-		if cf.dryRun {
-			logInfo("[DRY-RUN] '%s' not yet created; precedence will be positioned directly above spam-TLD rule on live run.", spamAllowRuleName)
-		}
 		return nil
 	}
-
-	allowPrec, hasAllowPrec := parseRulePrecedence(existingRules[allowIdx].Precedence)
-	if !hasAllowPrec {
+	allowPrec, ok := parseRulePrecedence(existingRules[allowIdx].Precedence)
+	if !ok {
 		return nil
 	}
 
 	var spamBlockIndices []int
 	minSpamPrec := int64(math.MaxInt64)
 	for i, r := range existingRules {
-		if _, isSpamBlock := spamTLDBlockNames[r.Name]; isSpamBlock {
+		if _, isSpam := spamTLDBlockNames[r.Name]; isSpam {
 			if p, ok := parseRulePrecedence(r.Precedence); ok {
 				spamBlockIndices = append(spamBlockIndices, i)
-				if p < minSpamPrec {
-					minSpamPrec = p
-				}
+				minSpamPrec = min(minSpamPrec, p)
 			}
 		}
 	}
 	if len(spamBlockIndices) == 0 {
 		return nil
 	}
-
 	if allowPrec < minSpamPrec {
 		logInfo("Rule precedence verified: '%s' (%d) precedes spam-TLD block rule(s) (min %d).",
 			spamAllowRuleName, allowPrec, minSpamPrec)
 		return nil
 	}
 
-	var prevPrec int64
-	var maxDNSPrec int64
+	var prevPrec, maxDNSPrec int64
 	usedPrecs := make(map[int64]struct{}, len(existingRules))
 	for i, r := range existingRules {
 		if !r.isDNSRule() {
 			continue
 		}
-		p, ok := parseRulePrecedence(r.Precedence)
-		if !ok {
-			continue
-		}
-		if p > maxDNSPrec {
-			maxDNSPrec = p
-		}
-		if i != allowIdx {
-			usedPrecs[p] = struct{}{}
-			if p < minSpamPrec && p > prevPrec {
-				prevPrec = p
+		if p, ok := parseRulePrecedence(r.Precedence); ok {
+			maxDNSPrec = max(maxDNSPrec, p)
+			if i != allowIdx {
+				usedPrecs[p] = struct{}{}
+				if p < minSpamPrec && p > prevPrec {
+					prevPrec = p
+				}
 			}
 		}
 	}
 
-	updateRulePrec := func(idx int, newPrec int64) error {
+	setPrec := func(idx int, newPrec int64) error {
 		r := &existingRules[idx]
 		payload := buildRuleUpdatePayload(*r, r.Enabled, r.Traffic)
 		payload["precedence"] = newPrec
@@ -2771,50 +2458,41 @@ func ensureSpamAllowPrecedence(
 		return nil
 	}
 
-	var notices []string
-
 	if prevPrec+1 < minSpamPrec {
-		targetPrec := prevPrec + (minSpamPrec-prevPrec)/2
-		if _, taken := usedPrecs[targetPrec]; taken {
+		target := prevPrec + (minSpamPrec-prevPrec)/2
+		if _, taken := usedPrecs[target]; taken {
 			for cand := minSpamPrec - 1; cand > prevPrec; cand-- {
 				if _, used := usedPrecs[cand]; !used {
-					targetPrec = cand
+					target = cand
 					break
 				}
 			}
 		}
-		if err := updateRulePrec(allowIdx, targetPrec); err != nil {
-			logErr("Failed adjusting precedence of '%s' to %d: %v", spamAllowRuleName, targetPrec, err)
-			notices = append(notices, fmt.Sprintf("Failed to reorder '%s' above spam-TLD rule: %v", spamAllowRuleName, err))
-			return notices
+		if err := setPrec(allowIdx, target); err != nil {
+			logErr("Failed adjusting precedence of '%s': %v", spamAllowRuleName, err)
+			return []string{fmt.Sprintf("Failed to reorder '%s': %v", spamAllowRuleName, err)}
 		}
-		msg := fmt.Sprintf("Adjusted rule precedence: moved '%s' from %d to %d (directly above spam-TLD rule at %d)",
-			spamAllowRuleName, allowPrec, targetPrec, minSpamPrec)
+		msg := fmt.Sprintf("Adjusted rule precedence: moved '%s' from %d to %d (above spam-TLD at %d)",
+			spamAllowRuleName, allowPrec, target, minSpamPrec)
 		logInfo("%s", msg)
-		notices = append(notices, msg)
-		return notices
+		return []string{msg}
 	}
 
 	allowTarget := maxDNSPrec + 50
-	if err := updateRulePrec(allowIdx, allowTarget); err != nil {
-		logErr("Failed relocating '%s' to precedence %d: %v", spamAllowRuleName, allowTarget, err)
-		notices = append(notices, fmt.Sprintf("Failed to relocate '%s' precedence: %v", spamAllowRuleName, err))
-		return notices
+	if err := setPrec(allowIdx, allowTarget); err != nil {
+		logErr("Failed relocating '%s': %v", spamAllowRuleName, err)
+		return []string{fmt.Sprintf("Failed to relocate '%s': %v", spamAllowRuleName, err)}
 	}
 	for offset, idx := range spamBlockIndices {
-		spamTarget := maxDNSPrec + 100 + int64(offset*10)
-		if err := updateRulePrec(idx, spamTarget); err != nil {
-			logErr("Failed relocating '%s' to precedence %d: %v", existingRules[idx].Name, spamTarget, err)
-			notices = append(notices, fmt.Sprintf("Failed to relocate '%s' precedence: %v", existingRules[idx].Name, err))
-			return notices
+		if err := setPrec(idx, maxDNSPrec+100+int64(offset*10)); err != nil {
+			logErr("Failed relocating '%s': %v", existingRules[idx].Name, err)
+			return []string{fmt.Sprintf("Failed to relocate '%s': %v", existingRules[idx].Name, err)}
 		}
 	}
-
-	msg := fmt.Sprintf("Adjusted rule precedence: placed '%s' (%d) directly above spam-TLD rule(s) (%d+)",
+	msg := fmt.Sprintf("Adjusted rule precedence: placed '%s' (%d) above spam-TLD rule(s) (%d+)",
 		spamAllowRuleName, allowTarget, maxDNSPrec+100)
 	logInfo("%s", msg)
-	notices = append(notices, msg)
-	return notices
+	return []string{msg}
 }
 
 func detachListsFromRules(cf *cloudflareAPI, listIDs []string, existingRules *[]gatewayRule) ([]gatewayRule, error) {
@@ -2828,70 +2506,40 @@ func detachListsFromRules(cf *cloudflareAPI, listIDs []string, existingRules *[]
 	rules := *existingRules
 	for i := range rules {
 		rule := &rules[i]
-		matched := false
-		for _, id := range listIDs {
-			if clauseReferencesID(rule.Traffic, id) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
+		if !slices.ContainsFunc(listIDs, func(id string) bool { return clauseReferencesID(rule.Traffic, id) }) {
 			continue
 		}
-
 		remaining, hasRemaining := stripListsFromTraffic(rule.Traffic, listIDs)
-		newTraffic := dummyTrafficExpression
-		newEnabled := false
-		attemptedInPlace := false
+		newTraffic, newEnabled := dummyTrafficExpression, false
 		if hasRemaining {
-			newTraffic = remaining
-			newEnabled = rule.Enabled
-			attemptedInPlace = true
+			newTraffic, newEnabled = remaining, rule.Enabled
 		}
 
-		mode := "full detach (temporary disable)"
-		if attemptedInPlace {
-			mode = "in-place (zero-downtime)"
+		_, err := cf.updateRule(rule.ID, buildRuleUpdatePayload(*rule, newEnabled, newTraffic))
+		if err != nil && hasRemaining && strings.Contains(err.Error(), "HTTP 400") {
+			logWarn("In-place detach rejected for '%s'; falling back to full detach.", rule.Name)
+			newTraffic, newEnabled = dummyTrafficExpression, false
+			_, err = cf.updateRule(rule.ID, buildRuleUpdatePayload(*rule, false, dummyTrafficExpression))
 		}
-		logInfo("Detaching stale lists from rule '%s' via %s...", rule.Name, mode)
-
-		payload := buildRuleUpdatePayload(*rule, newEnabled, newTraffic)
-		_, err := cf.updateRule(rule.ID, payload)
-		if err != nil && attemptedInPlace && strings.Contains(err.Error(), "HTTP 400") {
-			logWarn("In-place detach rejected with HTTP 400 for '%s'; falling back to full temporary detach.", rule.Name)
-			newTraffic = dummyTrafficExpression
-			newEnabled = false
-			fallbackPayload := buildRuleUpdatePayload(*rule, false, dummyTrafficExpression)
-			_, err = cf.updateRule(rule.ID, fallbackPayload)
-		}
-
 		if err != nil {
-			errStr := err.Error()
-			if strings.Contains(errStr, "HTTP 404") || strings.Contains(errStr, "1102") {
-				logWarn("Rule '%s' (%s) no longer exists on Cloudflare; skipping detach.", rule.Name, rule.ID)
+			if strings.Contains(err.Error(), "HTTP 404") || strings.Contains(err.Error(), "1102") {
 				missingIDs[rule.ID] = struct{}{}
 				continue
 			}
-			return snapshots, fmt.Errorf("failed to detach lists from rule %s: %w", rule.Name, err)
+			return snapshots, fmt.Errorf("detach lists from rule %s: %w", rule.Name, err)
 		}
-
 		snapshots = append(snapshots, rule.clone())
-		rule.Traffic = newTraffic
-		rule.Enabled = newEnabled
+		rule.Traffic, rule.Enabled = newTraffic, newEnabled
 		detachedAny = true
 	}
 
 	if len(missingIDs) > 0 {
-		filtered := rules[:0]
-		for _, r := range rules {
-			if _, missing := missingIDs[r.ID]; !missing {
-				filtered = append(filtered, r)
-			}
-		}
-		*existingRules = filtered
+		*existingRules = slices.DeleteFunc(rules, func(r gatewayRule) bool {
+			_, missing := missingIDs[r.ID]
+			return missing
+		})
 	}
-
-	if detachedAny && !cf.dryRun {
+	if detachedAny {
 		time.Sleep(2 * time.Second)
 	}
 	return snapshots, nil
@@ -2906,17 +2554,12 @@ func restoreDetachedRules(cf *cloudflareAPI, snapshots []gatewayRule, deletedLis
 		traffic := rule.Traffic
 		if len(deletedListIDs) > 0 {
 			var ok bool
-			traffic, ok = stripListsFromTraffic(rule.Traffic, deletedListIDs)
-			if !ok {
-				logWarn("Skipping restore of '%s' because all referenced lists were already deleted.", rule.Name)
+			if traffic, ok = stripListsFromTraffic(rule.Traffic, deletedListIDs); !ok {
 				continue
 			}
 		}
-		payload := buildRuleUpdatePayload(rule, rule.Enabled, traffic)
-		if _, err := cf.updateRule(rule.ID, payload); err != nil {
+		if _, err := cf.updateRule(rule.ID, buildRuleUpdatePayload(rule, rule.Enabled, traffic)); err != nil {
 			logErr("Failed restoring rule '%s': %v", rule.Name, err)
-		} else {
-			logInfo("Restored rule '%s'", rule.Name)
 		}
 	}
 }
@@ -2924,424 +2567,416 @@ func restoreDetachedRules(cf *cloudflareAPI, snapshots []gatewayRule, deletedLis
 func deleteListWithRetry(cf *cloudflareAPI, item gatewayList, existingRules *[]gatewayRule) error {
 	for attempt := 0; attempt < 3; attempt++ {
 		err := cf.deleteList(item.ID)
-		if err == nil {
+		if err == nil || strings.Contains(err.Error(), "HTTP 404") {
 			logInfo("Removed list: %s (%s)", item.Name, item.ID)
 			return nil
 		}
-		errStr := err.Error()
-		if strings.Contains(errStr, "HTTP 404") {
-			logWarn("List %s (%s) already deleted on Cloudflare.", item.Name, item.ID)
-			return nil
-		}
-		if strings.Contains(errStr, "HTTP 400") && strings.Contains(errStr, "in use at gateway policies") && attempt < 2 {
+		if strings.Contains(err.Error(), "HTTP 400") && strings.Contains(err.Error(), "in use at gateway policies") && attempt < 2 {
 			_, _ = detachListsFromRules(cf, []string{item.ID}, existingRules)
-			wait := time.Duration((1<<attempt)+1)*time.Second + jitterMs(500)
-			logWarn("List %s still locked. Retrying in %.2fs...", item.ID, wait.Seconds())
-			time.Sleep(wait)
+			time.Sleep(time.Duration((1<<attempt)+1)*time.Second + jitterMs(500))
 			continue
 		}
-		logErr("Failed deleting list %s (%s) after %d attempts: %v", item.Name, item.ID, attempt+1, err)
 		return err
 	}
-	return fmt.Errorf("failed deleting list %s (%s) after 3 attempts", item.Name, item.ID)
+	return fmt.Errorf("failed deleting list %s (%s)", item.Name, item.ID)
 }
 
-// ---------- Sync Operations & Metrics ----------
+func scrubOrphanRules(cf *cloudflareAPI, cfg *appConfig, keepNames map[string]struct{}, existingRules *[]gatewayRule) int {
+	deleted := make(map[string]struct{})
+	for _, r := range *existingRules {
+		if cfg.isProtectedRule(r.Name) || !containsAny(r.Name, cfg.ScrubTargets) {
+			continue
+		}
+		if _, keep := keepNames[r.Name]; keep {
+			continue
+		}
+		if err := cf.deleteRule(r.ID); err != nil {
+			logErr("Rule cleanup error (%s): %v", r.Name, err)
+		} else {
+			logInfo("Removed orphaned rule: %s", r.Name)
+			deleted[r.ID] = struct{}{}
+		}
+	}
+	if len(deleted) > 0 {
+		*existingRules = slices.DeleteFunc(*existingRules, func(r gatewayRule) bool {
+			_, del := deleted[r.ID]
+			return del
+		})
+	}
+	return len(deleted)
+}
+
+func deleteListsBatched(cf *cloudflareAPI, lists []gatewayList, existingRules *[]gatewayRule) ([]gatewayRule, []string, error) {
+	if len(lists) == 0 {
+		return nil, nil, nil
+	}
+	ids := make([]string, len(lists))
+	for i, l := range lists {
+		ids[i] = l.ID
+	}
+	snapshots, err := detachListsFromRules(cf, ids, existingRules)
+	if err != nil {
+		return nil, nil, err
+	}
+	deleted := make([]string, 0, len(lists))
+	for _, l := range lists {
+		if err := deleteListWithRetry(cf, l, existingRules); err != nil {
+			restoreDetachedRules(cf, snapshots, deleted)
+			return nil, nil, err
+		}
+		deleted = append(deleted, l.ID)
+	}
+	return snapshots, deleted, nil
+}
+
+// ---------- Cross-Policy Sync Pool & Metrics ----------
 
 type policySyncStats struct {
-	Name         string
-	Prefix       string
-	Type         string
-	Priority     int
-	Trimmable    bool
-	Status       string // "synced", "preserved", "inactive"
-	Entries      int
-	Deduped      int
-	Trimmed      int
-	ListsTotal   int
-	ListsCreated int
-	ListsUpdated int
-	ListsSkipped int
-	RuleAction   string // "unchanged", "updated", "created", "deleted", "preserved"
+	Name, Prefix, Type, Status, RuleAction               string
+	Priority, Entries, Deduped, Trimmed                  int
+	ListsTotal, ListsCreated, ListsUpdated, ListsSkipped int
+	Trimmable                                            bool
 }
 
-type policySyncResult struct {
-	ActiveIDs  []string
-	SurplusIDs []string
-	RuleNames  []string
-	Stats      policySyncStats
-}
-
-func syncPolicyInPlace(
+func syncAllPolicies(
 	cf *cloudflareAPI,
 	cfg *appConfig,
 	existingLists []gatewayList,
 	existingRules *[]gatewayRule,
-	cp compiledPolicy,
+	sets []compiledPolicy,
 	tldExpr string,
-) (policySyncResult, error) {
-	policy := cp.Policy
-	stats := policySyncStats{
-		Name:       policy.Name,
-		Prefix:     policy.Prefix,
-		Type:       policy.resolvedType(),
-		Priority:   cp.Priority,
-		Trimmable:  cp.Trimmable,
-		Status:     "synced",
-		Entries:    len(cp.Entries),
-		Deduped:    cp.DedupedCount,
-		Trimmed:    cp.TrimmedCount,
-		RuleAction: "unchanged",
-	}
-
-	if policy.Prefix == "" || policy.Name == "" {
-		logWarn("Skipping malformed policy with empty prefix or name.")
-		stats.Status = "inactive"
-		return policySyncResult{Stats: stats}, nil
-	}
-
-	policyType := policy.resolvedType()
-	type indexedList struct {
-		idx  int
-		list gatewayList
-	}
-	var matched []indexedList
-	for _, l := range existingLists {
-		if idx, ok := parseChunkIndex(l.Name, policy.Prefix); ok {
-			matched = append(matched, indexedList{idx: idx, list: l})
-		}
-	}
-	slices.SortFunc(matched, func(a, b indexedList) int { return cmp.Compare(a.idx, b.idx) })
-
-	chunks := cp.Chunks
-	writeWorkers := min(cfg.MaxWorkers, 3)
-	sem := make(chan struct{}, writeWorkers)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+	preservedListIDs, preservedRuleNames map[string]struct{},
+	standaloneRules []string,
+) (allActiveIDs, allSurplusIDs, allActiveRules []string, stats []policySyncStats, err error) {
 	const (
 		chunkNone = iota
 		chunkSkipped
 		chunkUpdated
 		chunkCreated
 	)
-	chunkIDs := make([]string, len(chunks))
-	chunkOps := make([]int, len(chunks))
-	var firstErr error
-	var errMu sync.Mutex
-	var wg sync.WaitGroup
 
-	for idx, chunk := range chunks {
-		wg.Add(1)
-		go func(idx int, chunk []string) {
-			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-				defer func() { <-sem }()
-			case <-ctx.Done():
-				return
+	allActiveRules = slices.Clone(standaloneRules)
+	for id := range preservedListIDs {
+		allActiveIDs = append(allActiveIDs, id)
+	}
+	for name := range preservedRuleNames {
+		allActiveRules = append(allActiveRules, name)
+	}
+
+	type dirtyChunk struct {
+		pIdx, cIdx                       int
+		targetID, name, rawHash, listTyp string
+		chunk                            []string
+	}
+
+	stats = make([]policySyncStats, len(sets))
+	chunkIDs := make([][]string, len(sets))
+	chunkOps := make([][]int, len(sets))
+	var dirty []dirtyChunk
+
+	// Phase 1: Hash all chunks across all policies and skip unchanged ones upfront
+	for pIdx, cp := range sets {
+		p := cp.Policy
+		stats[pIdx] = policySyncStats{
+			Name: p.Name, Prefix: p.Prefix, Type: p.resolvedType(),
+			Priority: cp.Priority, Trimmable: cp.Trimmable, Status: "synced",
+			Entries: len(cp.Entries), Deduped: cp.DedupedCount, Trimmed: cp.TrimmedCount, RuleAction: "unchanged",
+		}
+		if p.Prefix == "" || p.Name == "" {
+			stats[pIdx].Status = "inactive"
+			continue
+		}
+
+		type indexedList struct {
+			idx  int
+			list gatewayList
+		}
+		var matched []indexedList
+		for _, l := range existingLists {
+			if idx, ok := parseChunkIndex(l.Name, p.Prefix); ok {
+				matched = append(matched, indexedList{idx: idx, list: l})
 			}
+		}
+		slices.SortFunc(matched, func(a, b indexedList) int { return cmp.Compare(a.idx, b.idx) })
 
-			name := fmt.Sprintf("%s %03d", policy.Prefix, idx+1)
-			rawSum := sha256.Sum256([]byte(strings.Join(chunk, ",")))
-			rawHash := hex.EncodeToString(rawSum[:])
+		chunkIDs[pIdx] = make([]string, len(cp.Chunks))
+		chunkOps[pIdx] = make([]int, len(cp.Chunks))
+		pType := p.resolvedType()
 
-			hasTarget := idx < len(matched)
-			if hasTarget && chunkMatchesRemote(matched[idx].list, name, rawHash, len(chunk)) {
-				chunkIDs[idx] = matched[idx].list.ID
-				chunkOps[idx] = chunkSkipped
-				return
+		for cIdx, chunk := range cp.Chunks {
+			name := fmt.Sprintf("%s %03d", p.Prefix, cIdx+1)
+			rawHash := hashChunk(chunk)
+			if cIdx < len(matched) && chunkMatchesRemote(matched[cIdx].list, name, rawHash, len(chunk)) {
+				chunkIDs[pIdx][cIdx], chunkOps[pIdx][cIdx] = matched[cIdx].list.ID, chunkSkipped
+				continue
 			}
+			targetID := ""
+			if cIdx < len(matched) {
+				targetID = matched[cIdx].list.ID
+			}
+			dirty = append(dirty, dirtyChunk{
+				pIdx: pIdx, cIdx: cIdx, targetID: targetID, name: name, rawHash: rawHash, listTyp: pType, chunk: chunk,
+			})
+		}
+		for _, m := range matched[min(len(cp.Chunks), len(matched)):] {
+			allSurplusIDs = append(allSurplusIDs, m.list.ID)
+		}
+	}
 
-			currentChunk := slices.Clone(chunk)
-			for attempt := 0; attempt < maxLabelPurgeAttempts; attempt++ {
-				if len(currentChunk) == 0 {
+	// Phase 2: Drain all dirty list writes across policies in one shared pool
+	if len(dirty) > 0 {
+		sem := make(chan struct{}, min(cfg.MaxWorkers, 3))
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		var firstErr error
+		var errMu sync.Mutex
+		var wg sync.WaitGroup
+
+		for _, dc := range dirty {
+			wg.Add(1)
+			go func(dc dirtyChunk) {
+				defer wg.Done()
+				select {
+				case sem <- struct{}{}:
+					defer func() { <-sem }()
+				case <-ctx.Done():
 					return
 				}
-				desc := rawHash
-				if len(currentChunk) != len(chunk) {
-					desc = fmt.Sprintf("%s:%d", rawHash, len(currentChunk))
-				}
 
-				var id string
-				var err error
-				var op int
-				if hasTarget {
-					id = matched[idx].list.ID
-					err = cf.updateList(ctx, id, name, currentChunk, desc)
-					op = chunkUpdated
-					if err == nil {
-						logInfo("Updated %s (%d %s items)", name, len(currentChunk), strings.ToLower(policyType))
+				cur := slices.Clone(dc.chunk)
+				for attempt := 0; attempt < maxLabelPurgeAttempts; attempt++ {
+					if len(cur) == 0 {
+						return
 					}
-				} else {
-					id, err = cf.createList(ctx, name, currentChunk, policyType, desc)
-					op = chunkCreated
-					if err == nil {
-						logInfo("Created %s (%d %s items)", name, len(currentChunk), strings.ToLower(policyType))
+					desc := dc.rawHash
+					if len(cur) != len(dc.chunk) {
+						desc = fmt.Sprintf("%s:%d", dc.rawHash, len(cur))
 					}
-				}
 
-				if err == nil {
-					chunkIDs[idx] = id
-					chunkOps[idx] = op
-					return
-				}
-
-				if attempt+1 < maxLabelPurgeAttempts {
-					if m := rejectedEntryRe.FindStringSubmatch(err.Error()); len(m) > 1 {
-						badTok := strings.ToLower(m[1])
-						before := len(currentChunk)
-						filtered := currentChunk[:0]
-						for _, d := range currentChunk {
-							dl := strings.ToLower(d)
-							if dl == badTok || slices.Contains(strings.Split(dl, "."), badTok) {
+					var id string
+					var wErr error
+					var op int
+					if dc.targetID != "" {
+						id = dc.targetID
+						wErr = cf.updateList(ctx, id, dc.name, cur, desc)
+						op = chunkUpdated
+						if wErr == nil {
+							logInfo("Updated %s (%d %s items)", dc.name, len(cur), strings.ToLower(dc.listTyp))
+						}
+					} else {
+						id, wErr = cf.createList(ctx, dc.name, cur, dc.listTyp, desc)
+						op = chunkCreated
+						if wErr == nil {
+							logInfo("Created %s (%d %s items)", dc.name, len(cur), strings.ToLower(dc.listTyp))
+						}
+					}
+					if wErr == nil {
+						chunkIDs[dc.pIdx][dc.cIdx], chunkOps[dc.pIdx][dc.cIdx] = id, op
+						return
+					}
+					if attempt+1 < maxLabelPurgeAttempts {
+						if m := rejectedEntryRe.FindStringSubmatch(wErr.Error()); len(m) > 1 {
+							bad := strings.ToLower(m[1])
+							before := len(cur)
+							cur = slices.DeleteFunc(cur, func(d string) bool {
+								dl := strings.ToLower(d)
+								return dl == bad || slices.Contains(strings.Split(dl, "."), bad)
+							})
+							if len(cur) < before {
+								logWarn("Purged rejected entry '%s' from %s (%d removed) and retrying...", bad, dc.name, before-len(cur))
 								continue
 							}
-							filtered = append(filtered, d)
-						}
-						currentChunk = filtered
-						if len(currentChunk) < before {
-							logWarn("Purged Cloudflare-rejected entry '%s' from %s (%d removed) and retrying...",
-								badTok, name, before-len(currentChunk))
-							continue
 						}
 					}
+					logErr("Error syncing %s (chunk size: %d): %v", dc.name, len(cur), wErr)
+					errMu.Lock()
+					if firstErr == nil {
+						firstErr = wErr
+						cancel()
+					}
+					errMu.Unlock()
+					return
 				}
+			}(dc)
+		}
+		wg.Wait()
+		if firstErr != nil {
+			return nil, nil, nil, nil, firstErr
+		}
+	}
 
-				logErr("Error syncing %s (chunk size: %d): %v", name, len(currentChunk), err)
-				errMu.Lock()
-				if firstErr == nil {
-					firstErr = err
-					cancel()
-				}
-				errMu.Unlock()
-				return
+	// Phase 3: Reconcile firewall rules for every policy
+	for pIdx, cp := range sets {
+		if stats[pIdx].Status == "inactive" {
+			continue
+		}
+		p := cp.Policy
+		pType := p.resolvedType()
+
+		pActiveIDs := make([]string, 0, len(chunkIDs[pIdx]))
+		for i, id := range chunkIDs[pIdx] {
+			if id != "" {
+				pActiveIDs = append(pActiveIDs, id)
 			}
-		}(idx, chunk)
-	}
-	wg.Wait()
+			switch chunkOps[pIdx][i] {
+			case chunkSkipped:
+				stats[pIdx].ListsSkipped++
+			case chunkUpdated:
+				stats[pIdx].ListsUpdated++
+			case chunkCreated:
+				stats[pIdx].ListsCreated++
+			}
+		}
+		stats[pIdx].ListsTotal = len(pActiveIDs)
+		allActiveIDs = append(allActiveIDs, pActiveIDs...)
 
-	if firstErr != nil {
-		return policySyncResult{}, firstErr
-	}
-
-	activeIDs := make([]string, 0, len(chunkIDs))
-	for i, id := range chunkIDs {
-		if id != "" {
-			activeIDs = append(activeIDs, id)
+		var listItems []string
+		fieldExpr := "any(dns.domains[*] in $%s)"
+		if pType == "IP" {
+			fieldExpr = "any(dns.resolved_ips[*] in $%s)"
 		}
-		switch chunkOps[i] {
-		case chunkSkipped:
-			stats.ListsSkipped++
-		case chunkUpdated:
-			stats.ListsUpdated++
-		case chunkCreated:
-			stats.ListsCreated++
+		for _, lid := range pActiveIDs {
+			listItems = append(listItems, fmt.Sprintf(fieldExpr, lid))
 		}
-	}
-	stats.ListsTotal = len(activeIDs)
-
-	var surplusIDs []string
-	if len(matched) > len(chunks) {
-		for _, m := range matched[len(chunks):] {
-			surplusIDs = append(surplusIDs, m.list.ID)
-		}
-	}
-
-	var listItems []string
-	if policyType == "IP" {
-		for _, lid := range activeIDs {
-			listItems = append(listItems, fmt.Sprintf("any(dns.resolved_ips[*] in $%s)", lid))
-		}
-	} else {
-		for _, lid := range activeIDs {
-			listItems = append(listItems, fmt.Sprintf("any(dns.domains[*] in $%s)", lid))
-		}
-		if tldExpr != "" && policy.UseSpamTLD {
+		if pType != "IP" && tldExpr != "" && p.UseSpamTLD {
 			listItems = append(listItems, fmt.Sprintf("(%s)", tldExpr))
 		}
-	}
-	if catExpr := compileCategoryExpression(policy); catExpr != "" {
-		listItems = append(listItems, catExpr)
-	}
+		if catExpr := compileCategoryExpression(p); catExpr != "" {
+			listItems = append(listItems, catExpr)
+		}
 
-	rules := *existingRules
-	ruleIdx := slices.IndexFunc(rules, func(r gatewayRule) bool { return r.Name == policy.Name })
+		rules := *existingRules
+		ruleIdx := slices.IndexFunc(rules, func(r gatewayRule) bool { return r.Name == p.Name })
 
-	if len(listItems) == 0 {
-		logWarn("Policy '%s' has no active list items, categories, or expressions.", policy.Name)
-		stats.Status = "inactive"
+		if len(listItems) == 0 {
+			stats[pIdx].Status = "inactive"
+			if ruleIdx >= 0 {
+				if dErr := cf.deleteRule(rules[ruleIdx].ID); dErr != nil {
+					logErr("Failed deleting inactive rule %s: %v", p.Name, dErr)
+				} else {
+					logInfo("Removed inactive firewall rule: %s", p.Name)
+					*existingRules = slices.Delete(rules, ruleIdx, ruleIdx+1)
+					stats[pIdx].RuleAction = "deleted"
+				}
+			}
+			continue
+		}
+
+		cond := p.effectiveIdentity(cfg)
+		trafficExpr, identityExpr := strings.Join(listItems, " or "), ""
+		if cond != "" {
+			if !strings.Contains(cond, "dns.") {
+				identityExpr = cond
+			} else {
+				wrapped := make([]string, len(listItems))
+				for i, item := range listItems {
+					wrapped[i] = fmt.Sprintf("(%s and %s)", cond, item)
+				}
+				trafficExpr = strings.Join(wrapped, " or ")
+			}
+		}
+
+		var ruleEnabled bool
+		switch {
+		case p.Enabled != nil && !*p.Enabled:
+			ruleEnabled = false
+		case cfg.AutoEnableRules:
+			ruleEnabled = true
+		case ruleIdx >= 0:
+			ruleEnabled = rules[ruleIdx].Enabled
+		case p.Enabled != nil:
+			ruleEnabled = *p.Enabled
+		}
+
+		blockPage := ptrOr(p.BlockPageEnabled, cfg.BlockPageEnabled)
+		ipCat, action := p.IPCategories, p.resolvedAction()
+
+		settings := map[string]any{}
+		if ruleIdx >= 0 && rules[ruleIdx].RuleSettings != nil {
+			for k, v := range rules[ruleIdx].RuleSettings {
+				settings[k] = v
+			}
+		}
+		settings["block_page_enabled"], settings["ip_categories"] = blockPage, ipCat
+
+		payload := map[string]any{
+			"name": p.Name, "action": action, "enabled": ruleEnabled,
+			"filters": []string{"dns"}, "traffic": trafficExpr, "rule_settings": settings,
+		}
+		if identityExpr != "" {
+			payload["identity"] = identityExpr
+		}
+
 		if ruleIdx >= 0 {
-			rid := rules[ruleIdx].ID
-			if err := cf.deleteRule(rid); err != nil {
-				logErr("Failed deleting inactive rule %s: %v", policy.Name, err)
-			} else {
-				logInfo("Removed inactive firewall rule: %s", policy.Name)
-				*existingRules = slices.Delete(rules, ruleIdx, ruleIdx+1)
-				stats.RuleAction = "deleted"
+			r := rules[ruleIdx]
+			for k, raw := range map[string]json.RawMessage{
+				"precedence": r.Precedence, "description": r.Description,
+				"schedule": r.Schedule, "device_posture": r.DevicePosture,
+			} {
+				if isNonNullRaw(raw) {
+					payload[k] = raw
+				}
 			}
-		}
-		return policySyncResult{ActiveIDs: activeIDs, SurplusIDs: surplusIDs, Stats: stats}, nil
-	}
-
-	cond := policy.effectiveIdentity(cfg)
-	var trafficExpr, identityExpr string
-	if cond != "" {
-		if !strings.Contains(cond, "dns.") {
-			trafficExpr = strings.Join(listItems, " or ")
-			identityExpr = cond
+			oldBP, _ := r.RuleSettings["block_page_enabled"].(bool)
+			oldIPCat, _ := r.RuleSettings["ip_categories"].(bool)
+			if r.Traffic != trafficExpr || r.Identity != identityExpr || r.Enabled != ruleEnabled ||
+				r.Action != action || oldBP != blockPage || oldIPCat != ipCat {
+				updated, uErr := cf.updateRule(r.ID, payload)
+				if uErr != nil {
+					return nil, nil, nil, nil, uErr
+				}
+				if updated != nil {
+					rules[ruleIdx] = *updated
+				}
+				stats[pIdx].RuleAction = "updated"
+				logInfo("Updated firewall rule: %s (enabled=%t, block_page=%t, ip_categories=%t)",
+					p.Name, ruleEnabled, blockPage, ipCat)
+			}
 		} else {
-			wrapped := make([]string, len(listItems))
-			for i, item := range listItems {
-				wrapped[i] = fmt.Sprintf("(%s and %s)", cond, item)
+			created, cErr := cf.createRule(payload)
+			if cErr != nil {
+				return nil, nil, nil, nil, cErr
 			}
-			trafficExpr = strings.Join(wrapped, " or ")
-		}
-	} else {
-		trafficExpr = strings.Join(listItems, " or ")
-	}
-
-	var ruleEnabled bool
-	if policy.Enabled != nil && !*policy.Enabled {
-		ruleEnabled = false
-	} else if cfg.AutoEnableRules {
-		ruleEnabled = true
-	} else if ruleIdx >= 0 {
-		ruleEnabled = rules[ruleIdx].Enabled
-	} else if policy.Enabled != nil {
-		ruleEnabled = *policy.Enabled
-	}
-
-	blockPage := cfg.BlockPageEnabled
-	if policy.BlockPageEnabled != nil {
-		blockPage = *policy.BlockPageEnabled
-	}
-	ipCat := policy.IPCategories
-	action := policy.resolvedAction()
-
-	settings := map[string]any{}
-	if ruleIdx >= 0 && rules[ruleIdx].RuleSettings != nil {
-		for k, v := range rules[ruleIdx].RuleSettings {
-			settings[k] = v
-		}
-	}
-	settings["block_page_enabled"] = blockPage
-	settings["ip_categories"] = ipCat
-
-	payload := map[string]any{
-		"name":          policy.Name,
-		"action":        action,
-		"enabled":       ruleEnabled,
-		"filters":       []string{"dns"},
-		"traffic":       trafficExpr,
-		"rule_settings": settings,
-	}
-	if identityExpr != "" {
-		payload["identity"] = identityExpr
-	}
-
-	if ruleIdx >= 0 {
-		r := rules[ruleIdx]
-		if isNonNullRaw(r.Precedence) {
-			payload["precedence"] = r.Precedence
-		}
-		if isNonNullRaw(r.Description) {
-			payload["description"] = r.Description
-		}
-		if isNonNullRaw(r.Schedule) {
-			payload["schedule"] = r.Schedule
-		}
-		if isNonNullRaw(r.DevicePosture) {
-			payload["device_posture"] = r.DevicePosture
-		}
-
-		// Cloudflare omits false booleans in rule_settings on GET; treat missing as false.
-		oldBP, _ := r.RuleSettings["block_page_enabled"].(bool)
-		oldIPCat, _ := r.RuleSettings["ip_categories"].(bool)
-		settingsChanged := oldBP != blockPage || oldIPCat != ipCat
-
-		changed := r.Traffic != trafficExpr ||
-			r.Identity != identityExpr ||
-			r.Enabled != ruleEnabled ||
-			r.Action != action ||
-			settingsChanged
-
-		if changed {
-			updated, err := cf.updateRule(r.ID, payload)
-			if err != nil {
-				return policySyncResult{}, err
+			if created != nil {
+				*existingRules = append(rules, *created)
 			}
-			if updated != nil {
-				rules[ruleIdx] = *updated
-			} else {
-				rules[ruleIdx].Traffic = trafficExpr
-				rules[ruleIdx].Identity = identityExpr
-				rules[ruleIdx].Enabled = ruleEnabled
-				rules[ruleIdx].Action = action
-				rules[ruleIdx].RuleSettings = settings
-			}
-			stats.RuleAction = "updated"
-			logInfo("Updated firewall rule: %s (enabled=%t, block_page=%t, ip_categories=%t)",
-				policy.Name, ruleEnabled, blockPage, ipCat)
+			stats[pIdx].RuleAction = "created"
+			logInfo("Created firewall rule: %s (enabled=%t, block_page=%t, ip_categories=%t)",
+				p.Name, ruleEnabled, blockPage, ipCat)
 		}
-	} else {
-		created, err := cf.createRule(payload)
-		if err != nil {
-			return policySyncResult{}, err
-		}
-		if created != nil {
-			*existingRules = append(rules, *created)
-		}
-		stats.RuleAction = "created"
-		logInfo("Created firewall rule: %s (enabled=%t, block_page=%t, ip_categories=%t)",
-			policy.Name, ruleEnabled, blockPage, ipCat)
+		allActiveRules = append(allActiveRules, p.Name)
 	}
 
-	return policySyncResult{
-		ActiveIDs:  activeIDs,
-		SurplusIDs: surplusIDs,
-		RuleNames:  []string{policy.Name},
-		Stats:      stats,
-	}, nil
+	return allActiveIDs, allSurplusIDs, allActiveRules, stats, nil
 }
 
 func syncStandalonePolicies(cf *cloudflareAPI, cfg *appConfig, existingRules []gatewayRule) []string {
 	var synced []string
-	for ruleName, desiredVal := range cfg.Raw.GatewayPolicies {
-		desiredEnabled, ok := desiredVal.(bool)
+	for name, val := range cfg.Raw.GatewayPolicies {
+		desired, ok := val.(bool)
 		if !ok {
 			continue
 		}
-		idx := slices.IndexFunc(existingRules, func(r gatewayRule) bool { return r.Name == ruleName })
+		idx := slices.IndexFunc(existingRules, func(r gatewayRule) bool { return r.Name == name })
 		if idx < 0 {
 			continue
 		}
-		synced = append(synced, ruleName)
+		synced = append(synced, name)
 		matched := &existingRules[idx]
-
-		if !cfg.AutoEnableRules && !matched.Enabled && desiredEnabled {
-			logInfo("Skipping auto-enable for disabled standalone policy: %s", ruleName)
+		if !cfg.AutoEnableRules && !matched.Enabled && desired {
 			continue
 		}
-		if matched.Enabled != desiredEnabled {
-			payload := buildRuleUpdatePayload(*matched, desiredEnabled, matched.Traffic)
-			if _, err := cf.updateRule(matched.ID, payload); err != nil {
-				logErr("Failed to update standalone policy %s: %v", ruleName, err)
+		if matched.Enabled != desired {
+			if _, err := cf.updateRule(matched.ID, buildRuleUpdatePayload(*matched, desired, matched.Traffic)); err != nil {
+				logErr("Failed updating standalone policy %s: %v", name, err)
 			} else {
-				matched.Enabled = desiredEnabled
-				state := "disabled"
-				if desiredEnabled {
-					state = "enabled"
-				}
-				logInfo("Updated standalone policy state: %s -> %s", ruleName, state)
+				matched.Enabled = desired
+				logInfo("Updated standalone policy: %s -> enabled=%t", name, desired)
 			}
 		}
 	}
 	return synced
-}
-
-func policyHasActiveRule(cp compiledPolicy, tldExpr string) bool {
-	return len(cp.Chunks) > 0 || (tldExpr != "" && cp.Policy.UseSpamTLD) || compileCategoryExpression(cp.Policy) != ""
 }
 
 func reclaimStaleResources(
@@ -3349,8 +2984,7 @@ func reclaimStaleResources(
 	cfg *appConfig,
 	compiled []compiledPolicy,
 	tldExpr string,
-	preservedListIDs map[string]struct{},
-	preservedRuleNames map[string]struct{},
+	preservedListIDs, preservedRuleNames map[string]struct{},
 	existingLists *[]gatewayList,
 	existingRules *[]gatewayRule,
 ) ([]gatewayRule, []string, error) {
@@ -3358,116 +2992,57 @@ func reclaimStaleResources(
 	for k := range preservedRuleNames {
 		expectedRules[k] = struct{}{}
 	}
-	expectedChunks := make(map[string]int, len(compiled))
-	for _, cp := range compiled {
-		expectedChunks[cp.Policy.Prefix] = len(cp.Chunks)
-		if policyHasActiveRule(cp, tldExpr) {
-			expectedRules[cp.Policy.Name] = struct{}{}
-		}
-	}
-
-	deletedRuleIDs := make(map[string]struct{})
-	for _, r := range *existingRules {
-		if cfg.isProtectedRule(r.Name) {
-			continue
-		}
-		if _, ok := expectedRules[r.Name]; ok {
-			continue
-		}
-		matchesScrub := false
-		for _, t := range cfg.ScrubTargets {
-			if strings.Contains(r.Name, t) {
-				matchesScrub = true
-				break
-			}
-		}
-		if matchesScrub {
-			if err := cf.deleteRule(r.ID); err != nil {
-				logErr("Rule cleanup error (%s): %v", r.Name, err)
-			} else {
-				logInfo("Removed orphaned rule: %s", r.Name)
-				deletedRuleIDs[r.ID] = struct{}{}
-			}
-		}
-	}
-	if len(deletedRuleIDs) > 0 {
-		rules := *existingRules
-		filtered := rules[:0]
-		for _, r := range rules {
-			if _, del := deletedRuleIDs[r.ID]; !del {
-				filtered = append(filtered, r)
-			}
-		}
-		*existingRules = filtered
-		if !cf.dryRun {
-			time.Sleep(2 * time.Second)
-		}
-	}
-
 	keepIDs := make(map[string]struct{}, len(preservedListIDs))
 	for k := range preservedListIDs {
 		keepIDs[k] = struct{}{}
 	}
-	for prefix, needed := range expectedChunks {
+
+	for _, cp := range compiled {
+		if len(cp.Chunks) > 0 || (tldExpr != "" && cp.Policy.UseSpamTLD) || compileCategoryExpression(cp.Policy) != "" {
+			expectedRules[cp.Policy.Name] = struct{}{}
+		}
 		type indexedList struct {
 			idx int
 			id  string
 		}
 		var matched []indexedList
 		for _, l := range *existingLists {
-			if idx, ok := parseChunkIndex(l.Name, prefix); ok {
+			if idx, ok := parseChunkIndex(l.Name, cp.Policy.Prefix); ok {
 				matched = append(matched, indexedList{idx: idx, id: l.ID})
 			}
 		}
 		slices.SortFunc(matched, func(a, b indexedList) int { return cmp.Compare(a.idx, b.idx) })
-		for _, m := range matched[:min(needed, len(matched))] {
+		for _, m := range matched[:min(len(cp.Chunks), len(matched))] {
 			keepIDs[m.id] = struct{}{}
 		}
 	}
 
-	var staleLists []gatewayList
+	if scrubOrphanRules(cf, cfg, expectedRules, existingRules) > 0 {
+		time.Sleep(2 * time.Second)
+	}
+
+	var stale []gatewayList
 	for _, l := range *existingLists {
 		if _, keep := keepIDs[l.ID]; !keep && cfg.isManagedList(l.Name) {
-			staleLists = append(staleLists, l)
+			stale = append(stale, l)
 		}
 	}
-	if len(staleLists) == 0 {
+	if len(stale) == 0 {
 		return nil, nil, nil
 	}
-
-	logInfo("Pre-reclaiming %d stale/surplus list(s) before sync...", len(staleLists))
-	staleIDs := make([]string, len(staleLists))
-	for i, l := range staleLists {
-		staleIDs[i] = l.ID
-	}
-
-	snapshots, err := detachListsFromRules(cf, staleIDs, existingRules)
+	logInfo("Pre-reclaiming %d stale/surplus list(s) before sync...", len(stale))
+	snapshots, deletedIDs, err := deleteListsBatched(cf, stale, existingRules)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	deletedIDs := make([]string, 0, len(staleLists))
-	for _, l := range staleLists {
-		if err := deleteListWithRetry(cf, l, existingRules); err != nil {
-			restoreDetachedRules(cf, snapshots, deletedIDs)
-			return nil, nil, err
-		}
-		deletedIDs = append(deletedIDs, l.ID)
-	}
-
-	deletedSet := make(map[string]struct{}, len(deletedIDs))
+	delSet := make(map[string]struct{}, len(deletedIDs))
 	for _, id := range deletedIDs {
-		deletedSet[id] = struct{}{}
+		delSet[id] = struct{}{}
 	}
-	lists := *existingLists
-	filteredLists := lists[:0]
-	for _, l := range lists {
-		if _, del := deletedSet[l.ID]; !del {
-			filteredLists = append(filteredLists, l)
-		}
-	}
-	*existingLists = filteredLists
-
+	*existingLists = slices.DeleteFunc(*existingLists, func(l gatewayList) bool {
+		_, del := delSet[l.ID]
+		return del
+	})
 	return snapshots, deletedIDs, nil
 }
 
@@ -3478,162 +3053,77 @@ func cleanupOrphans(
 	existingRules *[]gatewayRule,
 	activeIDs, surplusIDs, activeRules []string,
 ) error {
-	activeRuleSet := make(map[string]struct{}, len(activeRules))
+	keepRules := make(map[string]struct{}, len(activeRules))
 	for _, r := range activeRules {
-		activeRuleSet[r] = struct{}{}
+		keepRules[r] = struct{}{}
 	}
-
-	deletedRuleIDs := make(map[string]struct{})
-	for _, r := range *existingRules {
-		if cfg.isProtectedRule(r.Name) {
-			continue
-		}
-		if _, ok := activeRuleSet[r.Name]; ok {
-			continue
-		}
-		matchesScrub := false
-		for _, t := range cfg.ScrubTargets {
-			if strings.Contains(r.Name, t) {
-				matchesScrub = true
-				break
-			}
-		}
-		if matchesScrub {
-			if err := cf.deleteRule(r.ID); err != nil {
-				logErr("Rule cleanup error (%s): %v", r.Name, err)
-			} else {
-				deletedRuleIDs[r.ID] = struct{}{}
-				logInfo("Removed orphaned rule: %s", r.Name)
-			}
-		}
-	}
-
-	if len(deletedRuleIDs) > 0 {
-		rules := *existingRules
-		filtered := rules[:0]
-		for _, r := range rules {
-			if _, del := deletedRuleIDs[r.ID]; !del {
-				filtered = append(filtered, r)
-			}
-		}
-		*existingRules = filtered
-	}
-	if (len(deletedRuleIDs) > 0 || len(surplusIDs) > 0) && !cf.dryRun {
+	if scrubOrphanRules(cf, cfg, keepRules, existingRules) > 0 || len(surplusIDs) > 0 {
 		time.Sleep(2 * time.Second)
 	}
 
-	activeSet := make(map[string]struct{}, len(activeIDs))
+	activeSet, surplusSet := make(map[string]struct{}, len(activeIDs)), make(map[string]struct{}, len(surplusIDs))
 	for _, id := range activeIDs {
 		activeSet[id] = struct{}{}
 	}
-	surplusSet := make(map[string]struct{}, len(surplusIDs))
 	for _, id := range surplusIDs {
 		surplusSet[id] = struct{}{}
 	}
 
-	var listsToDelete []gatewayList
+	var toDelete []gatewayList
 	for _, l := range existingLists {
 		_, isSurplus := surplusSet[l.ID]
 		_, isActive := activeSet[l.ID]
 		if isSurplus || (!isActive && cfg.isManagedList(l.Name)) {
-			listsToDelete = append(listsToDelete, l)
+			toDelete = append(toDelete, l)
 		}
 	}
-	if len(listsToDelete) == 0 {
-		return nil
-	}
-
-	idsToDetach := make([]string, len(listsToDelete))
-	for i, l := range listsToDelete {
-		idsToDetach[i] = l.ID
-	}
-	snapshots, err := detachListsFromRules(cf, idsToDetach, existingRules)
-	if err != nil {
-		return err
-	}
-
-	deletedIDs := make([]string, 0, len(listsToDelete))
-	for _, l := range listsToDelete {
-		if err := deleteListWithRetry(cf, l, existingRules); err != nil {
-			restoreDetachedRules(cf, snapshots, deletedIDs)
-			return err
-		}
-		deletedIDs = append(deletedIDs, l.ID)
-	}
-	return nil
+	_, _, err := deleteListsBatched(cf, toDelete, existingRules)
+	return err
 }
 
 func filterPolicyIncludes(policies []policyConfig, keep func(string) bool) {
 	for i := range policies {
-		inc := policies[i].Include
-		filtered := inc[:0]
-		for _, s := range inc {
-			if keep(s) {
-				filtered = append(filtered, s)
-			}
-		}
-		policies[i].Include = filtered
+		policies[i].Include = slices.DeleteFunc(policies[i].Include, func(s string) bool { return !keep(s) })
 	}
 }
 
 // ---------- GitHub Actions Step Summary ----------
 
-type syncSummaryData struct {
-	DryRun          bool
-	Duration        time.Duration
-	RelevanceStatus string
-	RelevanceCount  int
-	FeedsOK         int
-	FailedFeeds     []string
-	TotalItems      int
-	TotalQuota      int
-	ManagedLists    int
-	UnmanagedLists  int
-	PolicyStats     []policySyncStats
-	Warnings        []string
-}
-
-func writeStepSummary(data syncSummaryData) {
+func writeStepSummary(
+	duration time.Duration,
+	relStatus string,
+	relCount, feedsOK, totalItems, totalQuota, managedLists, unmanagedLists int,
+	failedFeeds, warnings []string,
+	policyStats []policySyncStats,
+) {
 	summaryPath := strings.TrimSpace(os.Getenv("GITHUB_STEP_SUMMARY"))
 	if summaryPath == "" {
 		return
 	}
-
-	totalCreated, totalUpdated, totalSkipped := 0, 0, 0
-	for _, ps := range data.PolicyStats {
-		totalCreated += ps.ListsCreated
-		totalUpdated += ps.ListsUpdated
-		totalSkipped += ps.ListsSkipped
+	created, updated, skipped := 0, 0, 0
+	for _, ps := range policyStats {
+		created += ps.ListsCreated
+		updated += ps.ListsUpdated
+		skipped += ps.ListsSkipped
 	}
-	totalListOps := totalCreated + totalUpdated + totalSkipped
-	cacheHitPct := 100.0
-	if totalListOps > 0 {
-		cacheHitPct = float64(totalSkipped) * 100.0 / float64(totalListOps)
+	skipPct := 100.0
+	if ops := created + updated + skipped; ops > 0 {
+		skipPct = float64(skipped) * 100.0 / float64(ops)
 	}
-	itemPct := float64(data.TotalItems) * 100.0 / float64(max(data.TotalQuota, 1))
-	usedLists := data.ManagedLists + data.UnmanagedLists
-	listPct := float64(usedLists) * 100.0 / float64(maxCloudflareLists)
+	usedLists := managedLists + unmanagedLists
 
 	var sb strings.Builder
-	title := "Cloudflare Gateway Sync Summary"
-	if data.DryRun {
-		title += " (DRY-RUN)"
-	}
-	fmt.Fprintf(&sb, "## %s\n\n", title)
-	fmt.Fprintf(&sb, "| Metric | Value |\n| :--- | :--- |\n")
-	fmt.Fprintf(&sb, "| **Duration** | `%.2fs` |\n", data.Duration.Seconds())
-	fmt.Fprintf(&sb, "| **Relevance Cache** | `%s` (%d root domains) |\n", data.RelevanceStatus, data.RelevanceCount)
-	fmt.Fprintf(&sb, "| **Item Quota** | `%d / %d` (%.1f%%) |\n", data.TotalItems, data.TotalQuota, itemPct)
+	fmt.Fprintf(&sb, "## Cloudflare Gateway Sync Summary\n\n| Metric | Value |\n| :--- | :--- |\n")
+	fmt.Fprintf(&sb, "| **Duration** | `%.2fs` |\n", duration.Seconds())
+	fmt.Fprintf(&sb, "| **Relevance Cache** | `%s` (%d root domains) |\n", relStatus, relCount)
+	fmt.Fprintf(&sb, "| **Item Quota** | `%d / %d` (%.1f%%) |\n", totalItems, totalQuota, float64(totalItems)*100.0/float64(max(totalQuota, 1)))
 	fmt.Fprintf(&sb, "| **List Quota** | `%d / %d` (%.1f%% — %d managed, %d unmanaged) |\n",
-		usedLists, maxCloudflareLists, listPct, data.ManagedLists, data.UnmanagedLists)
-	fmt.Fprintf(&sb, "| **List Writes** | `%d` created, `%d` updated, `%d` unchanged (%.1f%% skipped) |\n",
-		totalCreated, totalUpdated, totalSkipped, cacheHitPct)
-	fmt.Fprintf(&sb, "| **Upstream Feeds** | `%d` ok, `%d` failed |\n\n", data.FeedsOK, len(data.FailedFeeds))
+		usedLists, maxCloudflareLists, float64(usedLists)*100.0/float64(maxCloudflareLists), managedLists, unmanagedLists)
+	fmt.Fprintf(&sb, "| **List Writes** | `%d` created, `%d` updated, `%d` unchanged (%.1f%% skipped) |\n", created, updated, skipped, skipPct)
+	fmt.Fprintf(&sb, "| **Upstream Feeds** | `%d` ok, `%d` failed |\n\n", feedsOK, len(failedFeeds))
 
-	fmt.Fprintf(&sb, "### Policies\n\n")
-	fmt.Fprintf(&sb, "| Policy | Prio | Type | Mode | Status | Entries | Deduped | Trimmed | Lists (C/U/S) | Rule |\n")
-	fmt.Fprintf(&sb, "| :--- | :---: | :---: | :---: | :---: | ---: | ---: | ---: | :---: | :---: |\n")
-	for _, ps := range data.PolicyStats {
+	sb.WriteString("### Policies\n\n| Policy | Prio | Type | Mode | Status | Entries | Deduped | Trimmed | Lists (C/U/S) | Rule |\n| :--- | :---: | :---: | :---: | :---: | ---: | ---: | ---: | :---: | :---: |\n")
+	for _, ps := range policyStats {
 		mode := "protected"
 		if ps.Trimmable {
 			mode = "trimmable"
@@ -3641,31 +3131,22 @@ func writeStepSummary(data syncSummaryData) {
 		fmt.Fprintf(&sb, "| %s | %d | %s | `%s` | `%s` | %d | %d | %d | %d (%d/%d/%d) | `%s` |\n",
 			ps.Name, ps.Priority, ps.Type, mode, ps.Status,
 			ps.Entries, ps.Deduped, ps.Trimmed,
-			ps.ListsTotal, ps.ListsCreated, ps.ListsUpdated, ps.ListsSkipped,
-			ps.RuleAction,
-		)
+			ps.ListsTotal, ps.ListsCreated, ps.ListsUpdated, ps.ListsSkipped, ps.RuleAction)
+	}
+	if len(failedFeeds) > 0 || len(warnings) > 0 {
+		sb.WriteString("\n### Warnings & Notices\n\n")
+		for _, f := range failedFeeds {
+			fmt.Fprintf(&sb, "- **Upstream feed failed (preserved live state):** `%s`\n", f)
+		}
+		for _, w := range warnings {
+			fmt.Fprintf(&sb, "- %s\n", w)
+		}
 	}
 	sb.WriteString("\n")
 
-	if len(data.FailedFeeds) > 0 || len(data.Warnings) > 0 {
-		sb.WriteString("### Warnings & Notices\n\n")
-		for _, f := range data.FailedFeeds {
-			fmt.Fprintf(&sb, "- **Upstream feed failed (preserved live state):** `%s`\n", f)
-		}
-		for _, w := range data.Warnings {
-			fmt.Fprintf(&sb, "- %s\n", w)
-		}
-		sb.WriteString("\n")
-	}
-
-	f, err := os.OpenFile(summaryPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		logWarn("Could not write GITHUB_STEP_SUMMARY (%s): %v", summaryPath, err)
-		return
-	}
-	defer f.Close()
-	if _, err := f.WriteString(sb.String()); err != nil {
-		logWarn("Failed writing GITHUB_STEP_SUMMARY: %v", err)
+	if f, err := os.OpenFile(summaryPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
+		_, _ = f.WriteString(sb.String())
+		f.Close()
 	}
 }
 
@@ -3673,14 +3154,12 @@ func writeStepSummary(data syncSummaryData) {
 
 func run() error {
 	start := time.Now()
-
 	configPath := flag.String("config", "config.toml", "Path to config.toml")
-	dryRun := flag.Bool("dry-run", false, "Preview planned Cloudflare changes without mutating")
 	forceRefresh := flag.Bool("force-refresh-relevance", false, "Force rebuild of relevance cache")
 	strictFeeds := flag.Bool("strict", false, "Exit non-zero if any upstream feed fails")
 	flag.Parse()
 
-	cfg, err := loadConfig(*configPath, *dryRun, *forceRefresh, *strictFeeds)
+	cfg, err := loadConfig(*configPath, *forceRefresh, *strictFeeds)
 	if err != nil {
 		return err
 	}
@@ -3694,6 +3173,7 @@ func run() error {
 
 	allPolicies := make([]policyConfig, 0, len(policyKeys)+1)
 	spamTLDBlockNames := make(map[string]struct{})
+	trimmableSources := make(map[string]struct{})
 	useSpamTLDAny := false
 	for _, k := range policyKeys {
 		p := cfg.Raw.Policies[k]
@@ -3701,6 +3181,11 @@ func run() error {
 			useSpamTLDAny = true
 			if p.resolvedAction() != "allow" && p.Name != "" {
 				spamTLDBlockNames[p.Name] = struct{}{}
+			}
+		}
+		if p.isTrimmable() {
+			for _, inc := range p.Include {
+				trimmableSources[inc] = struct{}{}
 			}
 		}
 		allPolicies = append(allPolicies, p)
@@ -3712,46 +3197,47 @@ func run() error {
 	if useSpamTLDAny && cfg.Raw.SpamAllowSource != nil && cfg.Raw.SpamAllowSource.Name != "" {
 		sa := cfg.Raw.SpamAllowSource
 		allPolicies = append(allPolicies, policyConfig{
-			Prefix:  "L_AllowSpam",
-			Name:    spamAllowRuleName,
-			Type:    "DOMAIN",
-			Action:  "allow",
-			Include: []string{sa.Name},
+			Prefix: "L_AllowSpam", Name: spamAllowRuleName, Type: "DOMAIN", Action: "allow", Include: []string{sa.Name},
 		})
-		enableRel := false
-		if sa.Relevance != nil {
-			enableRel = *sa.Relevance
-		}
 		domainSources = append(domainSources, sourceSpec{
-			Name:            sa.Name,
-			URLs:            []string{sa.URL},
-			EnableRelevance: enableRel,
+			Name: sa.Name, URLs: []string{sa.URL}, EnableRelevance: ptrOr(sa.Relevance, false),
 		})
 	}
 
 	feedClient := newHTTPClient(90 * time.Second)
-
 	needsRelevance := slices.ContainsFunc(domainSources, func(s sourceSpec) bool { return s.EnableRelevance })
-	var relSet *relevanceSet
-	relevanceStatus := "unused"
-	relevanceCount := 0
-	if needsRelevance {
-		relSet, relevanceStatus, err = resolveRelevanceDataset(feedClient, cfg)
-		if err != nil {
-			return err
+	needsRelForSource := func(s sourceSpec) bool {
+		if !needsRelevance {
+			return false
 		}
-		relevanceCount = relSet.len()
+		_, inTrim := trimmableSources[s.Name]
+		return s.EnableRelevance || inTrim
 	}
 
-	tldExpr := ""
-	var spamTLDs map[string]struct{}
-	tldFailed := false
+	// Launch all independent startup I/O concurrently (CF lists/rules, Spam TLDs, IP feeds, non-relevance feeds)
+	var (
+		existingLists []gatewayList
+		existingRules []gatewayRule
+		listsErr      error
+		rulesErr      error
+		tldExpr       string
+		spamTLDs      map[string]struct{}
+		tldFailed     bool
+		bgWG          sync.WaitGroup
+	)
+	bgWG.Add(2)
+	go func() { defer bgWG.Done(); existingLists, listsErr = cf.getLists() }()
+	go func() { defer bgWG.Done(); existingRules, rulesErr = cf.getRules() }()
 	if cfg.Raw.TLD.URL != "" && useSpamTLDAny {
-		tldExpr, spamTLDs, err = fetchSpamTLDs(feedClient, cfg.Raw.TLD.URL)
-		if err != nil {
-			logErr("Spam TLD feed failure (%s): %v. Preserving TLD-dependent policies.", cfg.Raw.TLD.URL, err)
-			tldFailed = true
-		}
+		bgWG.Add(1)
+		go func() {
+			defer bgWG.Done()
+			var tErr error
+			if tldExpr, spamTLDs, tErr = fetchSpamTLDs(feedClient, cfg.Raw.TLD.URL); tErr != nil {
+				logErr("Spam TLD feed failure: %v. Preserving TLD-dependent policies.", tErr)
+				tldFailed = true
+			}
+		}()
 	}
 
 	type feedOutcome struct {
@@ -3762,55 +3248,76 @@ func run() error {
 	totalSources := len(domainSources) + len(ipSources)
 	outcomes := make([]feedOutcome, totalSources)
 	sem := make(chan struct{}, cfg.MaxWorkers)
-	var wg sync.WaitGroup
+	var feedWG sync.WaitGroup
+
+	launchDomain := func(i int, spec sourceSpec, rel *relevanceSet) {
+		feedWG.Add(1)
+		go func() {
+			defer feedWG.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			kept, fErr := fetchFeedSource(feedClient, spec, rel)
+			if fErr == nil && len(kept) == 0 {
+				fErr = fmt.Errorf("feed '%s' returned 0 valid domains", spec.Name)
+			}
+			outcomes[i] = feedOutcome{name: spec.Name, feed: fetchedFeed{Domains: kept}, err: fErr}
+		}()
+	}
 
 	for i, spec := range domainSources {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(i int, spec sourceSpec) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			kept, err := fetchFeedSource(feedClient, spec, relSet)
-			if err == nil && len(kept) == 0 {
-				err = fmt.Errorf("feed '%s' returned 0 valid domains", spec.Name)
-			}
-			outcomes[i] = feedOutcome{
-				name: spec.Name,
-				feed: fetchedFeed{Domains: kept},
-				err:  err,
-			}
-		}(i, spec)
+		if !needsRelForSource(spec) {
+			launchDomain(i, spec, nil)
+		}
 	}
-
 	for j, spec := range ipSources {
 		idx := len(domainSources) + j
-		wg.Add(1)
-		sem <- struct{}{}
+		feedWG.Add(1)
 		go func(idx int, spec sourceSpec) {
-			defer wg.Done()
+			defer feedWG.Done()
+			sem <- struct{}{}
 			defer func() { <-sem }()
-			nets, err := fetchIPSource(feedClient, spec)
-			if err == nil && len(nets) == 0 {
-				err = fmt.Errorf("IP feed '%s' returned 0 valid subnets", spec.Name)
+			nets, fErr := fetchIPSource(feedClient, spec)
+			if fErr == nil && len(nets) == 0 {
+				fErr = fmt.Errorf("IP feed '%s' returned 0 valid subnets", spec.Name)
 			}
-			outcomes[idx] = feedOutcome{
-				name: spec.Name,
-				feed: fetchedFeed{IsIP: true, IPs: nets},
-				err:  err,
-			}
+			outcomes[idx] = feedOutcome{name: spec.Name, feed: fetchedFeed{IsIP: true, IPs: nets}, err: fErr}
 		}(idx, spec)
 	}
-	wg.Wait()
 
+	var relSet *relevanceSet
+	relevanceStatus, relevanceCount := "unused", 0
+	if needsRelevance {
+		if relSet, relevanceStatus, err = resolveRelevanceDataset(feedClient, cfg); err != nil {
+			feedWG.Wait()
+			bgWG.Wait()
+			return err
+		}
+		relevanceCount = relSet.len()
+		for i, spec := range domainSources {
+			if needsRelForSource(spec) {
+				launchDomain(i, spec, relSet)
+			}
+		}
+	}
+
+	feedWG.Wait()
 	relSet = nil
 	runtime.GC()
+	bgWG.Wait()
+
+	if listsErr != nil {
+		return listsErr
+	}
+	if rulesErr != nil {
+		return rulesErr
+	}
 
 	fetched := make(map[string]fetchedFeed, totalSources)
 	failedFeeds := make(map[string]struct{})
 	var failedFeedList []string
 	for _, o := range outcomes {
 		if o.err != nil {
-			logErr("Upstream feed '%s' failed: %v. Policies using it will be preserved as-is.", o.name, o.err)
+			logErr("Upstream feed '%s' failed: %v. Preserving dependent policies.", o.name, o.err)
 			failedFeeds[o.name] = struct{}{}
 			failedFeedList = append(failedFeedList, fmt.Sprintf("%s (%v)", o.name, o.err))
 		} else {
@@ -3820,48 +3327,24 @@ func run() error {
 	if tldFailed {
 		failedFeedList = append(failedFeedList, "Spam TLD Feed")
 	}
-
 	if totalSources > 0 && len(fetched) == 0 {
-		return fmt.Errorf("all %d upstream feeds failed; aborting without touching Cloudflare", totalSources)
+		return fmt.Errorf("all %d upstream feeds failed; aborting", totalSources)
 	}
 
 	var activePolicies, preservedPolicies []policyConfig
 	for _, p := range allPolicies {
-		missingDep := false
-		for _, src := range p.Include {
-			if _, bad := failedFeeds[src]; bad {
-				missingDep = true
-				break
-			}
-		}
-		if !missingDep {
-			for _, src := range p.Exclude {
-				if _, bad := failedFeeds[src]; bad {
-					missingDep = true
-					break
-				}
-			}
-		}
-		if missingDep || (p.UseSpamTLD && tldFailed) {
-			logWarn("Preserving existing Cloudflare state for policy '%s' due to upstream feed failure.", p.Name)
+		hasBadDep := slices.ContainsFunc(p.Include, func(s string) bool { _, b := failedFeeds[s]; return b }) ||
+			slices.ContainsFunc(p.Exclude, func(s string) bool { _, b := failedFeeds[s]; return b })
+		if hasBadDep || (p.UseSpamTLD && tldFailed) {
+			logWarn("Preserving Cloudflare state for '%s' due to feed failure.", p.Name)
 			preservedPolicies = append(preservedPolicies, p)
 		} else {
 			activePolicies = append(activePolicies, p)
 		}
 	}
 
-	existingLists, err := cf.getLists()
-	if err != nil {
-		return err
-	}
-	existingRules, err := cf.getRules()
-	if err != nil {
-		return err
-	}
-
-	preservedListIDs := make(map[string]struct{})
-	preservedRuleNames := make(map[string]struct{})
-	preservedItemsCount := 0
+	preservedListIDs, preservedRuleNames := make(map[string]struct{}), make(map[string]struct{})
+	preservedItems := 0
 	preservedStats := make([]policySyncStats, 0, len(preservedPolicies))
 	for _, p := range preservedPolicies {
 		preservedRuleNames[p.Name] = struct{}{}
@@ -3875,37 +3358,37 @@ func run() error {
 				}
 			}
 		}
-		preservedItemsCount += pItems
+		preservedItems += pItems
 		preservedStats = append(preservedStats, policySyncStats{
-			Name:       p.Name,
-			Prefix:     p.Prefix,
-			Type:       p.resolvedType(),
-			Priority:   p.resolvedPriority(cfg),
-			Trimmable:  p.isTrimmable(),
-			Status:     "preserved",
-			Entries:    pItems,
-			ListsTotal: pLists,
-			RuleAction: "preserved",
+			Name: p.Name, Prefix: p.Prefix, Type: p.resolvedType(), Priority: p.resolvedPriority(cfg),
+			Trimmable: p.isTrimmable(), Status: "preserved", Entries: pItems, ListsTotal: pLists, RuleAction: "preserved",
 		})
 	}
 
-	unmanagedListsCount := 0
-	currentManagedItems := 0
+	unmanagedLists, currentManagedItems := 0, 0
 	for _, l := range existingLists {
 		if cfg.isManagedList(l.Name) {
 			if l.Count != nil {
 				currentManagedItems += int(*l.Count)
 			}
 		} else {
-			unmanagedListsCount++
+			unmanagedLists++
 		}
 	}
 
-	maxActiveLists := max(maxCloudflareLists-unmanagedListsCount-len(preservedListIDs), 0)
-	activeQuota := max(cfg.TotalQuota-preservedItemsCount, 0)
+	maxActiveLists := max(maxCloudflareLists-unmanagedLists-len(preservedListIDs), 0)
+	activeQuota := max(cfg.TotalQuota-preservedItems, 0)
 	hasActiveSpamTLD := useSpamTLDAny && !tldFailed
-
 	var summaryWarnings []string
+
+	shedTiers := []struct {
+		label string
+		drop  func(string) bool
+	}{
+		{"OISD NSFW", func(l string) bool { return strings.Contains(l, "oisd") && strings.Contains(l, "nsfw") }},
+		{"TIF IPs", func(l string) bool { return strings.Contains(l, "tif") && strings.Contains(l, "ip") }},
+		{"TIF domain feeds", func(l string) bool { return strings.Contains(l, "tif") }},
+	}
 
 	compileAndFit := func(pols []policyConfig, elists []gatewayList) ([]compiledPolicy, int, int, error) {
 		compiled, guardWarns := buildPolicySets(cfg, pols, fetched, spamTLDs, hasActiveSpamTLD)
@@ -3913,73 +3396,37 @@ func run() error {
 			summaryWarnings = append(summaryWarnings, fmt.Sprintf("Config never_block stripped %d domain(s): %s",
 				len(guardWarns), strings.Join(guardWarns, ", ")))
 		}
-
-		// Primary capacity strategy: surgical rank-aware trimming (Porn -> Badware -> Malware)
-		trimWarns := trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)
-		summaryWarnings = append(summaryWarnings, trimWarns...)
+		summaryWarnings = append(summaryWarnings, trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)...)
 		entries, minLists := sumMinCapacity(compiled, cfg.MaxListSize)
 
-		// Emergency fallback tiers only shed Porn/TIF feeds; static safety lists are never touched
-		if entries > activeQuota || minLists > maxActiveLists {
-			msg := fmt.Sprintf("Capacity still exceeded after rank trimming (%d/%d entries, %d/%d min lists); shedding OISD NSFW...",
-				entries, activeQuota, minLists, maxActiveLists)
+		for _, tier := range shedTiers {
+			if entries <= activeQuota && minLists <= maxActiveLists {
+				break
+			}
+			msg := fmt.Sprintf("Capacity exceeded (%d/%d entries, %d/%d min lists); shedding %s...",
+				entries, activeQuota, minLists, maxActiveLists, tier.label)
 			logWarn("%s", msg)
 			summaryWarnings = append(summaryWarnings, msg)
-			filterPolicyIncludes(pols, func(inc string) bool {
-				l := strings.ToLower(inc)
-				return !(strings.Contains(l, "oisd") && strings.Contains(l, "nsfw"))
-			})
+			filterPolicyIncludes(pols, func(inc string) bool { return !tier.drop(strings.ToLower(inc)) })
 			compiled, _ = buildPolicySets(cfg, pols, fetched, spamTLDs, hasActiveSpamTLD)
 			trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)
 			entries, minLists = sumMinCapacity(compiled, cfg.MaxListSize)
 		}
-
 		if entries > activeQuota || minLists > maxActiveLists {
-			msg := fmt.Sprintf("Capacity still exceeded (%d/%d entries, %d/%d min lists); shedding TIF IPs...",
-				entries, activeQuota, minLists, maxActiveLists)
-			logWarn("%s", msg)
-			summaryWarnings = append(summaryWarnings, msg)
-			filterPolicyIncludes(pols, func(inc string) bool {
-				l := strings.ToLower(inc)
-				return !(strings.Contains(l, "tif") && strings.Contains(l, "ip"))
-			})
-			compiled, _ = buildPolicySets(cfg, pols, fetched, spamTLDs, hasActiveSpamTLD)
-			trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)
-			entries, minLists = sumMinCapacity(compiled, cfg.MaxListSize)
-		}
-
-		if entries > activeQuota || minLists > maxActiveLists {
-			msg := fmt.Sprintf("Capacity still exceeded (%d/%d entries, %d/%d min lists); shedding TIF domain feeds...",
-				entries, activeQuota, minLists, maxActiveLists)
-			logWarn("%s", msg)
-			summaryWarnings = append(summaryWarnings, msg)
-			filterPolicyIncludes(pols, func(inc string) bool {
-				return !strings.Contains(strings.ToLower(inc), "tif")
-			})
-			compiled, _ = buildPolicySets(cfg, pols, fetched, spamTLDs, hasActiveSpamTLD)
-			trimByRank(compiled, activeQuota, maxActiveLists, cfg.MaxListSize)
-			entries, minLists = sumMinCapacity(compiled, cfg.MaxListSize)
-		}
-
-		if entries > activeQuota || minLists > maxActiveLists {
-			return nil, 0, 0, fmt.Errorf("capacity exceeded after all trimming and fallback tiers (Active Entries: %d/%d, Min Lists: %d/%d)",
+			return nil, 0, 0, fmt.Errorf("capacity exceeded after all tiers (%d/%d entries, %d/%d lists)",
 				entries, activeQuota, minLists, maxActiveLists)
 		}
-
-		totalChunks := assignHashBuckets(compiled, elists, cfg.MaxListSize, maxActiveLists)
-		return compiled, entries, totalChunks, nil
+		return compiled, entries, assignHashBuckets(compiled, elists, cfg.MaxListSize, maxActiveLists), nil
 	}
 
 	compiled, activeEntries, totalChunks, err := compileAndFit(activePolicies, existingLists)
 	if err != nil {
 		return err
 	}
-
-	logInfo("Cloudflare lists: %d total (%d unmanaged, %d preserved, %d live items). Syncing %d hash-bucketed list(s)...",
-		len(existingLists), unmanagedListsCount, len(preservedListIDs), currentManagedItems, totalChunks)
+	logInfo("Cloudflare lists: %d total (%d unmanaged, %d preserved, %d live items). Syncing %d list(s)...",
+		len(existingLists), unmanagedLists, len(preservedListIDs), currentManagedItems, totalChunks)
 
 	standaloneRules := syncStandalonePolicies(cf, cfg, existingRules)
-
 	reclaimSnapshots, reclaimedIDs, err := reclaimStaleResources(
 		cf, cfg, compiled, tldExpr, preservedListIDs, preservedRuleNames, &existingLists, &existingRules,
 	)
@@ -3987,106 +3434,51 @@ func run() error {
 		return err
 	}
 
-	initTracking := func() ([]string, []string, []string, []policySyncStats) {
-		actIDs := make([]string, 0, len(preservedListIDs)+totalChunks)
-		for id := range preservedListIDs {
-			actIDs = append(actIDs, id)
-		}
-		actRules := make([]string, 0, len(standaloneRules)+len(preservedRuleNames)+len(compiled))
-		actRules = append(actRules, standaloneRules...)
-		for name := range preservedRuleNames {
-			actRules = append(actRules, name)
-		}
-		stats := make([]policySyncStats, 0, len(compiled)+len(preservedStats))
-		return actIDs, nil, actRules, stats
-	}
-
-	allActiveIDs, allSurplusIDs, allActiveRules, policyStats := initTracking()
-
-	runSync := func(sets []compiledPolicy, elists []gatewayList, erules *[]gatewayRule) error {
-		for _, cp := range sets {
-			expr := ""
-			if cp.Policy.UseSpamTLD {
-				expr = tldExpr
-			}
-			res, syncErr := syncPolicyInPlace(cf, cfg, elists, erules, cp, expr)
-			if syncErr != nil {
-				return syncErr
-			}
-			allActiveIDs = append(allActiveIDs, res.ActiveIDs...)
-			allSurplusIDs = append(allSurplusIDs, res.SurplusIDs...)
-			allActiveRules = append(allActiveRules, res.RuleNames...)
-			policyStats = append(policyStats, res.Stats)
-		}
-		return nil
-	}
-
-	if syncErr := runSync(compiled, existingLists, &existingRules); syncErr != nil {
-		errStr := syncErr.Error()
-		if strings.Contains(errStr, "Maximum number of lists reached") || strings.Contains(errStr, "2017") {
-			logErr("Cloudflare list limit (300) hit during sync! Forcing emergency list reclamation and rebuild...")
-			summaryWarnings = append(summaryWarnings, "Emergency 300-list limit recovery triggered during sync.")
-
-			existingLists, err = cf.getLists()
-			if err != nil {
+	allActiveIDs, allSurplusIDs, allActiveRules, policyStats, syncErr := syncAllPolicies(
+		cf, cfg, existingLists, &existingRules, compiled, tldExpr, preservedListIDs, preservedRuleNames, standaloneRules,
+	)
+	if syncErr != nil {
+		if strings.Contains(syncErr.Error(), "Maximum number of lists reached") || strings.Contains(syncErr.Error(), "2017") {
+			logErr("Cloudflare 300-list limit hit; running emergency reclamation and rebuild...")
+			summaryWarnings = append(summaryWarnings, "Emergency 300-list limit recovery triggered.")
+			if existingLists, err = cf.getLists(); err != nil {
 				return err
 			}
-			existingRules, err = cf.getRules()
-			if err != nil {
+			if existingRules, err = cf.getRules(); err != nil {
 				return err
 			}
-
 			var reclaimable []gatewayList
-			var reclaimableIDs []string
 			for _, l := range existingLists {
 				if _, pres := preservedListIDs[l.ID]; !pres && cfg.isManagedList(l.Name) {
 					reclaimable = append(reclaimable, l)
-					reclaimableIDs = append(reclaimableIDs, l.ID)
 				}
 			}
-
-			ruleSnapshots, detachErr := detachListsFromRules(cf, reclaimableIDs, &existingRules)
-			if detachErr != nil {
-				return detachErr
+			snaps, delIDs, delErr := deleteListsBatched(cf, reclaimable, &existingRules)
+			if delErr != nil {
+				return delErr
 			}
-			deletedIDs := make([]string, 0, len(reclaimable))
-
-			recoveryErr := func() error {
-				for _, l := range reclaimable {
-					if err := deleteListWithRetry(cf, l, &existingRules); err != nil {
-						return err
-					}
-					deletedIDs = append(deletedIDs, l.ID)
-				}
-				if !cf.dryRun {
-					time.Sleep(3 * time.Second)
-				}
-
-				filterPolicyIncludes(activePolicies, func(inc string) bool {
-					l := strings.ToLower(inc)
-					return !(strings.Contains(l, "oisd") && strings.Contains(l, "nsfw")) && !strings.Contains(l, "tif")
-				})
-				existingLists, err = cf.getLists()
-				if err != nil {
-					return err
-				}
-				existingRules, err = cf.getRules()
-				if err != nil {
-					return err
-				}
-
-				compiled, activeEntries, totalChunks, err = compileAndFit(activePolicies, existingLists)
-				if err != nil {
-					return err
-				}
-
-				allActiveIDs, allSurplusIDs, allActiveRules, policyStats = initTracking()
-				return runSync(compiled, existingLists, &existingRules)
-			}()
-
-			if recoveryErr != nil {
-				restoreDetachedRules(cf, ruleSnapshots, deletedIDs)
-				return recoveryErr
+			time.Sleep(3 * time.Second)
+			filterPolicyIncludes(activePolicies, func(inc string) bool {
+				l := strings.ToLower(inc)
+				return !(strings.Contains(l, "oisd") && strings.Contains(l, "nsfw")) && !strings.Contains(l, "tif")
+			})
+			if existingLists, err = cf.getLists(); err != nil {
+				restoreDetachedRules(cf, snaps, delIDs)
+				return err
+			}
+			if existingRules, err = cf.getRules(); err != nil {
+				restoreDetachedRules(cf, snaps, delIDs)
+				return err
+			}
+			if compiled, activeEntries, totalChunks, err = compileAndFit(activePolicies, existingLists); err != nil {
+				restoreDetachedRules(cf, snaps, delIDs)
+				return err
+			}
+			if allActiveIDs, allSurplusIDs, allActiveRules, policyStats, err = syncAllPolicies(
+				cf, cfg, existingLists, &existingRules, compiled, tldExpr, preservedListIDs, preservedRuleNames, standaloneRules,
+			); err != nil {
+				restoreDetachedRules(cf, snaps, delIDs)
+				return err
 			}
 		} else {
 			restoreDetachedRules(cf, reclaimSnapshots, reclaimedIDs)
@@ -4097,10 +3489,7 @@ func run() error {
 	if err := cleanupOrphans(cf, cfg, existingLists, &existingRules, allActiveIDs, allSurplusIDs, allActiveRules); err != nil {
 		return err
 	}
-
-	// Ensure Allow: Spam Exceptions sits directly above HaGeZi Spam TLD
-	precNotices := ensureSpamAllowPrecedence(cf, spamTLDBlockNames, existingRules)
-	summaryWarnings = append(summaryWarnings, precNotices...)
+	summaryWarnings = append(summaryWarnings, ensureSpamAllowPrecedence(cf, spamTLDBlockNames, existingRules)...)
 
 	policyStats = append(policyStats, preservedStats...)
 	slices.SortFunc(policyStats, func(a, b policySyncStats) int {
@@ -4110,42 +3499,20 @@ func run() error {
 		return cmp.Compare(a.Name, b.Name)
 	})
 
-	totalCreated, totalUpdated, totalSkipped := 0, 0, 0
+	created, updated, skipped := 0, 0, 0
 	for _, ps := range policyStats {
-		totalCreated += ps.ListsCreated
-		totalUpdated += ps.ListsUpdated
-		totalSkipped += ps.ListsSkipped
+		created += ps.ListsCreated
+		updated += ps.ListsUpdated
+		skipped += ps.ListsSkipped
 	}
-
 	elapsed := time.Since(start)
-	totalLiveEntries := activeEntries + preservedItemsCount
+	totalLive := activeEntries + preservedItems
 	logInfo("Sync finished in %.2fs | relevance=%s | lists=%d (C:%d U:%d S:%d) | items=%d/%d | feeds_ok=%d failed=%d",
-		elapsed.Seconds(),
-		relevanceStatus,
-		len(allActiveIDs),
-		totalCreated,
-		totalUpdated,
-		totalSkipped,
-		totalLiveEntries,
-		cfg.TotalQuota,
-		len(fetched),
-		len(failedFeedList),
-	)
+		elapsed.Seconds(), relevanceStatus, len(allActiveIDs), created, updated, skipped,
+		totalLive, cfg.TotalQuota, len(fetched), len(failedFeedList))
 
-	writeStepSummary(syncSummaryData{
-		DryRun:          cfg.DryRun,
-		Duration:        elapsed,
-		RelevanceStatus: relevanceStatus,
-		RelevanceCount:  relevanceCount,
-		FeedsOK:         len(fetched),
-		FailedFeeds:     failedFeedList,
-		TotalItems:      totalLiveEntries,
-		TotalQuota:      cfg.TotalQuota,
-		ManagedLists:    len(allActiveIDs),
-		UnmanagedLists:  unmanagedListsCount,
-		PolicyStats:     policyStats,
-		Warnings:        summaryWarnings,
-	})
+	writeStepSummary(elapsed, relevanceStatus, relevanceCount, len(fetched), totalLive, cfg.TotalQuota,
+		len(allActiveIDs), unmanagedLists, failedFeedList, summaryWarnings, policyStats)
 
 	if cfg.StrictFeeds && len(failedFeedList) > 0 {
 		return fmt.Errorf("--strict enabled and %d upstream feed(s) failed", len(failedFeedList))
